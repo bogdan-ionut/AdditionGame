@@ -16,6 +16,8 @@ An addition game for my 3.5 year old boy.
 - **Progress portability** via JSON import/export plus automatic persistence to `localStorage`.
 - **State migration/versioning** through `migrateGameState` (current schema `1.2.0`).
 - **Countable SVG objects** and celebration overlays for each digit from 0–9.
+- **Fully individualized learning paths** that analyze mastery data, streaks, and per-number accuracy to unlock AI-curated focus targets even if the previous number is not yet mastered.
+- **Knowledge vs. age grade insights** that translate progress into grade-band language and highlight alignment gaps in the parent dashboard.
 
 ### Partially Implemented
 - **Dashboard accuracy** currently measures the share of unique problems with a correct answer, not total-correct divided by total-attempts.
@@ -24,8 +26,6 @@ An addition game for my 3.5 year old boy.
 - **Checkpoint tests** only inject review problems; there is no pass/fail gate (e.g., 80% mastery) before resuming the main deck.
 
 ### Not Implemented
-- **Fully individualized learning paths** beyond the `n-1` mastery gates.
-- **Knowledge grade vs. age grade readouts** or related visualizations.
 - **Multi-modal supports** such as TTS audio, drag-and-drop number lines, or instructional videos.
 - **Progress visualizations** like Jenga towers, trophies, or printable mastery certificates.
 - **Adaptive breaks** (e.g., child-friendly Pomodoro timers).

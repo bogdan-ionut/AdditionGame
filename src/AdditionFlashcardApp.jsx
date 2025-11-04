@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target } from 'lucide-react';
 
 // --- Helpers & Migration (Sprint 2) ---
@@ -83,6 +83,220 @@ const migrateGameState = (raw) => {
   if (!gs.adaptiveLearning.checkpoint) gs.adaptiveLearning.checkpoint = { pending: false, inProgress: false };
   gs.version = '1.2.0';
   return gs;
+};
+
+const knowledgeBands = [
+  { minNumber: -1, label: 'Pre-K Explorer', detail: 'Building counting and subitizing foundations.', levelIndex: 0 },
+  { minNumber: 3, label: 'Kindergarten Super Counter', detail: 'Comfortable with sums to 5 using manipulatives or fingers.', levelIndex: 1 },
+  { minNumber: 6, label: '1st Grade Number Ninja', detail: 'Fluent with single-digit facts up to +7 and ready to bridge tens.', levelIndex: 2 },
+  { minNumber: 8, label: '2nd Grade Math Adventurer', detail: 'Solid on high addends and preparing for double-digit reasoning.', levelIndex: 3 },
+];
+
+const ageBands = [
+  { maxAge: 4.5, label: 'Pre-K (ages 3-4)', levelIndex: 0, detail: 'Exploring numbers through play.' },
+  { maxAge: 5.5, label: 'Kindergarten (ages 5-6)', levelIndex: 1, detail: 'Working within 5 and early addition.' },
+  { maxAge: 6.5, label: '1st Grade (ages 6-7)', levelIndex: 2, detail: 'Mastering facts within 10.' },
+  { maxAge: 7.5, label: '2nd Grade (ages 7-8)', levelIndex: 3, detail: 'Extending into regrouping and higher addends.' },
+  { maxAge: Infinity, label: 'Upper Elementary (8+)', levelIndex: 4, detail: 'Ready for multi-digit addition and subtraction.' },
+];
+
+const analyzeNumberPerformance = (gameState) => {
+  const stats = gameState.statistics || {};
+  const aggregates = Array.from({ length: 10 }, (_, number) => ({ number, attempts: 0, correct: 0 }));
+
+  Object.entries(stats.problemHistory || {}).forEach(([key, value]) => {
+    const [a, b] = key.split('+').map(Number);
+    [a, b].forEach((num) => {
+      if (Number.isInteger(num) && num >= 0 && num <= 9) {
+        aggregates[num].attempts += value?.attempts || 0;
+        aggregates[num].correct += value?.correct || 0;
+      }
+    });
+  });
+
+  return aggregates.map((entry) => ({
+    ...entry,
+    accuracy: entry.attempts > 0 ? entry.correct / entry.attempts : 0,
+  }));
+};
+
+const describeDelta = (diff) => {
+  if (diff >= 2) {
+    return { label: '🚀 Far Ahead', tone: 'ahead', message: 'Operating well beyond age expectations—consider enrichment challenges!' };
+  }
+  if (diff === 1) {
+    return { label: '📈 Slightly Ahead', tone: 'ahead', message: 'Comfortably ahead of age-based benchmarks—keep the momentum.' };
+  }
+  if (diff === 0) {
+    return { label: '✅ On Track', tone: 'balanced', message: 'Knowledge grade aligns with age expectations.' };
+  }
+  if (diff === -1) {
+    return { label: '🎯 Growth Zone', tone: 'support', message: 'A touch of extra practice will close the tiny gap.' };
+  }
+  return { label: '🧭 Personalized Support Needed', tone: 'support', message: 'Focus reviews and manipulatives to accelerate catch-up.' };
+};
+
+const computeKnowledgeInsights = (gameState) => {
+  const mastery = gameState.masteryTracking || {};
+  const performance = analyzeNumberPerformance(gameState);
+  let highestStrong = -1;
+  let aggregateScore = 0;
+  let countedNumbers = 0;
+
+  const masterySnapshots = performance.map((perf) => {
+    const data = mastery[perf.number] || {};
+    const masteryPercent = data.totalAttempts > 0
+      ? (data.correctAttempts / data.totalAttempts) * 100
+      : 0;
+    const combined = Math.max(masteryPercent, perf.accuracy * 100);
+    if (combined >= 85) {
+      highestStrong = Math.max(highestStrong, perf.number);
+    }
+    if (combined > 0) {
+      aggregateScore += combined;
+      countedNumbers += 1;
+    }
+    return {
+      number: perf.number,
+      masteryPercent,
+      combined,
+    };
+  });
+
+  let knowledgeBand = knowledgeBands[0];
+  knowledgeBands.forEach((band) => {
+    if (highestStrong >= band.minNumber) {
+      knowledgeBand = band;
+    }
+  });
+
+  const progressFraction = countedNumbers > 0
+    ? Math.min(1, aggregateScore / (countedNumbers * 100))
+    : 0;
+  const progressPercent = Math.round(progressFraction * 100);
+  const nextNumber = Math.min(9, Math.max(0, highestStrong + 1));
+
+  const studentAge = gameState.studentInfo?.age ?? null;
+  const ageBand = (() => {
+    if (typeof studentAge !== 'number' || Number.isNaN(studentAge)) {
+      return { ...ageBands[0], label: 'Age not set', detail: 'Update student profile to unlock comparisons.', levelIndex: 0 };
+    }
+    return ageBands.find((band) => studentAge <= band.maxAge) || ageBands[ageBands.length - 1];
+  })();
+
+  const delta = describeDelta(knowledgeBand.levelIndex - ageBand.levelIndex);
+
+  return {
+    knowledgeGrade: {
+      ...knowledgeBand,
+      highestStrong,
+      nextNumber,
+      progressPercent,
+      masterySnapshots,
+    },
+    ageGrade: ageBand,
+    delta,
+  };
+};
+
+const computeLearningPathInsights = (gameState) => {
+  const mastery = gameState.masteryTracking || {};
+  const stats = gameState.statistics || {};
+  const performance = analyzeNumberPerformance(gameState);
+
+  let highestMastered = -1;
+  const entries = [];
+
+  Object.entries(mastery).forEach(([key, value]) => {
+    const number = Number(key);
+    const masteryPercent = value.totalAttempts > 0
+      ? (value.correctAttempts / value.totalAttempts) * 100
+      : 0;
+    if ((value.level === 'mastered' || masteryPercent >= 90) && number > highestMastered) {
+      highestMastered = number;
+    }
+  });
+
+  const overallAccuracy = stats.totalProblemsAttempted > 0
+    ? stats.totalCorrect / stats.totalProblemsAttempted
+    : 0;
+  const avgTime = stats.averageTimePerProblem || 0;
+  const streakPower = Math.max(stats.currentStreak || 0, stats.longestStreak || 0);
+
+  let readinessWindow = highestMastered + 1;
+  if (overallAccuracy >= 0.85) readinessWindow += 1;
+  if (streakPower >= 5) readinessWindow += 1;
+  if (avgTime > 0 && avgTime <= 22) readinessWindow += 1;
+  readinessWindow = Math.min(9, Math.max(0, readinessWindow));
+
+  const overrides = new Set();
+  for (let i = 0; i <= readinessWindow; i += 1) {
+    overrides.add(i);
+  }
+
+  performance.forEach((perf) => {
+    const masteryData = mastery[perf.number] || { level: 'not-started', totalAttempts: 0, correctAttempts: 0 };
+    const masteryPercent = masteryData.totalAttempts > 0
+      ? (masteryData.correctAttempts / masteryData.totalAttempts) * 100
+      : 0;
+
+    const entry = {
+      number: perf.number,
+      level: masteryData.level || 'not-started',
+      masteryPercent: Math.round(masteryPercent),
+      accuracy: Math.round(perf.accuracy * 100),
+      attempts: perf.attempts,
+      unlockedByPath: overrides.has(perf.number),
+      priority: 0,
+      reason: '',
+    };
+
+    if (!overrides.has(perf.number) && perf.attempts >= 6 && perf.accuracy >= 0.8) {
+      overrides.add(perf.number);
+      entry.unlockedByPath = true;
+    }
+
+    if (entry.level === 'mastered') {
+      entry.reason = 'Maintain mastery with occasional spaced review.';
+      entry.priority = 10 + (9 - perf.number);
+    } else if (entry.level === 'struggling') {
+      entry.reason = 'Frequent errors detected—schedule a focused review set.';
+      entry.priority = 110 - entry.masteryPercent;
+    } else if (entry.level === 'learning') {
+      entry.reason = 'Active learning phase—keep momentum for a mastery badge.';
+      entry.priority = 90 - entry.masteryPercent;
+    } else if (entry.level === 'proficient') {
+      entry.reason = 'Solid performance—polish accuracy to earn full mastery.';
+      entry.priority = 70 - (entry.masteryPercent / 2);
+    } else {
+      if (overrides.has(perf.number)) {
+        if (perf.number === highestMastered + 1) {
+          entry.reason = 'Next sequential milestone after your latest mastery.';
+        } else {
+          entry.reason = 'Unlocked early thanks to strong accuracy and focus streaks.';
+        }
+        entry.priority = 80 - perf.number;
+      } else {
+        entry.reason = 'Still gated—watch for readiness signals or review earlier numbers.';
+        entry.priority = 30 - perf.number;
+      }
+    }
+
+    entries.push(entry);
+  });
+
+  entries.sort((a, b) => b.priority - a.priority);
+
+  return {
+    path: entries,
+    overrides,
+    highestMastered,
+    metrics: {
+      overallAccuracy: Math.round(overallAccuracy * 100),
+      streak: streakPower,
+      avgTime: avgTime ? avgTime.toFixed(1) : '0.0',
+    },
+  };
 };
 
 // Beautiful SVG object renderer for each digit
@@ -367,6 +581,8 @@ const scheduleReview = (needsReview, a, b) => {
 const ParentDashboard = ({ gameState, onClose }) => {
   const stats = gameState.statistics;
   const mastery = gameState.masteryTracking;
+  const knowledgeInsights = computeKnowledgeInsights(gameState);
+  const { knowledgeGrade, ageGrade, delta } = knowledgeInsights;
 
   const totalProblems = Object.values(stats.problemHistory).length;
   const correctProblems = Object.values(stats.problemHistory).filter(p => p.correct).length;
@@ -409,6 +625,13 @@ const ParentDashboard = ({ gameState, onClose }) => {
   );
   const coveragePct = ((coverageSet.size / 100) * 100).toFixed(0);
 
+  const deltaToneClasses = {
+    ahead: 'border-green-300 bg-green-50 text-green-700',
+    balanced: 'border-blue-300 bg-blue-50 text-blue-700',
+    support: 'border-orange-300 bg-orange-50 text-orange-700',
+  };
+  const deltaClass = deltaToneClasses[delta.tone] || deltaToneClasses.balanced;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -449,6 +672,54 @@ const ParentDashboard = ({ gameState, onClose }) => {
               <div className="text-orange-600 text-sm font-medium mb-1">Growth Rate</div>
               <div className="text-3xl font-bold text-orange-700">{growthRate}x</div>
               <div className="text-xs text-orange-600 mt-1">vs typical child</div>
+            </div>
+          </div>
+
+          {/* Knowledge vs Age Grade */}
+          <div className="bg-gradient-to-br from-sky-50 to-indigo-50 p-6 rounded-xl border-2 border-sky-200">
+            <h3 className="text-xl font-bold text-indigo-700 mb-4 flex items-center gap-2">
+              <Brain className="text-indigo-500" />
+              Knowledge Grade vs Age Grade
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white border-2 border-indigo-200 rounded-2xl p-4">
+                <div className="text-xs uppercase text-indigo-500 font-semibold tracking-wide">Knowledge Grade</div>
+                <div className="text-2xl font-bold text-gray-800 mt-1">{knowledgeGrade.label}</div>
+                <p className="text-sm text-gray-600 mt-2">{knowledgeGrade.detail}</p>
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs text-gray-600 mb-1">
+                    <span>Progress</span>
+                    <span>{knowledgeGrade.progressPercent}% of single-digit map</span>
+                  </div>
+                  <div className="h-2 bg-indigo-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-2 bg-indigo-500 rounded-full transition-all"
+                      style={{ width: `${knowledgeGrade.progressPercent}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-indigo-600 mt-2">
+                    Highest strong number: {knowledgeGrade.highestStrong >= 0 ? knowledgeGrade.highestStrong : 'in progress'} · Next focus: {knowledgeGrade.nextNumber}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border-2 border-sky-200 rounded-2xl p-4">
+                <div className="text-xs uppercase text-sky-500 font-semibold tracking-wide">Age Expectation</div>
+                <div className="text-2xl font-bold text-gray-800 mt-1">{ageGrade.label}</div>
+                <p className="text-sm text-gray-600 mt-2">{ageGrade.detail}</p>
+                <div className="mt-4 text-xs text-sky-600">
+                  Student age: {typeof gameState.studentInfo?.age === 'number' ? `${gameState.studentInfo.age.toFixed(1)} years` : 'Not provided'}
+                </div>
+              </div>
+
+              <div className={`rounded-2xl p-4 border-2 ${deltaClass}`}>
+                <div className="text-xs uppercase font-semibold tracking-wide">Alignment Snapshot</div>
+                <div className="text-xl font-bold mt-1">{delta.label}</div>
+                <p className="text-sm mt-2">{delta.message}</p>
+                <div className="mt-4 text-xs font-semibold">
+                  AI suggests leaning into +{knowledgeGrade.nextNumber} next to keep growth on pace.
+                </div>
+              </div>
             </div>
           </div>
 
@@ -585,6 +856,12 @@ const ParentDashboard = ({ gameState, onClose }) => {
 // Mode selection screen (with Mastery Gates)
 const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onImport }) => {
   const fileInputRef = useRef(null);
+  const learningInsights = useMemo(() => computeLearningPathInsights(gameState), [gameState]);
+  const overrides = learningInsights.overrides || new Set();
+  const metrics = learningInsights.metrics || { overallAccuracy: 0, streak: 0, avgTime: '0.0' };
+  const focusRecommendations = (learningInsights.path || [])
+    .filter((entry) => entry.level !== 'mastered' || entry.unlockedByPath)
+    .slice(0, 5);
 
   const modes = [
     { id: 'sequential', name: 'All Numbers', desc: 'Practice all additions 0-9 in order', icon: Hash, color: 'blue' },
@@ -616,9 +893,11 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
   };
 
   const isLocked = (n) => {
+    if (overrides?.has(n)) return false;
     if (n === 0) return false;
     const prev = gameState.masteryTracking[n - 1];
-    return !(prev && prev.level === 'mastered');
+    const prevAccuracy = prev && prev.totalAttempts > 0 ? prev.correctAttempts / prev.totalAttempts : 0;
+    return !(prev && (prev.level === 'mastered' || prevAccuracy >= 0.9));
   };
 
   return (
@@ -663,6 +942,76 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
           />
         </div>
 
+        {/* Personalized Learning Journey */}
+        <div className="bg-gradient-to-br from-indigo-50 via-sky-50 to-purple-50 p-8 rounded-3xl shadow-lg border-2 border-indigo-200 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Personalized Learning Journey</h2>
+              <p className="text-gray-600 mt-1">
+                AI unlocked practice based on {metrics.overallAccuracy}% accuracy, a streak of {metrics.streak}, and {metrics.avgTime}s average response time.
+              </p>
+            </div>
+            <div className="bg-white border-2 border-indigo-200 rounded-2xl px-4 py-2 text-sm text-indigo-700 font-semibold shadow">
+              Highest mastery badge: {learningInsights.highestMastered >= 0 ? learningInsights.highestMastered : 'None yet'}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {focusRecommendations.map((item) => {
+              const badgeStyles = {
+                mastered: 'bg-green-100 text-green-700 border-green-300',
+                proficient: 'bg-blue-100 text-blue-700 border-blue-300',
+                learning: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+                struggling: 'bg-red-100 text-red-700 border-red-300',
+                'not-started': 'bg-slate-100 text-slate-700 border-slate-300',
+              };
+              const levelBadgeClass = badgeStyles[item.level] || badgeStyles['not-started'];
+              return (
+                <div key={`focus-${item.number}`} className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center text-3xl font-bold">
+                        {item.number}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-semibold text-gray-800">
+                            {item.level === 'mastered' ? 'Maintain mastery' : item.level === 'struggling' ? 'Review focus' : 'Focus on'} +{item.number}
+                          </span>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${levelBadgeClass}`}>
+                            {item.level.replace('-', ' ')}
+                          </span>
+                          {item.unlockedByPath && (
+                            <span className="text-xs font-semibold px-2 py-1 rounded-full border bg-green-50 text-green-700 border-green-300">
+                              Path unlocked
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{item.reason}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                          <span className="px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-full">Mastery: {item.masteryPercent}%</span>
+                          <span className="px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-full">Accuracy: {item.accuracy}% ({item.attempts} attempts)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onSelectMode(`focus-${item.number}`, item.number)}
+                    className="self-start md:self-center px-5 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition"
+                  >
+                    Practice +{item.number}
+                  </button>
+                </div>
+              );
+            })}
+            {focusRecommendations.length === 0 && (
+              <div className="bg-white border-2 border-indigo-200 rounded-3xl p-6 text-center text-gray-600">
+                We need a few more data points to personalize the journey. Start any mode to unlock tailored recommendations.
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Main modes */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           {modes.map((mode) => {
@@ -693,7 +1042,8 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
                 ? (mastery.correctAttempts / mastery.totalAttempts * 100).toFixed(0)
                 : 0;
               const locked = isLocked(mode.number);
-              
+              const aiUnlocked = overrides?.has(mode.number) && mode.number > (learningInsights.highestMastered ?? -1) + 1;
+
               return (
                 <button
                   key={mode.id}
@@ -717,6 +1067,11 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
                   )}
                   {mastery && mastery.totalAttempts > 0 && (
                     <div className="text-xs text-gray-600 mt-2">{masteryPercent}% mastered</div>
+                  )}
+                  {aiUnlocked && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded-full shadow">
+                      AI Path
+                    </div>
                   )}
                   {locked && (
                     <div className="absolute inset-0 rounded-2xl border-2 border-red-300/60 pointer-events-none" />
