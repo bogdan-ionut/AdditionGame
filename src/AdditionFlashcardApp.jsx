@@ -8,11 +8,7 @@ import {
   generateLocalPlan,
   TARGET_SUCCESS_BAND,
 } from './lib/aiPersonalization';
-import {
-  resolveMotifTheme,
-  buildThemePacksForInterests,
-  maybeGenerateOnDeviceThemePacks,
-} from './lib/motifThemes';
+import { resolveMotifTheme } from './lib/motifThemes';
 import {
   saveGeminiKeyPlaceholder,
   requestGeminiPlan,
@@ -1807,7 +1803,7 @@ export default function AdditionFlashcardApp() {
     }, 700);
 
     return () => clearInterval(interval);
-  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard]);
+  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard, showCountTogether]);
 
   // respond to checkpoint review pass/fail outcomes
   useEffect(() => {
@@ -2255,21 +2251,25 @@ export default function AdditionFlashcardApp() {
 
   const card = cards[currentCard] || null;
 
-  const learnerMotifs = aiPersonalization.learnerProfile?.interestMotifs || [];
-  const learnerInterests = aiPersonalization.learnerProfile?.interests || [];
-  const learnerThemePacks = aiPersonalization.learnerProfile?.interestThemePacks || [];
+  const learnerProfile = aiPersonalization.learnerProfile || {};
+  const learnerMotifs = learnerProfile.interestMotifs;
+  const learnerInterests = learnerProfile.interests;
+  const learnerThemePacks = learnerProfile.interestThemePacks;
 
   const motifHints = useMemo(() => {
     const sources = [];
     if (card?.aiPlanItem?.motif) sources.push(card.aiPlanItem.motif);
     if (card?.aiPlanItem?.theme) sources.push(card.aiPlanItem.theme);
-    sources.push(...learnerMotifs);
-    sources.push(...learnerInterests);
+    if (Array.isArray(learnerMotifs)) sources.push(...learnerMotifs);
+    if (Array.isArray(learnerInterests)) sources.push(...learnerInterests);
     return sources;
   }, [card?.aiPlanItem?.motif, card?.aiPlanItem?.theme, learnerMotifs, learnerInterests]);
 
   const activeMotifTheme = useMemo(
-    () => resolveMotifTheme({ motifHints, themePacks: learnerThemePacks }),
+    () => resolveMotifTheme({
+      motifHints,
+      themePacks: Array.isArray(learnerThemePacks) ? learnerThemePacks : [],
+    }),
     [motifHints, learnerThemePacks],
   );
 
