@@ -1119,6 +1119,83 @@ export default function AdditionFlashcardApp() {
   });
   const inputRef = useRef(null);
 
+  const generateCards = useCallback(() => {
+    let generatedDeck = [];
+    setGameState((prev) => {
+      const { reviewCards, remaining } = pickReviewDue(prev.adaptiveLearning);
+      const difficulty = prev.adaptiveLearning.currentDifficulty || 'medium';
+
+      let newCards = [];
+
+      if (gameMode === 'sequential') {
+        for (let a = 0; a <= 9; a++) {
+          for (let b = 0; b <= 9; b++) {
+            newCards.push({ a, b, answer: a + b });
+          }
+        }
+      } else if (gameMode === 'random') {
+        for (let a = 0; a <= 9; a++) {
+          for (let b = 0; b <= 9; b++) {
+            newCards.push({ a, b, answer: a + b });
+          }
+        }
+        for (let i = newCards.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
+        }
+      } else if (gameMode?.startsWith('focus-')) {
+        for (let i = 0; i <= 9; i++) {
+          newCards.push({ a: focusNumber, b: i, answer: focusNumber + i });
+          if (i !== focusNumber) {
+            newCards.push({ a: i, b: focusNumber, answer: i + focusNumber });
+          }
+        }
+        for (let i = newCards.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
+        }
+      }
+
+      if (difficulty === 'easy') {
+        newCards = newCards.filter(c => c.a + c.b <= 8);
+      } else if (difficulty === 'hard') {
+        newCards.sort((c1, c2) => (c2.a + c2.b) - (c1.a + c1.b));
+      }
+
+      generatedDeck = [...reviewCards, ...newCards];
+
+      return {
+        ...prev,
+        adaptiveLearning: {
+          ...prev.adaptiveLearning,
+          needsReview: remaining,
+        },
+        sessionData: {
+          ...prev.sessionData,
+          currentSession: {
+            startTime: Date.now(),
+            problemsSolved: 0,
+            timeSpent: 0,
+            accuracy: 0,
+          }
+        }
+      };
+    });
+
+    setCards(generatedDeck);
+    setCurrentCard(0);
+    setGuidedHelp({ active: false, step: 0, complete: false });
+    setCheckpointState({
+      active: false,
+      reviewCards: [],
+      cardsData: {},
+      totalAttempts: 0,
+      totalCorrect: 0,
+      status: 'idle',
+    });
+  }, [gameMode, focusNumber]);
+
+
   // Save game state whenever it changes
   useEffect(() => {
     try {
@@ -1128,11 +1205,11 @@ export default function AdditionFlashcardApp() {
     }
   }, [gameState]);
 
-    useEffect(() => {
-      if (gameMode) {
-        generateCards();
-      }
-    }, [gameMode, generateCards]);
+  useEffect(() => {
+    if (gameMode) {
+      generateCards();
+    }
+  }, [gameMode, generateCards]);
 
   // Start session timer when card changes
   useEffect(() => {
@@ -1241,82 +1318,6 @@ export default function AdditionFlashcardApp() {
       });
     }
   }, [checkpointState.status, checkpointState.reviewCards, checkpointState.cardsData, cards]);
-
-  const generateCards = useCallback(() => {
-    let generatedDeck = [];
-    setGameState((prev) => {
-      const { reviewCards, remaining } = pickReviewDue(prev.adaptiveLearning);
-      const difficulty = prev.adaptiveLearning.currentDifficulty || 'medium';
-
-      let newCards = [];
-
-      if (gameMode === 'sequential') {
-        for (let a = 0; a <= 9; a++) {
-          for (let b = 0; b <= 9; b++) {
-            newCards.push({ a, b, answer: a + b });
-          }
-        }
-      } else if (gameMode === 'random') {
-        for (let a = 0; a <= 9; a++) {
-          for (let b = 0; b <= 9; b++) {
-            newCards.push({ a, b, answer: a + b });
-          }
-        }
-        for (let i = newCards.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
-        }
-      } else if (gameMode?.startsWith('focus-')) {
-        for (let i = 0; i <= 9; i++) {
-          newCards.push({ a: focusNumber, b: i, answer: focusNumber + i });
-          if (i !== focusNumber) {
-            newCards.push({ a: i, b: focusNumber, answer: i + focusNumber });
-          }
-        }
-        for (let i = newCards.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
-        }
-      }
-
-      if (difficulty === 'easy') {
-        newCards = newCards.filter(c => c.a + c.b <= 8);
-      } else if (difficulty === 'hard') {
-        newCards.sort((c1, c2) => (c2.a + c2.b) - (c1.a + c1.b));
-      }
-
-      generatedDeck = [...reviewCards, ...newCards];
-
-      return {
-        ...prev,
-        adaptiveLearning: {
-          ...prev.adaptiveLearning,
-          needsReview: remaining,
-        },
-        sessionData: {
-          ...prev.sessionData,
-          currentSession: {
-            startTime: Date.now(),
-            problemsSolved: 0,
-            timeSpent: 0,
-            accuracy: 0,
-          }
-        }
-      };
-    });
-
-    setCards(generatedDeck);
-    setCurrentCard(0);
-    setGuidedHelp({ active: false, step: 0, complete: false });
-    setCheckpointState({
-      active: false,
-      reviewCards: [],
-      cardsData: {},
-      totalAttempts: 0,
-      totalCorrect: 0,
-      status: 'idle',
-    });
-  }, [gameMode, focusNumber]);
 
   const updateMasteryTracking = (number, correct) => {
     setGameState(prev => {
