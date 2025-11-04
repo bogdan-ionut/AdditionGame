@@ -1432,6 +1432,8 @@ export default function AdditionFlashcardApp() {
 
     setAiPlanStatus((prev) => ({ ...prev, loading: true, error: null }));
 
+    const geminiConfigured = geminiReady || isGeminiConfigured();
+
     const weakFamilies = Object.entries(ai.mastery || {})
       .map(([key, node]) => ({ key, sum: Number(key.replace('sum=', '')), predicted: node?.alpha ? node.alpha / (node.alpha + node.beta) : TARGET_SUCCESS_BAND.midpoint }))
       .sort((a, b) => a.predicted - b.predicted)
@@ -1447,48 +1449,50 @@ export default function AdditionFlashcardApp() {
       learner_name: current.studentInfo?.name || 'Learner',
     };
 
-    try {
-      const remotePlan = await requestGeminiPlan(payload);
-      if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
-        const normalized = remotePlan.items.map((item, index) => ({
-          id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
-          a: item.a ?? item.operands?.[0] ?? 0,
-          b: item.b ?? item.operands?.[1] ?? 0,
-          answer: item.answer ?? ((item.a ?? item.operands?.[0] ?? 0) + (item.b ?? item.operands?.[1] ?? 0)),
-          display: item.display || `${item.a ?? item.operands?.[0] ?? 0} + ${item.b ?? item.operands?.[1] ?? 0}`,
-          predictedSuccess: item.predictedSuccess ?? item.difficulty ?? payload.target_success,
-          difficulty: item.difficulty ?? item.predictedSuccess ?? payload.target_success,
-          hints: item.hints ?? [],
-          praise: item.praise || '',
-          microStory: remotePlan.microStory || remotePlan.story || '',
-          source: remotePlan.source || 'gemini-2.5-pro',
-          planId: remotePlan.planId || `gemini-${Date.now()}`,
-        }));
+    if (geminiConfigured) {
+      try {
+        const remotePlan = await requestGeminiPlan(payload);
+        if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
+          const normalized = remotePlan.items.map((item, index) => ({
+            id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
+            a: item.a ?? item.operands?.[0] ?? 0,
+            b: item.b ?? item.operands?.[1] ?? 0,
+            answer: item.answer ?? ((item.a ?? item.operands?.[0] ?? 0) + (item.b ?? item.operands?.[1] ?? 0)),
+            display: item.display || `${item.a ?? item.operands?.[0] ?? 0} + ${item.b ?? item.operands?.[1] ?? 0}`,
+            predictedSuccess: item.predictedSuccess ?? item.difficulty ?? payload.target_success,
+            difficulty: item.difficulty ?? item.predictedSuccess ?? payload.target_success,
+            hints: item.hints ?? [],
+            praise: item.praise || '',
+            microStory: remotePlan.microStory || remotePlan.story || '',
+            source: remotePlan.source || 'gemini-2.5-pro',
+            planId: remotePlan.planId || `gemini-${Date.now()}`,
+          }));
 
-        setGameState((prev) => {
-          const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-          return {
-            ...prev,
-            aiPersonalization: {
-              ...aiPrev,
-              planQueue: [...(aiPrev.planQueue || []), ...normalized],
-              lastPlan: {
-                id: normalized[0]?.planId,
-                generatedAt: Date.now(),
-                source: normalized[0]?.source,
-                microStory: normalized[0]?.microStory || '',
-                itemCount: normalized.length,
+          setGameState((prev) => {
+            const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+            return {
+              ...prev,
+              aiPersonalization: {
+                ...aiPrev,
+                planQueue: [...(aiPrev.planQueue || []), ...normalized],
+                lastPlan: {
+                  id: normalized[0]?.planId,
+                  generatedAt: Date.now(),
+                  source: normalized[0]?.source,
+                  microStory: normalized[0]?.microStory || '',
+                  itemCount: normalized.length,
+                },
               },
-            },
-          };
-        });
+            };
+          });
 
-        setAiPlanStatus({ loading: false, error: null, source: normalized[0]?.source || 'gemini-2.5-pro' });
-        return { reused: false, appended: normalized, plan: remotePlan };
+          setAiPlanStatus({ loading: false, error: null, source: normalized[0]?.source || 'gemini-2.5-pro' });
+          return { reused: false, appended: normalized, plan: remotePlan };
+        }
+      } catch (error) {
+        console.warn('Gemini planning failed, falling back to local planner.', error);
+        setAiPlanStatus((prev) => ({ ...prev, error: error.message || 'Gemini planning failed.' }));
       }
-    } catch (error) {
-      console.warn('Gemini planning failed, falling back to local planner.', error);
-      setAiPlanStatus((prev) => ({ ...prev, error: error.message || 'Gemini planning failed.' }));
     }
 
     const fallbackPlan = generateLocalPlan({
@@ -1519,7 +1523,7 @@ export default function AdditionFlashcardApp() {
 
     setAiPlanStatus({ loading: false, error: null, source: fallbackPlan.source });
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
-  }, []);
+  }, [geminiReady]);
 
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
