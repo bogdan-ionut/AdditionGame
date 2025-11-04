@@ -34,6 +34,7 @@ export default function useInterestThemeSync({ aiPersonalization, setGameState }
                 interestMotifs: [],
                 interestThemePacks: [],
                 motifsUpdatedAt: Date.now(),
+                interestThemeDebug: null,
               },
             },
           };
@@ -44,6 +45,21 @@ export default function useInterestThemeSync({ aiPersonalization, setGameState }
       let motifsFromAi = [];
       let themePacksFromAi = [];
       let motifModel = null;
+      let remoteThemePackCount = 0;
+      let remoteMotifCount = 0;
+      let remoteModel = null;
+
+      const baseNanoDebug = {
+        available: typeof window !== 'undefined' && !!window.ai?.assistant?.create,
+        attempted: false,
+        model: 'gemini-nano-banana',
+        error: null,
+        rawText: null,
+        parsedCount: 0,
+        returnedCount: 0,
+        timestamp: Date.now(),
+      };
+      let onDeviceDebug = baseNanoDebug;
 
       try {
         const payload = await requestInterestMotifs(interests);
@@ -51,17 +67,26 @@ export default function useInterestThemeSync({ aiPersonalization, setGameState }
           motifsFromAi = Array.isArray(payload.motifs) ? payload.motifs : [];
           themePacksFromAi = Array.isArray(payload.themePacks) ? payload.themePacks : [];
           motifModel = payload.model || null;
+          remoteModel = motifModel;
+          remoteThemePackCount = themePacksFromAi.length;
+          remoteMotifCount = motifsFromAi.length;
         }
       } catch (error) {
         console.warn('Interest motif request failed, using fallback motifs.', error);
       }
 
       if (!themePacksFromAi.length) {
-        const onDevicePacks = await maybeGenerateOnDeviceThemePacks(interests);
+        const onDeviceResult = await maybeGenerateOnDeviceThemePacks(interests, { includeDebug: true });
+        if (onDeviceResult?.debug) {
+          onDeviceDebug = { ...baseNanoDebug, ...onDeviceResult.debug };
+        }
+        const onDevicePacks = onDeviceResult?.packs || [];
         if (onDevicePacks.length) {
           themePacksFromAi = onDevicePacks;
-          if (!motifModel) motifModel = 'gemini-nano-banana';
+          if (!motifModel) motifModel = onDeviceDebug.model || 'gemini-nano-banana';
         }
+      } else {
+        onDeviceDebug = baseNanoDebug;
       }
 
       const motifsToStore = motifsFromAi.length
@@ -78,6 +103,22 @@ export default function useInterestThemeSync({ aiPersonalization, setGameState }
         return pack;
       });
 
+      const updatedAt = Date.now();
+      const themeDebugSummary = {
+        remote: {
+          model: remoteModel,
+          themeCount: remoteThemePackCount,
+          motifCount: remoteMotifCount,
+        },
+        onDevice: onDeviceDebug,
+        final: {
+          model: motifModel,
+          themeCount: themePacksToStore.length,
+          motifCount: motifsToStore.length,
+        },
+        updatedAt,
+      };
+
       setGameState((prev) => {
         const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
         return {
@@ -88,7 +129,8 @@ export default function useInterestThemeSync({ aiPersonalization, setGameState }
               ...ai.learnerProfile,
               interestMotifs: motifsToStore,
               interestThemePacks: themePacksToStore,
-              motifsUpdatedAt: Date.now(),
+              motifsUpdatedAt: updatedAt,
+              interestThemeDebug: themeDebugSummary,
             },
           },
         };
