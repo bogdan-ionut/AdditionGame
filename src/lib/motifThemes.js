@@ -395,6 +395,110 @@ function parsePacksFromAiResponse(responseText = '') {
   return [];
 }
 
+async function readTextFromAiResult(result) {
+  if (!result) return '';
+  if (typeof result === 'string') return result;
+
+  if (typeof result.text === 'string') return result.text;
+  if (typeof result.output === 'string') return result.output;
+
+  if (typeof result.text === 'function') {
+    try {
+      const maybeText = result.text();
+      if (typeof maybeText === 'string') return maybeText;
+      if (maybeText && typeof maybeText.then === 'function') {
+        const awaited = await maybeText;
+        if (awaited) return awaited;
+      }
+    } catch (error) {
+      console.warn('Unable to read AI response via text()', error);
+    }
+  }
+
+  if (result.response) {
+    if (typeof result.response.text === 'function') {
+      try {
+        const responseText = await result.response.text();
+        if (responseText) return responseText;
+      } catch (error) {
+        console.warn('Unable to read AI response payload', error);
+      }
+    }
+    const nestedResponse = await readTextFromAiResult(result.response);
+    if (nestedResponse) return nestedResponse;
+  }
+
+  const visited = new Set();
+  const fragments = [];
+
+  const collect = async (value) => {
+    if (!value) return;
+    if (typeof value === 'string') {
+      if (value.trim()) fragments.push(value);
+      return;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      fragments.push(String(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        await collect(entry);
+      }
+      return;
+    }
+    if (typeof value === 'object') {
+      if (visited.has(value)) return;
+      visited.add(value);
+
+      if (typeof value.text === 'string') {
+        fragments.push(value.text);
+      } else if (typeof value.text === 'function') {
+        try {
+          const maybe = value.text();
+          if (typeof maybe === 'string') {
+            fragments.push(maybe);
+          } else if (maybe && typeof maybe.then === 'function') {
+            const awaited = await maybe;
+            if (awaited) fragments.push(awaited);
+          }
+        } catch (error) {
+          console.warn('Failed to evaluate text() method on AI response part', error);
+        }
+      }
+
+      const nestedKeys = [
+        'output',
+        'content',
+        'candidates',
+        'parts',
+        'values',
+        'segments',
+        'messages',
+        'data',
+        'result',
+        'value',
+        'choices',
+        'args',
+        'arguments',
+      ];
+
+      for (const key of nestedKeys) {
+        if (key in value) {
+          await collect(value[key]);
+        }
+      }
+
+      if (value.response && value.response !== result.response) {
+        await collect(value.response);
+      }
+    }
+  };
+
+  await collect(result);
+  return fragments.join('\n').trim();
+}
+
 export async function maybeGenerateOnDeviceThemePacks(interests = []) {
   if (typeof window === 'undefined') return [];
   const ai = window.ai;
@@ -409,7 +513,7 @@ export async function maybeGenerateOnDeviceThemePacks(interests = []) {
       'Generate JSON {"packs": [ {"key": string, "label": string, "matchers": string[], "icons": string[], "swatches": [{"bg": string, "border": string, "text": string, "shadow": string}]} ] } for kid counting app. Interests: ' +
       JSON.stringify(interests.slice(0, 6));
     const result = await session.prompt(prompt);
-    const text = typeof result === 'string' ? result : result?.output || result?.text || '';
+    const text = await readTextFromAiResult(result);
     const packs = parsePacksFromAiResponse(text);
     return sanitizeThemePacks(
       packs.map((pack) => ({
