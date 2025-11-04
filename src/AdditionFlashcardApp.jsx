@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, Woman, Man } from 'lucide-react';
 import Register from './Register';
 
 // --- Helpers & Migration (Sprint 2) ---
@@ -918,7 +918,7 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
                 <span className="text-gray-500">|</span>
                 <span className="text-sm">{gameState.studentInfo.age} years old</span>
                 <span className="text-gray-500">|</span>
-                <span className="text-sm">{gameState.studentInfo.gender}</span>
+                {gameState.studentInfo.gender === 'male' ? <Man size={20} className="text-blue-500" /> : <Woman size={20} className="text-pink-500" />}
             </div>
             <button
                 onClick={onLogout}
@@ -1110,8 +1110,17 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
 export default function AdditionFlashcardApp() {
   const [gameState, setGameState] = useState(() => {
     try {
-      const saved = localStorage.getItem('additionFlashcardsGameState');
-      return saved ? migrateGameState(JSON.parse(saved)) : createDefaultGameState();
+      const lastUser = localStorage.getItem('additionFlashcardsLastUser');
+      if (lastUser) {
+        const saved = localStorage.getItem(`additionFlashcardsGameState_${lastUser}`);
+        if (saved) {
+          const parsedState = JSON.parse(saved);
+          if (parsedState.studentInfo.name === lastUser) {
+            return migrateGameState(parsedState);
+          }
+        }
+      }
+      return createDefaultGameState();
     } catch {
       return createDefaultGameState();
     }
@@ -1147,26 +1156,30 @@ export default function AdditionFlashcardApp() {
   }, [gameState]);
 
   const handleRegister = (userInfo) => {
-    setGameState(prev => ({
-      ...prev,
-      studentInfo: {
-        ...prev.studentInfo,
-        ...userInfo,
-        startDate: new Date().toISOString(),
-      },
-    }));
+    const userKey = `additionFlashcardsGameState_${userInfo.name}`;
+    const savedState = localStorage.getItem(userKey);
+
+    if (savedState) {
+      setGameState(migrateGameState(JSON.parse(savedState)));
+    } else {
+      const newGameState = createDefaultGameState();
+      setGameState({
+        ...newGameState,
+        studentInfo: {
+          ...newGameState.studentInfo,
+          ...userInfo,
+          startDate: new Date().toISOString(),
+        },
+      });
+    }
   };
 
   const handleLogout = () => {
-    setGameState(prev => ({
-      ...prev,
-      studentInfo: {
-        name: "",
-        age: 3.5,
-        gender: "",
-        startDate: new Date().toISOString(),
-      },
-    }));
+    if (window.confirm('Do you want to save your progress before logging out?')) {
+      exportGameState();
+    }
+    setGameState(createDefaultGameState());
+    localStorage.removeItem('additionFlashcardsLastUser');
   };
 
   const generateCards = useCallback(() => {
@@ -1246,7 +1259,11 @@ export default function AdditionFlashcardApp() {
   // Save game state whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem('additionFlashcardsGameState', JSON.stringify(gameState));
+      if (gameState.studentInfo && gameState.studentInfo.name) {
+        const userKey = `additionFlashcardsGameState_${gameState.studentInfo.name}`;
+        localStorage.setItem(userKey, JSON.stringify(gameState));
+        localStorage.setItem('additionFlashcardsLastUser', gameState.studentInfo.name);
+      }
     } catch (error) {
       console.error('Failed to save game state:', error);
     }

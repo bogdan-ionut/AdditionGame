@@ -3,14 +3,28 @@ import { Upload } from 'lucide-react';
 
 const Register = ({ onRegister, onImport }) => {
   const [name, setName] = useState('');
-  const [age, setAge] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState('');
   const fileInputRef = useRef(null);
 
+  const calculateAge = (dateString) => {
+    const today = new Date();
+    const birthDate = new Date(dateString);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    // Return age with one decimal point
+    const monthDiff = (today.getMonth() - birthDate.getMonth() + 12) % 12;
+    return parseFloat((age + monthDiff / 12).toFixed(1));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (name && age && gender) {
-      onRegister({ name, age: parseFloat(age), gender });
+    if (name && birthDate && gender) {
+      const age = calculateAge(birthDate);
+      onRegister({ name, age, gender });
     } else {
       alert('Please fill in all fields.');
     }
@@ -39,17 +53,14 @@ const Register = ({ onRegister, onImport }) => {
             />
           </div>
           <div>
-            <label htmlFor="age" className="block text-sm font-medium text-gray-700">
-              Age (e.g., 4.5)
+            <label htmlFor="birthDate" className="block text-sm font-medium text-gray-700">
+              Birth Date
             </label>
             <input
-              type="number"
-              id="age"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              step="0.1"
-              min="2"
-              max="12"
+              type="date"
+              id="birthDate"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
               className="mt-1 block w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               required
             />
