@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, Woman, Man } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound } from 'lucide-react';
 import Register from './Register';
 
 // --- Helpers & Migration (Sprint 2) ---
@@ -918,7 +918,7 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
                 <span className="text-gray-500">|</span>
                 <span className="text-sm">{gameState.studentInfo.age} years old</span>
                 <span className="text-gray-500">|</span>
-                {gameState.studentInfo.gender === 'male' ? <Man size={20} className="text-blue-500" /> : <Woman size={20} className="text-pink-500" />}
+                {gameState.studentInfo.gender === 'male' ? <User size={20} className="text-blue-500" /> : <UserRound size={20} className="text-pink-500" />}
             </div>
             <button
                 onClick={onLogout}
