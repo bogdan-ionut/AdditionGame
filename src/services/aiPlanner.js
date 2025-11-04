@@ -109,11 +109,20 @@ export async function requestInterestMotifs(interests) {
       throw new Error(`Interest motif endpoint responded with ${response.status}`);
     }
     const data = await response.json();
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.motifs)) return data.motifs;
-    return [];
+    const motifs = Array.isArray(data?.motifs)
+      ? data.motifs
+      : Array.isArray(data)
+        ? data
+        : [];
+    const themePacks = Array.isArray(data?.themePacks)
+      ? data.themePacks
+      : Array.isArray(data?.packs)
+        ? data.packs
+        : [];
+    const model = data?.model || data?.source || null;
+    return { motifs, themePacks, model };
   } catch (error) {
     console.warn('Interest motif request failed', error);
-    return [];
+    return { motifs: [], themePacks: [], model: null };
   }
 }

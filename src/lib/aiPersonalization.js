@@ -1,3 +1,5 @@
+import { sanitizeThemePacks } from './motifThemes';
+
 export const TARGET_SUCCESS_BAND = {
   min: 0.8,
   midpoint: 0.825,
@@ -7,6 +9,13 @@ export const TARGET_SUCCESS_BAND = {
 const DEFAULT_PRIOR = { alpha: 3, beta: 2 };
 
 const sumKey = (sum) => `sum=${sum}`;
+
+const toTitle = (value = '') =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 
 export function createLearnerId(name = '') {
   if (!name || typeof name !== 'string') return 'learner';
@@ -22,6 +31,7 @@ export function ensurePersonalization(raw = {}, studentInfo = {}) {
     ageYears: studentInfo?.age ?? raw?.learnerProfile?.ageYears ?? null,
     interests: Array.isArray(raw?.learnerProfile?.interests) ? raw.learnerProfile.interests : [],
     interestMotifs: Array.isArray(raw?.learnerProfile?.interestMotifs) ? raw.learnerProfile.interestMotifs : [],
+    interestThemePacks: sanitizeThemePacks(raw?.learnerProfile?.interestThemePacks || []),
     motifsUpdatedAt: raw?.learnerProfile?.motifsUpdatedAt ?? null,
   };
 
@@ -204,9 +214,11 @@ export function generateLocalPlan({ personalization, history = {}, timeline = []
   const motifs = ai.learnerProfile.interestMotifs?.length
     ? ai.learnerProfile.interestMotifs
     : deriveMotifsFromInterests(ai.learnerProfile.interests);
-  const motif = motifs[0] || 'math adventure';
+  const themeName = ai.learnerProfile.interestThemePacks?.[0]?.label || null;
+  const motif = motifs[0] || (themeName ? themeName.toLowerCase() : 'math adventure');
   const focusFamilies = weakFamilies.slice(0, 2).map((family) => family.sum).join(' & ');
-  const microStory = `During the ${motif} mission, strengthen your ${focusFamilies || 'addition'} sums while staying near ${Math.round(target * 100)}% success.`;
+  const missionName = themeName || toTitle(motif);
+  const microStory = `During the ${missionName} mission, strengthen your ${focusFamilies || 'addition'} sums while staying near ${Math.round(target * 100)}% success.`;
 
   const planId = `local-plan-${now}`;
   const finalItems = items.slice(0, sessionSize).map((item) => ({
