@@ -1,5 +1,20 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2 } from 'lucide-react';
+import ParentAISettings from './components/ParentAISettings';
+import NextUpCard from './components/NextUpCard';
+import {
+  ensurePersonalization,
+  updatePersonalizationAfterAttempt,
+  generateLocalPlan,
+  deriveMotifsFromInterests,
+  TARGET_SUCCESS_BAND,
+} from './lib/aiPersonalization';
+import {
+  saveGeminiKeyPlaceholder,
+  requestGeminiPlan,
+  requestInterestMotifs,
+  isGeminiConfigured,
+} from './services/aiPlanner';
 import Register from './Register';
 
 // --- Helpers & Migration (Sprint 2) ---
@@ -12,7 +27,7 @@ const dayKey = (ts = Date.now()) => {
 };
 
 const createDefaultGameState = () => ({
-  version: "1.2.0",
+  version: "1.3.0",
   studentInfo: {
     name: "",
     age: 3.5,
@@ -56,6 +71,23 @@ const createDefaultGameState = () => ({
     recentAttempts: [], // keep last 10: {correct, ms}
     checkpoint: { pending: false, inProgress: false },
   },
+  aiPersonalization: {
+    targetSuccess: TARGET_SUCCESS_BAND.midpoint,
+    learnerProfile: {
+      learnerId: '',
+      parentId: 'local-parent',
+      name: '',
+      ageYears: null,
+      interests: [],
+      interestMotifs: [],
+      motifsUpdatedAt: null,
+    },
+    mastery: {},
+    planQueue: [],
+    activeSession: null,
+    lastPlan: null,
+    sessionAttempts: [],
+  },
   sessionData: {
     currentSession: {
       startTime: null,
@@ -75,6 +107,10 @@ const migrateGameState = (raw) => {
     statistics: { ...base.statistics, ...(raw?.statistics || {}) },
     masteryTracking: { ...base.masteryTracking, ...(raw?.masteryTracking || {}) },
     adaptiveLearning: { ...base.adaptiveLearning, ...(raw?.adaptiveLearning || {}) },
+    aiPersonalization: ensurePersonalization(
+      raw?.aiPersonalization,
+      raw?.studentInfo ?? base.studentInfo,
+    ),
     sessionData: { ...base.sessionData, ...(raw?.sessionData || {}) },
   };
   // ensure arrays and maps exist
@@ -83,7 +119,7 @@ const migrateGameState = (raw) => {
   if (!Array.isArray(gs.adaptiveLearning.needsReview)) gs.adaptiveLearning.needsReview = [];
   if (!Array.isArray(gs.adaptiveLearning.recentAttempts)) gs.adaptiveLearning.recentAttempts = [];
   if (!gs.adaptiveLearning.checkpoint) gs.adaptiveLearning.checkpoint = { pending: false, inProgress: false };
-  gs.version = '1.2.0';
+    gs.version = '1.3.0';
   return gs;
 };
 
@@ -856,11 +892,30 @@ const ParentDashboard = ({ gameState, onClose }) => {
 };
 
 // Mode selection screen (with Mastery Gates)
-const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onImport, onLogout }) => {
+const ModeSelection = ({
+  onSelectMode,
+  gameState,
+  onShowDashboard,
+  onExport,
+  onImport,
+  onLogout,
+  onOpenAiSettings,
+  aiPersonalization,
+  aiPreviewItem,
+  aiPlanStatus,
+  interestDraft,
+  onInterestDraftChange,
+  onAddInterest,
+  onRemoveInterest,
+  onStartAiPath,
+  onRefreshPlan,
+  geminiReady,
+}) => {
   const fileInputRef = useRef(null);
   const learningInsights = useMemo(() => computeLearningPathInsights(gameState), [gameState]);
   const overrides = learningInsights.overrides || new Set();
   const metrics = learningInsights.metrics || { overallAccuracy: 0, streak: 0, avgTime: '0.0' };
+  const targetSuccessPercent = Math.round(((aiPersonalization?.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint) * 100));
   const focusRecommendations = (learningInsights.path || [])
     .filter((entry) => entry.level !== 'mastered' || entry.unlockedByPath)
     .slice(0, 5);
@@ -962,6 +1017,13 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
             onChange={handleImport}
             className="hidden"
           />
+          <button
+            onClick={() => onOpenAiSettings?.()}
+            className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-indigo-200"
+          >
+            <Wand2 className="text-indigo-600" size={20} />
+            <span className="font-semibold">AI Settings</span>
+          </button>
         </div>
 
         {/* Personalized Learning Journey */}
@@ -1031,6 +1093,69 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
                 We need a few more data points to personalize the journey. Start any mode to unlock tailored recommendations.
               </div>
             )}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+            <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm flex flex-col gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                  <Wand2 className="text-indigo-500" size={18} /> Learner Interests
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">Add 2-4 interests to personalize stories and examples.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(aiPersonalization?.learnerProfile?.interests || []).map((interest) => (
+                  <span
+                    key={interest}
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-sm font-medium"
+                  >
+                    {interest}
+                    <button
+                      type="button"
+                      className="text-indigo-500 hover:text-indigo-700"
+                      onClick={() => onRemoveInterest?.(interest)}
+                      aria-label={`Remove ${interest}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </span>
+                ))}
+                {!(aiPersonalization?.learnerProfile?.interests || []).length && (
+                  <span className="text-sm text-gray-500">No interests yet—add a few below!</span>
+                )}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={interestDraft}
+                  onChange={(e) => onInterestDraftChange?.(e.target.value)}
+                  placeholder="e.g. dinosaurs, soccer, baking"
+                  className="flex-1 px-3 py-2 border-2 border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+                <button
+                  onClick={onAddInterest}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-semibold shadow hover:bg-indigo-700"
+                >
+                  Add
+                </button>
+              </div>
+              {aiPersonalization?.learnerProfile?.interestMotifs?.length > 0 && (
+                <div className="text-xs text-gray-500">
+                  Motifs: {aiPersonalization.learnerProfile.interestMotifs.slice(0, 6).join(', ')}
+                </div>
+              )}
+            </div>
+            <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm">
+              <NextUpCard
+                item={aiPreviewItem}
+                story={aiPreviewItem?.microStory || aiPersonalization?.lastPlan?.microStory}
+                loading={aiPlanStatus?.loading}
+                planSource={aiPlanStatus?.source || aiPreviewItem?.source || aiPersonalization?.lastPlan?.source}
+                targetSuccess={targetSuccessPercent}
+                configured={geminiReady}
+                onStartAiPath={onStartAiPath}
+                onRefreshPlan={onRefreshPlan}
+              />
+            </div>
           </div>
         </div>
 
@@ -1141,6 +1266,11 @@ export default function AdditionFlashcardApp() {
   const [attemptCount, setAttemptCount] = useState(0);
   const [problemStartTime, setProblemStartTime] = useState(null);
   const [guidedHelp, setGuidedHelp] = useState({ active: false, step: 0, complete: false });
+  const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
+  const [aiSessionMeta, setAiSessionMeta] = useState(null);
+  const [showAiSettings, setShowAiSettings] = useState(false);
+  const [interestDraft, setInterestDraft] = useState('');
+  const [geminiReady, setGeminiReady] = useState(() => isGeminiConfigured());
   const [checkpointState, setCheckpointState] = useState({
     active: false,
     reviewCards: [],
@@ -1153,10 +1283,292 @@ export default function AdditionFlashcardApp() {
   const gameStateRef = useRef(gameState);
 
   const { studentInfo } = gameState;
+  const aiPersonalization = useMemo(
+    () => ensurePersonalization(gameState.aiPersonalization, gameState.studentInfo),
+    [gameState.aiPersonalization, gameState.studentInfo],
+  );
+  const aiPreviewItem = useMemo(() => {
+    if (aiPersonalization.activeSession?.items && aiPersonalization.activeSession.items.length) {
+      const pending = aiPersonalization.activeSession.items.find((item) => {
+        if (!aiPersonalization.activeSession?.completed) return true;
+        return !aiPersonalization.activeSession.completed.some((c) => c.itemId === item.id);
+      });
+      if (pending) return pending;
+    }
+    return aiPersonalization.planQueue?.[0] || null;
+  }, [aiPersonalization]);
 
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  const refreshInterestMotifs = useCallback(async (interests) => {
+    if (!Array.isArray(interests)) return;
+    if (interests.length === 0) {
+      setGameState((prev) => {
+        const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+        if (!ai.learnerProfile.interestMotifs?.length) return prev;
+        return {
+          ...prev,
+          aiPersonalization: {
+            ...ai,
+            learnerProfile: {
+              ...ai.learnerProfile,
+              interestMotifs: [],
+              motifsUpdatedAt: Date.now(),
+            },
+          },
+        };
+      });
+      return;
+    }
+    try {
+      const motifs = await requestInterestMotifs(interests);
+      if (Array.isArray(motifs) && motifs.length) {
+        setGameState((prev) => {
+          const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+          return {
+            ...prev,
+            aiPersonalization: {
+              ...ai,
+              learnerProfile: {
+                ...ai.learnerProfile,
+                interestMotifs: motifs,
+                motifsUpdatedAt: Date.now(),
+              },
+            },
+          };
+        });
+        return;
+      }
+    } catch (error) {
+      console.warn('Interest motif request failed, using fallback motifs.', error);
+    }
+    const fallback = deriveMotifsFromInterests(interests);
+    setGameState((prev) => {
+      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+      return {
+        ...prev,
+        aiPersonalization: {
+          ...ai,
+          learnerProfile: {
+            ...ai.learnerProfile,
+            interestMotifs: fallback,
+            motifsUpdatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  }, [setGameState]);
+
+  const ensureAiPlan = useCallback(async (force = false) => {
+    const current = gameStateRef.current;
+    const ai = ensurePersonalization(current.aiPersonalization, current.studentInfo);
+    if (!force && (ai.planQueue?.length || 0) >= 8) {
+      return { reused: true, appended: [] };
+    }
+
+    setAiPlanStatus((prev) => ({ ...prev, loading: true, error: null }));
+
+    const weakFamilies = Object.entries(ai.mastery || {})
+      .map(([key, node]) => ({ key, sum: Number(key.replace('sum=', '')), predicted: node?.alpha ? node.alpha / (node.alpha + node.beta) : TARGET_SUCCESS_BAND.midpoint }))
+      .sort((a, b) => a.predicted - b.predicted)
+      .slice(0, 3)
+      .map((entry) => `sum=${entry.sum}`);
+
+    const payload = {
+      plan_for: ai.learnerProfile.learnerId || (current.studentInfo?.name || 'learner'),
+      target_success: ai.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint,
+      weak_families: weakFamilies,
+      interest_motifs: ai.learnerProfile.interestMotifs || [],
+      need_items: 10,
+      learner_name: current.studentInfo?.name || 'Learner',
+    };
+
+    try {
+      const remotePlan = await requestGeminiPlan(payload);
+      if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
+        const normalized = remotePlan.items.map((item, index) => ({
+          id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
+          a: item.a ?? item.operands?.[0] ?? 0,
+          b: item.b ?? item.operands?.[1] ?? 0,
+          answer: item.answer ?? ((item.a ?? item.operands?.[0] ?? 0) + (item.b ?? item.operands?.[1] ?? 0)),
+          display: item.display || `${item.a ?? item.operands?.[0] ?? 0} + ${item.b ?? item.operands?.[1] ?? 0}`,
+          predictedSuccess: item.predictedSuccess ?? item.difficulty ?? payload.target_success,
+          difficulty: item.difficulty ?? item.predictedSuccess ?? payload.target_success,
+          hints: item.hints ?? [],
+          praise: item.praise || '',
+          microStory: remotePlan.microStory || remotePlan.story || '',
+          source: remotePlan.source || 'gemini-2.5-pro',
+          planId: remotePlan.planId || `gemini-${Date.now()}`,
+        }));
+
+        setGameState((prev) => {
+          const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+          return {
+            ...prev,
+            aiPersonalization: {
+              ...aiPrev,
+              planQueue: [...(aiPrev.planQueue || []), ...normalized],
+              lastPlan: {
+                id: normalized[0]?.planId,
+                generatedAt: Date.now(),
+                source: normalized[0]?.source,
+                microStory: normalized[0]?.microStory || '',
+                itemCount: normalized.length,
+              },
+            },
+          };
+        });
+
+        setAiPlanStatus({ loading: false, error: null, source: normalized[0]?.source || 'gemini-2.5-pro' });
+        return { reused: false, appended: normalized, plan: remotePlan };
+      }
+    } catch (error) {
+      console.warn('Gemini planning failed, falling back to local planner.', error);
+      setAiPlanStatus((prev) => ({ ...prev, error: error.message || 'Gemini planning failed.' }));
+    }
+
+    const fallbackPlan = generateLocalPlan({
+      personalization: ai,
+      history: current.statistics?.problemHistory || {},
+      timeline: current.statistics?.answersTimeline || [],
+      sessionSize: 10,
+      now: Date.now(),
+    });
+
+    setGameState((prev) => {
+      const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+      return {
+        ...prev,
+        aiPersonalization: {
+          ...aiPrev,
+          planQueue: [...(aiPrev.planQueue || []), ...fallbackPlan.items],
+          lastPlan: {
+            id: fallbackPlan.planId,
+            generatedAt: fallbackPlan.generatedAt,
+            source: fallbackPlan.source,
+            microStory: fallbackPlan.microStory,
+            itemCount: fallbackPlan.items.length,
+          },
+        },
+      };
+    });
+
+    setAiPlanStatus({ loading: false, error: null, source: fallbackPlan.source });
+    return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
+  }, []);
+
+  const handleAddInterest = useCallback(() => {
+    const trimmed = interestDraft.trim();
+    if (!trimmed) return;
+    let updatedList = [];
+    setGameState((prev) => {
+      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+      if (ai.learnerProfile.interests?.some((interest) => interest.toLowerCase() === trimmed.toLowerCase())) {
+        return prev;
+      }
+      const updated = [...(ai.learnerProfile.interests || []), trimmed].slice(0, 8);
+      updatedList = updated;
+      return {
+        ...prev,
+        aiPersonalization: {
+          ...ai,
+          learnerProfile: {
+            ...ai.learnerProfile,
+            interests: updated,
+          },
+        },
+      };
+    });
+    if (updatedList.length) {
+      refreshInterestMotifs(updatedList);
+    }
+    setInterestDraft('');
+  }, [interestDraft, refreshInterestMotifs, setGameState]);
+
+  const handleRemoveInterest = useCallback((interest) => {
+    let nextInterests = [];
+    setGameState((prev) => {
+      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+      nextInterests = (ai.learnerProfile.interests || []).filter((item) => item !== interest);
+      return {
+        ...prev,
+        aiPersonalization: {
+          ...ai,
+          learnerProfile: {
+            ...ai.learnerProfile,
+            interests: nextInterests,
+          },
+        },
+      };
+    });
+    refreshInterestMotifs(nextInterests);
+  }, [refreshInterestMotifs, setGameState]);
+
+  const startAiPath = useCallback(async () => {
+    const planResult = await ensureAiPlan(false);
+    const targetDeckSize = 8;
+    const sessionItems = (() => {
+      const ai = ensurePersonalization(gameStateRef.current.aiPersonalization, gameStateRef.current.studentInfo);
+      const combined = [...(ai.planQueue || [])];
+      if (planResult?.appended?.length) {
+        combined.push(...planResult.appended);
+      }
+      return combined.slice(0, Math.min(targetDeckSize, combined.length));
+    })();
+
+    if (!sessionItems.length) {
+      alert('We need a bit more data before the AI path can start. Try a few practice rounds first.');
+      return;
+    }
+
+    setGameState((prev) => {
+      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+      const remaining = (ai.planQueue || []).slice(sessionItems.length);
+      return {
+        ...prev,
+        aiPersonalization: {
+          ...ai,
+          planQueue: remaining,
+          activeSession: {
+            planId: sessionItems[0]?.planId || `session-${Date.now()}`,
+            source: sessionItems[0]?.source || 'local-fallback',
+            microStory: sessionItems[0]?.microStory || '',
+            startedAt: Date.now(),
+            items: sessionItems,
+            completed: [],
+          },
+        },
+      };
+    });
+
+    setAiSessionMeta({
+      planId: sessionItems[0]?.planId || null,
+      source: sessionItems[0]?.source || 'local-fallback',
+      story: sessionItems[0]?.microStory || '',
+    });
+
+    setCards(sessionItems.map((item) => ({
+      a: item.a,
+      b: item.b,
+      answer: item.answer,
+      aiPlanItem: item,
+    })));
+    setGameMode('ai-path');
+    setCurrentCard(0);
+    setUserAnswer('');
+    setFeedback(null);
+    setShowHint(false);
+    setAttemptCount(0);
+    setGuidedHelp({ active: false, step: 0, complete: false });
+  }, [ensureAiPlan]);
+
+  const handleGeminiSaved = useCallback(() => {
+    setGeminiReady(true);
+    setShowAiSettings(false);
+    ensureAiPlan(true);
+  }, [ensureAiPlan]);
 
   const handleRegister = (userInfo) => {
     const userKey = `additionFlashcardsGameState_${userInfo.name}`;
@@ -1187,6 +1599,9 @@ export default function AdditionFlashcardApp() {
 
   const generateCards = useCallback(() => {
     const currentState = gameStateRef.current;
+    if (gameMode === 'ai-path') {
+      return;
+    }
     const { reviewCards, remaining } = pickReviewDue(currentState.adaptiveLearning);
     const difficulty = currentState.adaptiveLearning.currentDifficulty || 'medium';
 
@@ -1277,6 +1692,31 @@ export default function AdditionFlashcardApp() {
       generateCards();
     }
   }, [gameMode, generateCards]);
+
+  useEffect(() => {
+    const interests = aiPersonalization.learnerProfile?.interests || [];
+    const lastUpdated = aiPersonalization.learnerProfile?.motifsUpdatedAt;
+    if (!interests.length) {
+      return;
+    }
+    if (!lastUpdated) {
+      refreshInterestMotifs(interests);
+      return;
+    }
+    const ageMs = Date.now() - lastUpdated;
+    if (ageMs > 1000 * 60 * 60 * 24 * 7) {
+      refreshInterestMotifs(interests);
+    }
+  }, [aiPersonalization.learnerProfile?.interests, aiPersonalization.learnerProfile?.motifsUpdatedAt, refreshInterestMotifs]);
+
+  useEffect(() => {
+    if (gameMode === 'ai-path') return;
+    if (aiPlanStatus.loading) return;
+    const queueLength = aiPersonalization.planQueue?.length || 0;
+    if (queueLength < 4 && (aiPersonalization.learnerProfile?.interests?.length || queueLength === 0)) {
+      ensureAiPlan(false);
+    }
+  }, [aiPlanStatus.loading, aiPersonalization.planQueue, aiPersonalization.learnerProfile?.interests?.length, ensureAiPlan, gameMode]);
 
   // Start session timer when card changes
   useEffect(() => {
@@ -1416,7 +1856,8 @@ export default function AdditionFlashcardApp() {
   const recordProblemAttempt = (card, correct, timeSpent) => {
     const problemKey = `${card.a}+${card.b}`;
     const timeSec = timeSpent / 1000;
-    
+    const attemptTimestamp = Date.now();
+
     setGameState(prev => {
       const statistics = {
         ...prev.statistics,
@@ -1437,6 +1878,7 @@ export default function AdditionFlashcardApp() {
         recentAttempts: [...(prev.adaptiveLearning.recentAttempts || [])],
         checkpoint: { ...prev.adaptiveLearning.checkpoint },
       };
+      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
 
       if (!statistics.problemHistory[problemKey]) {
         statistics.problemHistory[problemKey] = {
@@ -1548,11 +1990,23 @@ export default function AdditionFlashcardApp() {
         };
       }
 
+      const updatedAi = updatePersonalizationAfterAttempt(ai, {
+        a: card.a,
+        b: card.b,
+        correct,
+        latencyMs: timeSpent,
+        timestamp: attemptTimestamp,
+        itemId: problemKey,
+        planItemId: card.aiPlanItem?.id,
+        source: card.aiPlanItem?.source,
+      });
+
       return {
         ...prev,
         statistics,
         sessionData,
         adaptiveLearning,
+        aiPersonalization: updatedAi,
       };
     });
 
@@ -1612,6 +2066,18 @@ export default function AdditionFlashcardApp() {
     setCards([]);
     setGuidedHelp({ active: false, step: 0, complete: false });
     setProblemStartTime(null);
+    setAiSessionMeta(null);
+    setGameState((prev) => {
+      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+      if (!ai.activeSession) return prev;
+      return {
+        ...prev,
+        aiPersonalization: {
+          ...ai,
+          activeSession: null,
+        },
+      };
+    });
     setCheckpointState({
       active: false,
       reviewCards: [],
@@ -1769,13 +2235,24 @@ export default function AdditionFlashcardApp() {
 
   if (!gameMode) {
     return (
-      <ModeSelection 
-        onSelectMode={handleModeSelect} 
+      <ModeSelection
+        onSelectMode={handleModeSelect}
         gameState={gameState}
         onShowDashboard={() => setShowDashboard(true)}
         onExport={exportGameState}
         onImport={importGameState}
         onLogout={handleLogout}
+        onOpenAiSettings={() => setShowAiSettings(true)}
+        aiPersonalization={aiPersonalization}
+        aiPreviewItem={aiPreviewItem}
+        aiPlanStatus={aiPlanStatus}
+        interestDraft={interestDraft}
+        onInterestDraftChange={setInterestDraft}
+        onAddInterest={handleAddInterest}
+        onRemoveInterest={handleRemoveInterest}
+        onStartAiPath={startAiPath}
+        onRefreshPlan={() => ensureAiPlan(true)}
+        geminiReady={geminiReady}
       />
     );
   }
@@ -1812,6 +2289,7 @@ export default function AdditionFlashcardApp() {
   const sessionTotal = currentStats.totalProblemsAttempted;
 
   return (
+    <>
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex flex-col items-center justify-center">
       {/* Header */}
       <div className="w-full max-w-2xl mb-6 flex justify-between items-center">
@@ -1845,6 +2323,7 @@ export default function AdditionFlashcardApp() {
           {gameMode === 'sequential' && '📋 All Numbers (Sequential)'}
           {gameMode === 'random' && '🎲 Random Practice'}
           {gameMode?.startsWith('focus-') && `🎯 Practice with ${focusNumber}`}
+          {gameMode === 'ai-path' && '🤖 AI Path Session'}
         </div>
         <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-gray-700">
           Difficulty: <span className={{ easy: 'text-green-600', medium: 'text-orange-600', hard: 'text-red-600' }[gameState.adaptiveLearning.currentDifficulty] || 'text-gray-600'}>{gameState.adaptiveLearning.currentDifficulty}</span>
@@ -1869,10 +2348,23 @@ export default function AdditionFlashcardApp() {
           </div>
         )}
 
+        {gameMode === 'ai-path' && aiSessionMeta?.story && (
+          <div className="mb-4 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-2xl text-indigo-700 text-sm">
+            {aiSessionMeta.story}
+          </div>
+        )}
+
         <h2 className="text-xl font-semibold text-gray-700 mb-6 flex items-center justify-between">
           <span>Add the numbers:</span>
           {card.review && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-1">REVIEW</span>}
         </h2>
+
+        {card.aiPlanItem && (
+          <div className="mb-4 text-sm text-indigo-600 font-medium flex items-center gap-2">
+            <Brain size={16} className="text-indigo-500" />
+            Predicted success ~{Math.round((card.aiPlanItem.predictedSuccess ?? aiPersonalization.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint) * 100)}%
+          </div>
+        )}
 
         {checkpointActive && (
           <div className="mb-4 p-4 bg-purple-50 border-2 border-purple-200 rounded-2xl text-center text-purple-800">
@@ -1887,9 +2379,20 @@ export default function AdditionFlashcardApp() {
         {/* Hint System */}
         {showHint && !feedback && (
           <div className="mb-4 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-xl">
-            <p className="text-yellow-800 font-medium text-center">
-              💡 Hint: Count all the objects below or use the number line to jump from {card.a} by {card.b}.
-            </p>
+            {card.aiPlanItem?.hints?.length ? (
+              <div className="text-yellow-800 text-sm space-y-2">
+                {card.aiPlanItem.hints.slice(0, 2).map((hint, index) => (
+                  <p key={index} className="font-medium flex items-start gap-2">
+                    <span className="font-bold">💡 Hint {index + 1}:</span>
+                    <span>{hint}</span>
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-yellow-800 font-medium text-center">
+                💡 Hint: Count all the objects below or use the number line to jump from {card.a} by {card.b}.
+              </p>
+            )}
           </div>
         )}
 
@@ -2026,5 +2529,13 @@ export default function AdditionFlashcardApp() {
         Card {currentCard + 1} / {cards.length}
       </div>
     </div>
+    {showAiSettings && (
+      <ParentAISettings
+        onClose={() => setShowAiSettings(false)}
+        onSaved={handleGeminiSaved}
+        saveKey={saveGeminiKeyPlaceholder}
+      />
+    )}
+    </>
   );
 }
