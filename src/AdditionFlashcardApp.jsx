@@ -1599,6 +1599,8 @@ export default function AdditionFlashcardApp() {
       setTimeout(() => {
         if (currentCard < cards.length - 1) {
           nextCard();
+        } else {
+          resetToMenu();
         }
       }, 1200);
     }
