@@ -1,9 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Lock, ShieldCheck } from 'lucide-react';
+import { getGeminiKeyStatus } from '../services/aiPlanner';
 
 export default function ParentAISettings({ onClose, onSaved, saveKey }) {
   const [key, setKey] = useState('');
   const [status, setStatus] = useState({ saving: false, success: false, error: null, message: null });
+  const [savedLocation, setSavedLocation] = useState(null);
+  const [savedPreview, setSavedPreview] = useState(null);
+  const [savedAt, setSavedAt] = useState(null);
+
+  useEffect(() => {
+    const existing = getGeminiKeyStatus();
+    if (existing.configured) {
+      setSavedLocation(existing.location);
+      setSavedPreview(existing.preview);
+      setSavedAt(existing.savedAt);
+      setStatus({ saving: false, success: false, error: null, message: null });
+    } else {
+      setSavedLocation(null);
+      setSavedPreview(null);
+      setSavedAt(null);
+      setStatus({ saving: false, success: false, error: null, message: null });
+    }
+  }, []);
 
   const handleSave = async () => {
     if (!key.trim()) {
@@ -20,6 +39,9 @@ export default function ParentAISettings({ onClose, onSaved, saveKey }) {
         error: null,
         message: response?.message || 'API key saved securely.',
       });
+      setSavedLocation(response?.remote ? 'remote' : 'local');
+      setSavedPreview(response?.remote ? null : key.trim().slice(0, 8));
+      setSavedAt(new Date().toISOString());
       setKey('');
       onSaved?.(response);
     } catch (error) {
@@ -75,6 +97,22 @@ export default function ParentAISettings({ onClose, onSaved, saveKey }) {
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
         </div>
+
+        {savedLocation && (
+          <div className="flex items-start gap-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
+            <ShieldCheck className="text-indigo-500" size={18} />
+            <div>
+              <p className="font-semibold">Key configured</p>
+              <p>
+                {savedLocation === 'remote'
+                  ? 'Stored via your secure proxy. '
+                  : 'Stored locally for demo use. '}
+                {savedPreview ? `Begins with ${savedPreview}. ` : ''}
+                {savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}.` : ''}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-3">
           <button

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2 } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info } from 'lucide-react';
 import ParentAISettings from './components/ParentAISettings';
 import NextUpCard from './components/NextUpCard';
 import {
@@ -912,6 +912,7 @@ const ModeSelection = ({
   geminiReady,
 }) => {
   const fileInputRef = useRef(null);
+  const [showAbout, setShowAbout] = useState(false);
   const learningInsights = useMemo(() => computeLearningPathInsights(gameState), [gameState]);
   const overrides = learningInsights.overrides || new Set();
   const metrics = learningInsights.metrics || { overallAccuracy: 0, streak: 0, avgTime: '0.0' };
@@ -1024,6 +1025,13 @@ const ModeSelection = ({
             <Wand2 className="text-indigo-600" size={20} />
             <span className="font-semibold">AI Settings</span>
           </button>
+          <button
+            onClick={() => setShowAbout((prev) => !prev)}
+            className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-amber-200"
+          >
+            <Info className="text-amber-600" size={20} />
+            <span className="font-semibold">{showAbout ? 'Hide About' : 'About & AI Guide'}</span>
+          </button>
         </div>
 
         {/* Personalized Learning Journey */}
@@ -1038,10 +1046,46 @@ const ModeSelection = ({
             <div className="bg-white border-2 border-indigo-200 rounded-2xl px-4 py-2 text-sm text-indigo-700 font-semibold shadow">
               Highest mastery badge: {learningInsights.highestMastered >= 0 ? learningInsights.highestMastered : 'None yet'}
             </div>
-          </div>
+        </div>
 
-          <div className="space-y-4">
-            {focusRecommendations.map((item) => {
+        {showAbout && (
+          <div className="bg-white rounded-3xl shadow-lg border-2 border-amber-200 p-8 mb-8">
+            <div className="flex items-center gap-3 mb-4">
+              <Info className="text-amber-600" size={24} />
+              <h3 className="text-2xl font-bold text-gray-800">About Addition Flashcards</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              Addition Flashcards blends classic fact practice with adaptive planning. Use this guide to see what is powered by AI and how to try it out.
+            </p>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                <h4 className="text-lg font-semibold text-amber-800 mb-3">Core Gameplay</h4>
+                <ul className="list-disc list-inside text-sm text-amber-900 space-y-2">
+                  <li>Choose All Numbers or Random Practice for traditional drills unlocked through <span className="font-semibold">sequential</span> and <span className="font-semibold">random</span> modes.</li>
+                  <li>Target specific fact families with the number tiles (e.g., <em>Adding with 5</em>) for focused repetition.</li>
+                  <li>Track progress, export sessions, and review insights in the Parent Dashboard.</li>
+                </ul>
+              </div>
+              <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5">
+                <h4 className="text-lg font-semibold text-indigo-800 mb-3">AI-Powered Experiences</h4>
+                <ul className="list-disc list-inside text-sm text-indigo-900 space-y-2">
+                  <li>
+                    <span className="font-semibold">AI-Driven Next Step card</span> previews the upcoming problem using the active plan queue. When a Gemini plan is available it shows the story, hints, and predicted success pulled from the AI response.
+                  </li>
+                  <li>
+                    <span className="font-semibold">Start AI Path</span> requests 10-step sessions from Gemini based on weak fact families and interests. Without a key, it falls back to the local adaptive planner so practice never stops.
+                  </li>
+                  <li>
+                    <span className="font-semibold">Interest motifs</span> transform the learner&apos;s interests into story hooks. Add interests in the panel above to send them to Gemini for motif generation (with local patterning as backup).
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {focusRecommendations.map((item) => {
               const badgeStyles = {
                 mastered: 'bg-green-100 text-green-700 border-green-300',
                 proficient: 'bg-blue-100 text-blue-700 border-blue-300',
