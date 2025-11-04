@@ -8,7 +8,6 @@ import {
   generateLocalPlan,
   TARGET_SUCCESS_BAND,
 } from './lib/aiPersonalization';
-import { resolveMotifTheme } from './lib/motifThemes';
 import {
   resolveMotifTheme,
   buildThemePacksForInterests,
