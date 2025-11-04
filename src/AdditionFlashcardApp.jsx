@@ -300,6 +300,41 @@ const NumberLine = ({ max = 18, a = 0, b = 0, showHint = false }) => {
   );
 };
 
+const GuidedCountingAnimation = ({ card, step, complete }) => {
+  if (!card) return null;
+  const total = card.a + card.b;
+  const numbers = Array.from({ length: total + 1 }, (_, i) => i);
+  const accuracyMessage = complete
+    ? `We landed on ${total}! Type it in the box.`
+    : `Let's count from ${card.a} and add ${card.b} more together.`;
+
+  return (
+    <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-2xl">
+      <div className="text-sm font-semibold text-blue-800 text-center mb-3">{accuracyMessage}</div>
+      <div className="flex flex-wrap justify-center gap-2">
+        {numbers.map(value => {
+          const isStart = value === card.a;
+          const isActive = value <= step;
+          return (
+            <div
+              key={value}
+              className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
+                isStart
+                  ? 'bg-green-200 text-green-800 border-2 border-green-500'
+                  : isActive
+                  ? 'bg-blue-500 text-white border-2 border-blue-600'
+                  : 'bg-white text-gray-500 border-2 border-blue-200'
+              }`}
+            >
+              {value}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const pickReviewDue = (adaptiveLearning) => {
   const now = Date.now();
   const queue = adaptiveLearning?.needsReview || [];
@@ -332,12 +367,14 @@ const scheduleReview = (needsReview, a, b) => {
 const ParentDashboard = ({ gameState, onClose }) => {
   const stats = gameState.statistics;
   const mastery = gameState.masteryTracking;
-  
+
   const totalProblems = Object.values(stats.problemHistory).length;
   const correctProblems = Object.values(stats.problemHistory).filter(p => p.correct).length;
-  const overallAccuracy = totalProblems > 0 ? (correctProblems / totalProblems * 100).toFixed(1) : 0;
+  const totalAttempts = stats.totalProblemsAttempted || 0;
+  const totalCorrect = stats.totalCorrect || 0;
+  const overallAccuracy = totalAttempts > 0 ? ((totalCorrect / totalAttempts) * 100).toFixed(1) : '0.0';
   
-  const avgTime = totalProblems > 0 ? stats.averageTimePerProblem.toFixed(1) : 0;
+  const avgTime = totalAttempts > 0 ? stats.averageTimePerProblem.toFixed(1) : 0;
   const todayKey = dayKey();
   const todayTotals = stats.dailyTotals?.[todayKey] || { attempts: 0, correct: 0, seconds: 0 };
   const todayMinutes = (todayTotals.seconds / 60).toFixed(1);
@@ -346,7 +383,23 @@ const ParentDashboard = ({ gameState, onClose }) => {
   // Calculate growth rate using answersTimeline (last 7 days) vs baseline 20
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const attempts7d = (stats.answersTimeline || []).filter(e => e.ts >= weekAgo).length;
-  const growthRate = ((attempts7d / 20) || 0).toFixed(1);
+  const growthRate = totalAttempts > 0 ? ((attempts7d / 20) || 0).toFixed(1) : '0.0';
+
+  const baselineDaily = 20 / 7;
+  const last7Days = Array.from({ length: 7 }, (_, idx) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - idx));
+    const key = dayKey(date.getTime());
+    const attempts = stats.dailyTotals?.[key]?.attempts || 0;
+    return {
+      label: date.toLocaleDateString(undefined, { weekday: 'short' }),
+      attempts,
+    };
+  });
+  const maxDailyAttempts = Math.max(
+    baselineDaily,
+    ...last7Days.map(day => day.attempts)
+  );
 
   // Coverage bar: percent of 100 pairs with >=1 correct
   const coverageSet = new Set(
@@ -408,6 +461,39 @@ const ParentDashboard = ({ gameState, onClose }) => {
             <div className="w-full bg-gray-200 rounded-full h-3">
               <div className="h-3 rounded-full bg-indigo-500" style={{ width: `${coveragePct}%` }} />
             </div>
+          </div>
+
+          {/* Growth Chart */}
+          <div className="bg-white p-6 rounded-xl border-2 border-orange-200">
+            <h3 className="text-xl font-bold text-orange-600 mb-4 flex items-center gap-2">
+              <Target className="text-orange-500" />
+              Growth vs Typical Pace
+            </h3>
+            <div className="h-40 flex items-end gap-3">
+              {last7Days.map((day, index) => {
+                const actualHeight = maxDailyAttempts > 0 ? (day.attempts / maxDailyAttempts) * 100 : 0;
+                const baselineHeight = maxDailyAttempts > 0 ? (baselineDaily / maxDailyAttempts) * 100 : 0;
+                return (
+                  <div key={`${day.label}-${index}`} className="flex-1 flex flex-col items-center">
+                    <div className="relative w-full flex-1 bg-orange-100 rounded-t-xl overflow-hidden">
+                      <div
+                        className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-orange-500 to-orange-400"
+                        style={{ height: `${actualHeight}%` }}
+                      />
+                      <div
+                        className="absolute inset-x-0 border-t-2 border-dashed border-orange-700"
+                        style={{ bottom: `${baselineHeight}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 text-xs font-semibold text-orange-700">{day.label}</div>
+                    <div className="text-[10px] text-orange-500">{day.attempts} attempts</div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-orange-600 mt-3 text-center">
+              Dashed line marks a typical daily pace (~{baselineDaily.toFixed(1)} attempts).
+            </p>
           </div>
 
           {/* Learning Efficiency */}
@@ -667,6 +753,15 @@ export default function AdditionFlashcardApp() {
   const [showHint, setShowHint] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
   const [problemStartTime, setProblemStartTime] = useState(null);
+  const [guidedHelp, setGuidedHelp] = useState({ active: false, step: 0, complete: false });
+  const [checkpointState, setCheckpointState] = useState({
+    active: false,
+    reviewCards: [],
+    cardsData: {},
+    totalAttempts: 0,
+    totalCorrect: 0,
+    status: 'idle',
+  });
   const inputRef = useRef(null);
 
   // Save game state whenever it changes
@@ -690,6 +785,7 @@ export default function AdditionFlashcardApp() {
       setProblemStartTime(Date.now());
       setAttemptCount(0);
       setShowHint(false);
+      setGuidedHelp({ active: false, step: 0, complete: false });
       // Focus the input when card changes
       setTimeout(() => {
         inputRef.current?.focus();
@@ -703,6 +799,93 @@ export default function AdditionFlashcardApp() {
       setShowHint(true);
     }
   }, [attemptCount, feedback]);
+
+  // activate guided help after 30 seconds without response submission
+  useEffect(() => {
+    if (!cards[currentCard] || !problemStartTime) return;
+    if (attemptCount > 0 || feedback === 'correct') return;
+
+    const timer = setTimeout(() => {
+      setShowHint(true);
+      setGuidedHelp({ active: true, step: 0, complete: false });
+    }, 30000);
+
+    return () => clearTimeout(timer);
+  }, [cards, currentCard, problemStartTime, attemptCount, feedback]);
+
+  // drive the guided counting animation once it is active
+  useEffect(() => {
+    if (!guidedHelp.active || guidedHelp.complete) return;
+    const card = cards[currentCard];
+    if (!card) return;
+    const total = card.a + card.b;
+    if (total <= 0) return;
+
+    const interval = setInterval(() => {
+      setGuidedHelp(prev => {
+        if (!prev.active) return prev;
+        const nextStep = Math.min(prev.step + 1, total);
+        return {
+          active: true,
+          step: nextStep,
+          complete: nextStep >= total,
+        };
+      });
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard]);
+
+  // respond to checkpoint review pass/fail outcomes
+  useEffect(() => {
+    if (checkpointState.status === 'passed') {
+      setGameState(prev => ({
+        ...prev,
+        adaptiveLearning: {
+          ...prev.adaptiveLearning,
+          checkpoint: { pending: false, inProgress: false },
+        },
+      }));
+      setCards(prevCards => prevCards.slice(checkpointState.reviewCards.length));
+      setCurrentCard(0);
+      setUserAnswer('');
+      setFeedback(null);
+      setShowHint(false);
+      setAttemptCount(0);
+      setGuidedHelp({ active: false, step: 0, complete: false });
+      setCheckpointState({
+        active: false,
+        reviewCards: [],
+        cardsData: {},
+        totalAttempts: 0,
+        totalCorrect: 0,
+        status: 'idle',
+      });
+    } else if (checkpointState.status === 'failed') {
+      const repeatCards = checkpointState.reviewCards.filter(card => {
+        const entry = checkpointState.cardsData[`${card.a}+${card.b}`];
+        if (!entry) return true;
+        const accuracy = entry.attempts > 0 ? entry.correct / entry.attempts : 0;
+        return accuracy < 0.8;
+      });
+      const fallback = repeatCards.length > 0 ? repeatCards : checkpointState.reviewCards;
+      setCards(prevCards => [...fallback, ...prevCards.slice(checkpointState.reviewCards.length)]);
+      setCurrentCard(0);
+      setUserAnswer('');
+      setFeedback(null);
+      setShowHint(false);
+      setAttemptCount(0);
+      setGuidedHelp({ active: false, step: 0, complete: false });
+      setCheckpointState({
+        active: true,
+        reviewCards: fallback,
+        cardsData: {},
+        totalAttempts: 0,
+        totalCorrect: 0,
+        status: 'active',
+      });
+    }
+  }, [checkpointState.status, checkpointState.reviewCards, checkpointState.cardsData, cards]);
 
   const generateCards = () => {
     let generatedDeck = [];
@@ -769,6 +952,15 @@ export default function AdditionFlashcardApp() {
 
     setCards(generatedDeck);
     setCurrentCard(0);
+    setGuidedHelp({ active: false, step: 0, complete: false });
+    setCheckpointState({
+      active: false,
+      reviewCards: [],
+      cardsData: {},
+      totalAttempts: 0,
+      totalCorrect: 0,
+      status: 'idle',
+    });
   };
 
   const updateMasteryTracking = (number, correct) => {
@@ -940,7 +1132,45 @@ export default function AdditionFlashcardApp() {
         adaptiveLearning,
       };
     });
-    
+
+    setCheckpointState(prevState => {
+      if (!prevState.active || !card.review) return prevState;
+      const key = `${card.a}+${card.b}`;
+      const current = prevState.cardsData[key] || { attempts: 0, correct: 0 };
+      const updatedEntry = {
+        attempts: current.attempts + 1,
+        correct: current.correct + (correct ? 1 : 0),
+      };
+      const cardsData = {
+        ...prevState.cardsData,
+        [key]: updatedEntry,
+      };
+
+      const totals = Object.values(cardsData).reduce(
+        (acc, entry) => ({
+          attempts: acc.attempts + entry.attempts,
+          correct: acc.correct + entry.correct,
+        }),
+        { attempts: 0, correct: 0 }
+      );
+
+      const haveAllCards = Object.keys(cardsData).length === prevState.reviewCards.length;
+      const allClearedOnce = haveAllCards && Object.values(cardsData).every(entry => entry.correct > 0);
+      let status = prevState.status;
+      if (haveAllCards && allClearedOnce) {
+        const accuracy = totals.attempts > 0 ? totals.correct / totals.attempts : 0;
+        status = accuracy >= 0.8 ? 'passed' : 'failed';
+      }
+
+      return {
+        ...prevState,
+        cardsData,
+        totalAttempts: totals.attempts,
+        totalCorrect: totals.correct,
+        status,
+      };
+    });
+
     updateMasteryTracking(card.a, correct);
     updateMasteryTracking(card.b, correct);
   };
@@ -957,6 +1187,16 @@ export default function AdditionFlashcardApp() {
     setFeedback(null);
     setShowCelebration(false);
     setCards([]);
+    setGuidedHelp({ active: false, step: 0, complete: false });
+    setProblemStartTime(null);
+    setCheckpointState({
+      active: false,
+      reviewCards: [],
+      cardsData: {},
+      totalAttempts: 0,
+      totalCorrect: 0,
+      status: 'idle',
+    });
   };
 
   const exportGameState = () => {
@@ -985,18 +1225,19 @@ export default function AdditionFlashcardApp() {
 
   const checkAnswer = () => {
     if (!cards[currentCard]) return;
-    
+
     const timeSpent = problemStartTime ? Date.now() - problemStartTime : 0;
     const correct = parseInt(userAnswer, 10) === cards[currentCard].answer;
-    
+
     setFeedback(correct ? 'correct' : 'incorrect');
     setAttemptCount(prev => prev + 1);
-    
+
     recordProblemAttempt(cards[currentCard], correct, timeSpent);
-    
+
     if (correct) {
       setShowCelebration(true);
       setTimeout(() => setShowCelebration(false), 1200);
+      setGuidedHelp({ active: false, step: 0, complete: false });
       setTimeout(() => {
         if (currentCard < cards.length - 1) {
           nextCard();
@@ -1034,12 +1275,21 @@ export default function AdditionFlashcardApp() {
     });
 
     if (injectedReviewCards) {
+      setCheckpointState({
+        active: true,
+        reviewCards: injectedReviewCards,
+        cardsData: {},
+        totalAttempts: 0,
+        totalCorrect: 0,
+        status: 'active',
+      });
       setCards(prevCards => [...injectedReviewCards, ...prevCards]);
       setCurrentCard(0);
       setUserAnswer('');
       setFeedback(null);
       setShowHint(false);
       setAttemptCount(0);
+      setGuidedHelp({ active: false, step: 0, complete: false });
       return;
     }
 
@@ -1049,6 +1299,7 @@ export default function AdditionFlashcardApp() {
       setFeedback(null);
       setShowHint(false);
       setAttemptCount(0);
+      setGuidedHelp({ active: false, step: 0, complete: false });
     }
   };
 
@@ -1059,6 +1310,7 @@ export default function AdditionFlashcardApp() {
       setFeedback(null);
       setShowHint(false);
       setAttemptCount(0);
+      setGuidedHelp({ active: false, step: 0, complete: false });
     }
   };
 
@@ -1067,6 +1319,12 @@ export default function AdditionFlashcardApp() {
       checkAnswer();
     }
   };
+
+  const checkpointActive = checkpointState.active && checkpointState.reviewCards.length > 0;
+  const checkpointAccuracy = checkpointState.totalAttempts > 0
+    ? Math.round((checkpointState.totalCorrect / checkpointState.totalAttempts) * 100)
+    : 0;
+  const checkpointCleared = Object.values(checkpointState.cardsData || {}).filter(entry => entry.correct > 0).length;
 
   if (showDashboard) {
     return <ParentDashboard gameState={gameState} onClose={() => setShowDashboard(false)} />;
@@ -1089,8 +1347,23 @@ export default function AdditionFlashcardApp() {
   if (!card) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-2xl font-bold text-gray-800 mb-4">Loading cards...</div>
+        <div className="text-center bg-white rounded-3xl shadow-xl p-10 max-w-md">
+          <div className="text-3xl font-bold text-gray-800 mb-2">All caught up! 🎉</div>
+          <p className="text-gray-600 mb-6">You've cleared every checkpoint card. Choose the next adventure or replay this mode.</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={resetToMenu}
+              className="px-5 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+            >
+              Back to Mode Select
+            </button>
+            <button
+              onClick={generateCards}
+              className="px-5 py-3 rounded-xl bg-white border-2 border-blue-300 text-blue-700 font-semibold hover:bg-blue-50 transition"
+            >
+              Practice Again
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1163,6 +1436,16 @@ export default function AdditionFlashcardApp() {
           {card.review && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-1">REVIEW</span>}
         </h2>
 
+        {checkpointActive && (
+          <div className="mb-4 p-4 bg-purple-50 border-2 border-purple-200 rounded-2xl text-center text-purple-800">
+            <div className="font-semibold text-sm">Checkpoint review in progress</div>
+            <div className="text-xs mt-1">Aim for at least 80% accuracy to continue. Accuracy: {checkpointAccuracy}%</div>
+            <div className="mt-2 text-xs text-purple-600">
+              {checkpointState.totalAttempts} attempts · {checkpointCleared}/{checkpointState.reviewCards.length} cards cleared
+            </div>
+          </div>
+        )}
+
         {/* Hint System */}
         {showHint && !feedback && (
           <div className="mb-4 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-xl">
@@ -1228,6 +1511,10 @@ export default function AdditionFlashcardApp() {
           <NumberLine a={card.a} b={card.b} showHint={true} />
         )}
 
+        {guidedHelp.active && (
+          <GuidedCountingAnimation card={card} step={guidedHelp.step} complete={guidedHelp.complete} />
+        )}
+
         {/* Controls */}
         <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
           <button
@@ -1242,7 +1529,15 @@ export default function AdditionFlashcardApp() {
           </button>
 
           <button
-            onClick={() => { setUserAnswer(''); setFeedback(null); setShowHint(false); setAttemptCount(0); inputRef.current?.focus(); }}
+            onClick={() => {
+              setUserAnswer('');
+              setFeedback(null);
+              setShowHint(false);
+              setAttemptCount(0);
+              setGuidedHelp({ active: false, step: 0, complete: false });
+              setProblemStartTime(Date.now());
+              inputRef.current?.focus();
+            }}
             className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow bg-white border hover:bg-gray-50"
           >
             <RotateCcw size={18} />
