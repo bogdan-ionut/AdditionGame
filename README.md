@@ -2,6 +2,26 @@
 
 An addition game for my 3.5 year old boy.
 
+## Local development
+
+This repository now uses [Vite](https://vitejs.dev/) for the React build. To run the app locally:
+
+1. Install dependencies with `npm install`.
+2. Start the dev server with `npm run dev` and open the printed URL.
+3. Create a production bundle with `npm run build` (artifacts land in `dist/`).
+4. Preview the production build with `npm run preview` if needed.
+
+## GitHub Pages deployment
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds the app and publishes the contents of `dist/` to the `gh-pages` branch on every push to `main`. Enable **Settings → Pages → Deploy from branch → gh-pages** to serve the latest build at `https://<username>.github.io/AdditionGame/`.
+
+## Data export folders
+
+Two folders are available for saving JSON exports or other assets:
+
+- `public/exports/` – bundled with the static site so files are publicly accessible.
+- `data/exports/` – version-controlled alongside the source but not exposed at runtime.
+
 ## Feature Implementation Status
 
 ### Implemented

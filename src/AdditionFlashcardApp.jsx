@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target } from 'lucide-react';
 
 // --- Helpers & Migration (Sprint 2) ---
@@ -663,7 +663,7 @@ const ParentDashboard = ({ gameState, onClose }) => {
             </div>
             
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-xl border-2 border-purple-200">
-              <div className="text-purple-600 text-sm font-medium mb-1">Today's Minutes</div>
+                <div className="text-purple-600 text-sm font-medium mb-1">Today&apos;s Minutes</div>
               <div className="text-3xl font-bold text-purple-700">{todayMinutes}</div>
               <div className="text-xs text-purple-600 mt-1">Target: &lt;20 min</div>
             </div>
@@ -1128,11 +1128,11 @@ export default function AdditionFlashcardApp() {
     }
   }, [gameState]);
 
-  useEffect(() => {
-    if (gameMode) {
-      generateCards();
-    }
-  }, [gameMode, focusNumber]);
+    useEffect(() => {
+      if (gameMode) {
+        generateCards();
+      }
+    }, [gameMode, generateCards]);
 
   // Start session timer when card changes
   useEffect(() => {
@@ -1242,7 +1242,7 @@ export default function AdditionFlashcardApp() {
     }
   }, [checkpointState.status, checkpointState.reviewCards, checkpointState.cardsData, cards]);
 
-  const generateCards = () => {
+  const generateCards = useCallback(() => {
     let generatedDeck = [];
     setGameState((prev) => {
       const { reviewCards, remaining } = pickReviewDue(prev.adaptiveLearning);
@@ -1316,7 +1316,7 @@ export default function AdditionFlashcardApp() {
       totalCorrect: 0,
       status: 'idle',
     });
-  };
+  }, [gameMode, focusNumber]);
 
   const updateMasteryTracking = (number, correct) => {
     setGameState(prev => {
@@ -1704,7 +1704,7 @@ export default function AdditionFlashcardApp() {
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex items-center justify-center">
         <div className="text-center bg-white rounded-3xl shadow-xl p-10 max-w-md">
           <div className="text-3xl font-bold text-gray-800 mb-2">All caught up! 🎉</div>
-          <p className="text-gray-600 mb-6">You've cleared every checkpoint card. Choose the next adventure or replay this mode.</p>
+            <p className="text-gray-600 mb-6">You&apos;ve cleared every checkpoint card. Choose the next adventure or replay this mode.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={resetToMenu}
