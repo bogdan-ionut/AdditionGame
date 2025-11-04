@@ -33,6 +33,7 @@ export function ensurePersonalization(raw = {}, studentInfo = {}) {
     interestMotifs: Array.isArray(raw?.learnerProfile?.interestMotifs) ? raw.learnerProfile.interestMotifs : [],
     interestThemePacks: sanitizeThemePacks(raw?.learnerProfile?.interestThemePacks || []),
     motifsUpdatedAt: raw?.learnerProfile?.motifsUpdatedAt ?? null,
+    interestThemeDebug: raw?.learnerProfile?.interestThemeDebug || null,
   };
 
   return {

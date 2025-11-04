@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info } from 'lucide-react';
 import ParentAISettings from './components/ParentAISettings';
 import NextUpCard from './components/NextUpCard';
+import ThemeDebugPanel from './components/ThemeDebugPanel';
 import {
   ensurePersonalization,
   updatePersonalizationAfterAttempt,
@@ -82,6 +83,7 @@ const createDefaultGameState = () => ({
       interestMotifs: [],
       interestThemePacks: [],
       motifsUpdatedAt: null,
+      interestThemeDebug: null,
     },
     mastery: {},
     planQueue: [],
@@ -952,6 +954,7 @@ const ModeSelection = ({
   onStartAiPath,
   onRefreshPlan,
   geminiReady,
+  themeDebug,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1241,6 +1244,19 @@ const ModeSelection = ({
                       {pack.label}
                     </span>
                   ))}
+                </div>
+              )}
+              {themeDebug && (
+                <div className="text-[11px] font-semibold text-indigo-500">
+                  Final model: {themeDebug.final?.model || '—'} · On-device: {themeDebug.onDevice?.available
+                    ? themeDebug.onDevice.error
+                      ? 'error'
+                      : themeDebug.onDevice.returnedCount > 0
+                        ? 'generated packs'
+                        : themeDebug.onDevice.attempted
+                          ? 'no packs'
+                          : 'available'
+                    : 'unavailable'}
                 </div>
               )}
             </div>
@@ -2255,6 +2271,7 @@ export default function AdditionFlashcardApp() {
   const learnerMotifs = learnerProfile.interestMotifs;
   const learnerInterests = learnerProfile.interests;
   const learnerThemePacks = learnerProfile.interestThemePacks;
+  const themeDebug = learnerProfile.interestThemeDebug;
 
   const motifHints = useMemo(() => {
     const sources = [];
@@ -2308,6 +2325,7 @@ export default function AdditionFlashcardApp() {
           onStartAiPath={startAiPath}
           onRefreshPlan={() => ensureAiPlan(true)}
           geminiReady={geminiReady}
+          themeDebug={themeDebug}
         />
         {showAiSettings && (
           <ParentAISettings
@@ -2361,7 +2379,7 @@ export default function AdditionFlashcardApp() {
           <ArrowLeft size={18} />
           <span>Menu</span>
         </button>
-        
+
         <div className="flex items-center gap-4">
           <button
             onClick={() => setShowDashboard(true)}
@@ -2370,13 +2388,20 @@ export default function AdditionFlashcardApp() {
             <BarChart3 size={18} className="text-blue-600" />
             <span>Dashboard</span>
           </button>
-          
+
           <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow">
             <Trophy className="text-yellow-500" />
             <span className="text-lg font-bold">{sessionCorrect} / {sessionTotal}</span>
           </div>
         </div>
       </div>
+
+      <ThemeDebugPanel
+        activeTheme={activeMotifTheme}
+        motifHints={motifHints}
+        themePacks={Array.isArray(learnerThemePacks) ? learnerThemePacks : []}
+        debug={themeDebug}
+      />
 
       {/* Mode indicator */}
       <div className="mb-2 flex items-center gap-2">

@@ -499,31 +499,53 @@ async function readTextFromAiResult(result) {
   return fragments.join('\n').trim();
 }
 
-export async function maybeGenerateOnDeviceThemePacks(interests = []) {
-  if (typeof window === 'undefined') return [];
-  const ai = window.ai;
-  if (!ai?.assistant?.create || !Array.isArray(interests) || !interests.length) {
-    return [];
+export async function maybeGenerateOnDeviceThemePacks(interests = [], options = {}) {
+  const { includeDebug = false } = options ?? {};
+
+  const debug = {
+    available: typeof window !== 'undefined' && !!window.ai?.assistant?.create,
+    attempted: false,
+    model: 'gemini-nano-banana',
+    error: null,
+    rawText: null,
+    parsedCount: 0,
+    returnedCount: 0,
+    timestamp: Date.now(),
+  };
+
+  const finish = (packs = []) => {
+    debug.returnedCount = Array.isArray(packs) ? packs.length : 0;
+    return includeDebug ? { packs, debug } : packs;
+  };
+
+  if (!debug.available || !Array.isArray(interests) || !interests.length) {
+    return finish([]);
   }
 
+  const ai = window.ai;
   let session;
   try {
-    session = await ai.assistant.create({ model: 'gemini-nano-banana' });
+    debug.attempted = true;
+    session = await ai.assistant.create({ model: debug.model });
     const prompt =
       'Generate JSON {"packs": [ {"key": string, "label": string, "matchers": string[], "icons": string[], "swatches": [{"bg": string, "border": string, "text": string, "shadow": string}]} ] } for kid counting app. Interests: ' +
       JSON.stringify(interests.slice(0, 6));
     const result = await session.prompt(prompt);
     const text = await readTextFromAiResult(result);
+    debug.rawText = typeof text === 'string' ? text : '';
     const packs = parsePacksFromAiResponse(text);
-    return sanitizeThemePacks(
+    debug.parsedCount = Array.isArray(packs) ? packs.length : 0;
+    const sanitized = sanitizeThemePacks(
       packs.map((pack) => ({
         ...pack,
-        source: pack.source || 'gemini-nano-banana',
+        source: pack.source || debug.model,
       })),
     );
+    return finish(sanitized);
   } catch (error) {
+    debug.error = error instanceof Error ? error.message : String(error);
     console.warn('Gemini Nano theme pack generation failed', error);
-    return [];
+    return finish([]);
   } finally {
     try {
       await session?.destroy?.();
