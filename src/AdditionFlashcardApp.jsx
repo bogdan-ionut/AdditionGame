@@ -10,6 +10,11 @@ import {
   TARGET_SUCCESS_BAND,
 } from './lib/aiPersonalization';
 import {
+  resolveMotifTheme,
+  buildThemePacksForInterests,
+  maybeGenerateOnDeviceThemePacks,
+} from './lib/motifThemes';
+import {
   saveGeminiKeyPlaceholder,
   requestGeminiPlan,
   requestInterestMotifs,
@@ -27,7 +32,7 @@ const dayKey = (ts = Date.now()) => {
 };
 
 const createDefaultGameState = () => ({
-  version: "1.3.0",
+  version: "1.4.0",
   studentInfo: {
     name: "",
     age: 3.5,
@@ -80,6 +85,7 @@ const createDefaultGameState = () => ({
       ageYears: null,
       interests: [],
       interestMotifs: [],
+      interestThemePacks: [],
       motifsUpdatedAt: null,
     },
     mastery: {},
@@ -119,7 +125,7 @@ const migrateGameState = (raw) => {
   if (!Array.isArray(gs.adaptiveLearning.needsReview)) gs.adaptiveLearning.needsReview = [];
   if (!Array.isArray(gs.adaptiveLearning.recentAttempts)) gs.adaptiveLearning.recentAttempts = [];
   if (!gs.adaptiveLearning.checkpoint) gs.adaptiveLearning.checkpoint = { pending: false, inProgress: false };
-    gs.version = '1.3.0';
+    gs.version = '1.4.0';
   return gs;
 };
 
@@ -337,9 +343,43 @@ const computeLearningPathInsights = (gameState) => {
   };
 };
 
-// Beautiful SVG object renderer for each digit
-const CountableObjects = ({ digit, type }) => {
-  const renderObject = (index) => {
+// Beautiful SVG object renderer for each digit with optional motif theming
+const CountableObjects = ({ digit, type, motifTheme = null }) => {
+  const renderMotifObject = (index) => {
+    const jitterX = Math.sin(index * 2.5) * 4;
+    const jitterY = Math.cos(index * 3.2) * 4;
+    const rotation = Math.sin(index * 1.7) * 12;
+    const swatch = motifTheme?.swatches?.[index % (motifTheme.swatches?.length || 1)] || {
+      bg: '#eef2ff',
+      border: '#6366f1',
+      text: '#312e81',
+      shadow: '0 10px 22px rgba(99,102,241,0.15)',
+    };
+    const iconSet = motifTheme?.icons?.length ? motifTheme.icons : ['⭐'];
+    const icon = digit === 0 ? '0' : iconSet[index % iconSet.length];
+
+    return (
+      <div
+        key={`${motifTheme?.key || 'motif'}-${index}`}
+        className="w-16 h-16 rounded-2xl border-2 flex items-center justify-center text-3xl font-semibold transition-transform duration-200 ease-out"
+        style={{
+          transform: `translate(${jitterX}px, ${jitterY}px) rotate(${rotation}deg)`,
+          background: swatch.bg,
+          borderColor: swatch.border,
+          color: swatch.text,
+          boxShadow: swatch.shadow,
+        }}
+        aria-label={digit === 0 ? 'Zero placeholder' : `${motifTheme?.label || 'themed'} counter`}
+      >
+        <span aria-hidden="true">{icon}</span>
+        <span className="sr-only">
+          {digit === 0 ? 'Zero objects placeholder' : `${motifTheme?.label || 'Themed'} object`}
+        </span>
+      </div>
+    );
+  };
+
+  const renderDefaultObject = (index) => {
     const jitterX = (Math.sin(index * 2.5) * 4);
     const jitterY = (Math.cos(index * 3.2) * 4);
     const rotation = (Math.sin(index * 1.7) * 15);
@@ -503,6 +543,13 @@ const CountableObjects = ({ digit, type }) => {
       default:
         return null;
     }
+  };
+
+  const renderObject = (index) => {
+    if (motifTheme) {
+      return renderMotifObject(index);
+    }
+    return renderDefaultObject(index);
   };
 
   const cols = digit <= 3 ? digit : Math.ceil(Math.sqrt(digit));
@@ -1187,6 +1234,20 @@ const ModeSelection = ({
                   Motifs: {aiPersonalization.learnerProfile.interestMotifs.slice(0, 6).join(', ')}
                 </div>
               )}
+              {aiPersonalization?.learnerProfile?.interestThemePacks?.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-indigo-600">
+                  <span className="font-semibold">Themes:</span>
+                  {aiPersonalization.learnerProfile.interestThemePacks.slice(0, 4).map((pack) => (
+                    <span
+                      key={pack.key}
+                      className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 font-semibold text-indigo-700 shadow-sm"
+                    >
+                      <span aria-hidden="true">{pack.icons?.[0] || '⭐'}</span>
+                      {pack.label}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm">
               <NextUpCard
@@ -1351,7 +1412,12 @@ export default function AdditionFlashcardApp() {
     if (interests.length === 0) {
       setGameState((prev) => {
         const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-        if (!ai.learnerProfile.interestMotifs?.length) return prev;
+        if (
+          !ai.learnerProfile.interestMotifs?.length &&
+          !ai.learnerProfile.interestThemePacks?.length
+        ) {
+          return prev;
+        }
         return {
           ...prev,
           aiPersonalization: {
@@ -1359,6 +1425,7 @@ export default function AdditionFlashcardApp() {
             learnerProfile: {
               ...ai.learnerProfile,
               interestMotifs: [],
+              interestThemePacks: [],
               motifsUpdatedAt: Date.now(),
             },
           },
@@ -1366,29 +1433,44 @@ export default function AdditionFlashcardApp() {
       });
       return;
     }
+
+    let motifsFromAi = [];
+    let themePacksFromAi = [];
+    let motifModel = null;
+
     try {
-      const motifs = await requestInterestMotifs(interests);
-      if (Array.isArray(motifs) && motifs.length) {
-        setGameState((prev) => {
-          const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-          return {
-            ...prev,
-            aiPersonalization: {
-              ...ai,
-              learnerProfile: {
-                ...ai.learnerProfile,
-                interestMotifs: motifs,
-                motifsUpdatedAt: Date.now(),
-              },
-            },
-          };
-        });
-        return;
+      const payload = await requestInterestMotifs(interests);
+      if (payload) {
+        motifsFromAi = Array.isArray(payload.motifs) ? payload.motifs : [];
+        themePacksFromAi = Array.isArray(payload.themePacks) ? payload.themePacks : [];
+        motifModel = payload.model || null;
       }
     } catch (error) {
       console.warn('Interest motif request failed, using fallback motifs.', error);
     }
-    const fallback = deriveMotifsFromInterests(interests);
+
+    if (!themePacksFromAi.length) {
+      const onDevicePacks = await maybeGenerateOnDeviceThemePacks(interests);
+      if (onDevicePacks.length) {
+        themePacksFromAi = onDevicePacks;
+        if (!motifModel) motifModel = 'gemini-nano-banana';
+      }
+    }
+
+    const motifsToStore = motifsFromAi.length
+      ? motifsFromAi
+      : deriveMotifsFromInterests(interests);
+
+    const themePacksToStore = buildThemePacksForInterests(interests, {
+      basePacks: themePacksFromAi,
+      motifHints: motifsToStore,
+    }).map((pack) => {
+      if (pack.source === 'ai' && motifModel) {
+        return { ...pack, source: motifModel };
+      }
+      return pack;
+    });
+
     setGameState((prev) => {
       const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
       return {
@@ -1397,7 +1479,8 @@ export default function AdditionFlashcardApp() {
           ...ai,
           learnerProfile: {
             ...ai.learnerProfile,
-            interestMotifs: fallback,
+            interestMotifs: motifsToStore,
+            interestThemePacks: themePacksToStore,
             motifsUpdatedAt: Date.now(),
           },
         },
@@ -2312,6 +2395,24 @@ export default function AdditionFlashcardApp() {
 
   const card = cards[currentCard];
 
+  const learnerMotifs = aiPersonalization.learnerProfile?.interestMotifs || [];
+  const learnerInterests = aiPersonalization.learnerProfile?.interests || [];
+  const learnerThemePacks = aiPersonalization.learnerProfile?.interestThemePacks || [];
+
+  const motifHints = useMemo(() => {
+    const sources = [];
+    if (card?.aiPlanItem?.motif) sources.push(card.aiPlanItem.motif);
+    if (card?.aiPlanItem?.theme) sources.push(card.aiPlanItem.theme);
+    sources.push(...learnerMotifs);
+    sources.push(...learnerInterests);
+    return sources;
+  }, [card?.aiPlanItem?.motif, card?.aiPlanItem?.theme, learnerMotifs, learnerInterests]);
+
+  const activeMotifTheme = useMemo(
+    () => resolveMotifTheme({ motifHints, themePacks: learnerThemePacks }),
+    [motifHints, learnerThemePacks],
+  );
+
   if (!card) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex items-center justify-center">
@@ -2419,6 +2520,13 @@ export default function AdditionFlashcardApp() {
           </div>
         )}
 
+        {activeMotifTheme && (
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-indigo-600">
+            <Wand2 size={16} className="text-indigo-500" />
+            Counting with {activeMotifTheme.label}
+          </div>
+        )}
+
         {checkpointActive && (
           <div className="mb-4 p-4 bg-purple-50 border-2 border-purple-200 rounded-2xl text-center text-purple-800">
             <div className="font-semibold text-sm">Checkpoint review in progress</div>
@@ -2454,7 +2562,7 @@ export default function AdditionFlashcardApp() {
           {/* First operand */}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-mono font-bold text-gray-900 mb-2">{card.a}</div>
-            <CountableObjects digit={card.a} type={card.a} />
+            <CountableObjects digit={card.a} type={card.a} motifTheme={activeMotifTheme} />
           </div>
 
           {/* Plus sign */}
@@ -2463,7 +2571,7 @@ export default function AdditionFlashcardApp() {
           {/* Second operand */}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-mono font-bold text-gray-900 mb-2">{card.b}</div>
-            <CountableObjects digit={card.b} type={card.b} />
+            <CountableObjects digit={card.b} type={card.b} motifTheme={activeMotifTheme} />
           </div>
 
           {/* Equals sign */}
