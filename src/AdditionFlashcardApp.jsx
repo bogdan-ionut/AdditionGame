@@ -913,12 +913,14 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
         {/* Profile Section */}
         <div className="flex justify-center items-center gap-4 mb-8">
             <div className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg border-2 border-gray-200">
-                <User className="text-gray-600" size={20} />
+                {gameState.studentInfo.gender === 'male' ? (
+                  <User className="text-blue-500" size={20} />
+                ) : (
+                  <UserRound className="text-pink-500" size={20} />
+                )}
                 <span className="font-semibold">{gameState.studentInfo.name}</span>
                 <span className="text-gray-500">|</span>
                 <span className="text-sm">{gameState.studentInfo.age} years old</span>
-                <span className="text-gray-500">|</span>
-                {gameState.studentInfo.gender === 'male' ? <User size={20} className="text-blue-500" /> : <UserRound size={20} className="text-pink-500" />}
             </div>
             <button
                 onClick={onLogout}
@@ -1135,6 +1137,7 @@ export default function AdditionFlashcardApp() {
   const [cards, setCards] = useState([]);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  const [showCountTogether, setShowCountTogether] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
   const [problemStartTime, setProblemStartTime] = useState(null);
   const [guidedHelp, setGuidedHelp] = useState({ active: false, step: 0, complete: false });
@@ -1311,7 +1314,7 @@ export default function AdditionFlashcardApp() {
 
   // drive the guided counting animation once it is active
   useEffect(() => {
-    if (!guidedHelp.active || guidedHelp.complete) return;
+    if (!guidedHelp.active || guidedHelp.complete || showCountTogether) return;
     const card = cards[currentCard];
     if (!card) return;
     const total = card.a + card.b;
@@ -1996,11 +1999,25 @@ export default function AdditionFlashcardApp() {
           </button>
 
           <button
-            onClick={() => setShowHint((s) => !s)}
+            onClick={() => {
+              setShowHint((s) => !s);
+              setShowCountTogether((s) => !s);
+            }}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${showHint ? 'bg-yellow-100 border-yellow-300' : 'bg-white border hover:bg-gray-50'}`}
           >
             💡 Hint
           </button>
+          {showCountTogether && (
+            <button
+              onClick={() => {
+                setGuidedHelp({ active: true, step: 0, complete: false });
+                setShowCountTogether(false);
+              }}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Count Together
+            </button>
+          )}
         </div>
       </div>
 
