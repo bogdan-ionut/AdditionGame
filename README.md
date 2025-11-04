@@ -6,24 +6,25 @@ An addition game for my 3.5 year old boy.
 
 ### Implemented
 - **Real-time dashboard metrics** covering today's minutes from `dailyTotals`, average time per problem, focus vs. waste, struggle zones, mastery by number, and 7-day growth rate vs. baseline. The parent dashboard pulls these metrics directly from saved session data.
+- **Dashboard accuracy** now calculated as total-correct divided by total-attempts, ensuring the headline metric matches in-session accuracy tracking.
 - **Coverage tracking** for the full (0..9)×(0..9) grid, marking a problem pair as covered once it has at least one correct answer.
 - **Mastery gates** for the "Adding with _n_" modes, which unlock only after the previous number reaches the mastered threshold.
 - **Adaptive difficulty** that shifts between easy/medium/hard based on streaks and recent timing data.
 - **Spaced review queue** with 10m → 1h → 1d intervals and a REVIEW badge on due cards.
 - **Lightweight checkpoints** every 10 problems that inject up to five low-accuracy review items.
+- **Checkpoint tests** that require an 80% accuracy pass gate before resuming the main deck, with automatic retries on a miss.
 - **Automatic hinting** after two incorrect attempts, including the interactive number-line helper.
+- **Struggle detector & auto-help** with difficulty downgrades, auto hints after repeat misses, a 30-second inactivity trigger, and guided counting animation support.
 - **WASTE detection** for too-fast/too-slow answers and for patterned inputs delivered in under three seconds.
 - **Progress portability** via JSON import/export plus automatic persistence to `localStorage`.
 - **State migration/versioning** through `migrateGameState` (current schema `1.2.0`).
 - **Countable SVG objects** and celebration overlays for each digit from 0–9.
 - **Fully individualized learning paths** that analyze mastery data, streaks, and per-number accuracy to unlock AI-curated focus targets even if the previous number is not yet mastered.
 - **Knowledge vs. age grade insights** that translate progress into grade-band language and highlight alignment gaps in the parent dashboard.
+- **Growth tracking** that pairs the 7-day growth multiplier with a comparative chart against a typical practice baseline.
 
 ### Partially Implemented
-- **Dashboard accuracy** currently measures the share of unique problems with a correct answer, not total-correct divided by total-attempts.
-- **Struggle detector & auto-help** provides hints after repeated mistakes and can lower difficulty, but it lacks the "30s without response" trigger and the guided counting animation.
-- **Growth tracking** surfaces a 7-day growth multiplier but has no comparative chart against typical performance.
-- **Checkpoint tests** only inject review problems; there is no pass/fail gate (e.g., 80% mastery) before resuming the main deck.
+- _None at this time._
 
 ### Not Implemented
 - **Multi-modal supports** such as TTS audio, drag-and-drop number lines, or instructional videos.
