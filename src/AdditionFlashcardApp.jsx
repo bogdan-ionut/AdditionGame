@@ -2235,25 +2235,34 @@ export default function AdditionFlashcardApp() {
 
   if (!gameMode) {
     return (
-      <ModeSelection
-        onSelectMode={handleModeSelect}
-        gameState={gameState}
-        onShowDashboard={() => setShowDashboard(true)}
-        onExport={exportGameState}
-        onImport={importGameState}
-        onLogout={handleLogout}
-        onOpenAiSettings={() => setShowAiSettings(true)}
-        aiPersonalization={aiPersonalization}
-        aiPreviewItem={aiPreviewItem}
-        aiPlanStatus={aiPlanStatus}
-        interestDraft={interestDraft}
-        onInterestDraftChange={setInterestDraft}
-        onAddInterest={handleAddInterest}
-        onRemoveInterest={handleRemoveInterest}
-        onStartAiPath={startAiPath}
-        onRefreshPlan={() => ensureAiPlan(true)}
-        geminiReady={geminiReady}
-      />
+      <>
+        <ModeSelection
+          onSelectMode={handleModeSelect}
+          gameState={gameState}
+          onShowDashboard={() => setShowDashboard(true)}
+          onExport={exportGameState}
+          onImport={importGameState}
+          onLogout={handleLogout}
+          onOpenAiSettings={() => setShowAiSettings(true)}
+          aiPersonalization={aiPersonalization}
+          aiPreviewItem={aiPreviewItem}
+          aiPlanStatus={aiPlanStatus}
+          interestDraft={interestDraft}
+          onInterestDraftChange={setInterestDraft}
+          onAddInterest={handleAddInterest}
+          onRemoveInterest={handleRemoveInterest}
+          onStartAiPath={startAiPath}
+          onRefreshPlan={() => ensureAiPlan(true)}
+          geminiReady={geminiReady}
+        />
+        {showAiSettings && (
+          <ParentAISettings
+            onClose={() => setShowAiSettings(false)}
+            onSaved={handleGeminiSaved}
+            saveKey={saveGeminiKeyPlaceholder}
+          />
+        )}
+      </>
     );
   }
 
