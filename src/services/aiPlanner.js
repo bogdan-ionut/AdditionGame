@@ -1,6 +1,8 @@
 const GEMINI_STATUS_KEY = 'additionFlashcardsGeminiKeyStatus';
 const GEMINI_SHADOW_KEY = 'additionFlashcardsGeminiKeyShadow';
 
+const GEMINI_STATUS_UPDATED_AT_KEY = 'additionFlashcardsGeminiKeySavedAt';
+
 const getApiBase = () => {
   const base = import.meta.env?.VITE_AI_PROXY_URL;
   if (!base) return '/api';
@@ -27,6 +29,7 @@ export async function saveGeminiKeyPlaceholder(geminiKey) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(GEMINI_STATUS_KEY, 'remote');
       localStorage.removeItem(GEMINI_SHADOW_KEY);
+      localStorage.setItem(GEMINI_STATUS_UPDATED_AT_KEY, new Date().toISOString());
     }
     return { remote: true, message: 'Gemini key stored on your secure proxy.' };
   } catch (error) {
@@ -34,9 +37,43 @@ export async function saveGeminiKeyPlaceholder(geminiKey) {
     if (typeof window !== 'undefined') {
       localStorage.setItem(GEMINI_STATUS_KEY, 'local');
       localStorage.setItem(GEMINI_SHADOW_KEY, btoa(geminiKey.slice(0, 8)));
+      localStorage.setItem(GEMINI_STATUS_UPDATED_AT_KEY, new Date().toISOString());
     }
     return { remote: false, message: 'Saved locally for demo purposes. Configure the edge proxy to secure it server-side.' };
   }
+}
+
+export function getGeminiKeyStatus() {
+  if (typeof window === 'undefined') {
+    return { configured: false, location: null, preview: null, savedAt: null };
+  }
+
+  const location = localStorage.getItem(GEMINI_STATUS_KEY);
+  if (!location) {
+    return { configured: false, location: null, preview: null, savedAt: null };
+  }
+
+  let preview = null;
+  if (location === 'local') {
+    const encoded = localStorage.getItem(GEMINI_SHADOW_KEY);
+    if (encoded && typeof atob === 'function') {
+      try {
+        preview = atob(encoded);
+      } catch (error) {
+        console.warn('Unable to decode Gemini key preview', error);
+        preview = null;
+      }
+    }
+  }
+
+  const savedAt = localStorage.getItem(GEMINI_STATUS_UPDATED_AT_KEY);
+
+  return {
+    configured: true,
+    location,
+    preview,
+    savedAt,
+  };
 }
 
 export async function requestGeminiPlan(payload) {
