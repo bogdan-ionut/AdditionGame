@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User } from 'lucide-react';
+import Register from './Register';
 
 // --- Helpers & Migration (Sprint 2) ---
 const dayKey = (ts = Date.now()) => {
@@ -15,6 +16,7 @@ const createDefaultGameState = () => ({
   studentInfo: {
     name: "",
     age: 3.5,
+    gender: "",
     startDate: new Date().toISOString(),
   },
   statistics: {
@@ -854,7 +856,7 @@ const ParentDashboard = ({ gameState, onClose }) => {
 };
 
 // Mode selection screen (with Mastery Gates)
-const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onImport }) => {
+const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onImport, onLogout }) => {
   const fileInputRef = useRef(null);
   const learningInsights = useMemo(() => computeLearningPathInsights(gameState), [gameState]);
   const overrides = learningInsights.overrides || new Set();
@@ -906,6 +908,24 @@ const ModeSelection = ({ onSelectMode, gameState, onShowDashboard, onExport, onI
         <div className="text-center mb-8">
           <h1 className="text-5xl font-bold text-gray-800 mb-4">Addition Flashcards</h1>
           <p className="text-xl text-gray-600">AI-Powered Mastery Learning</p>
+        </div>
+
+        {/* Profile Section */}
+        <div className="flex justify-center items-center gap-4 mb-8">
+            <div className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg border-2 border-gray-200">
+                <User className="text-gray-600" size={20} />
+                <span className="font-semibold">{gameState.studentInfo.name}</span>
+                <span className="text-gray-500">|</span>
+                <span className="text-sm">{gameState.studentInfo.age} years old</span>
+                <span className="text-gray-500">|</span>
+                <span className="text-sm">{gameState.studentInfo.gender}</span>
+            </div>
+            <button
+                onClick={onLogout}
+                className="px-4 py-2 bg-red-500 text-white rounded-xl shadow-lg hover:bg-red-600 transition-all"
+            >
+                Logout
+            </button>
         </div>
 
         {/* Action Buttons */}
@@ -1120,9 +1140,34 @@ export default function AdditionFlashcardApp() {
   const inputRef = useRef(null);
   const gameStateRef = useRef(gameState);
 
+  const { studentInfo } = gameState;
+
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  const handleRegister = (userInfo) => {
+    setGameState(prev => ({
+      ...prev,
+      studentInfo: {
+        ...prev.studentInfo,
+        ...userInfo,
+        startDate: new Date().toISOString(),
+      },
+    }));
+  };
+
+  const handleLogout = () => {
+    setGameState(prev => ({
+      ...prev,
+      studentInfo: {
+        name: "",
+        age: 3.5,
+        gender: "",
+        startDate: new Date().toISOString(),
+      },
+    }));
+  };
 
   const generateCards = useCallback(() => {
     const currentState = gameStateRef.current;
@@ -1568,16 +1613,24 @@ export default function AdditionFlashcardApp() {
     setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
-  const importGameState = (data) => {
-    try {
-      if (data.version && data.studentInfo && data.statistics && data.masteryTracking) {
-        setGameState(migrateGameState(data));
-        alert('Progress imported successfully!');
-      } else {
-        alert('Invalid game state format!');
-      }
-    } catch (error) {
-      alert('Error importing progress!');
+  const importGameState = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          if (data.version && data.studentInfo && data.statistics && data.masteryTracking) {
+            setGameState(migrateGameState(data));
+            alert('Progress imported successfully!');
+          } else {
+            alert('Invalid game state format!');
+          }
+        } catch (error) {
+          alert('Error importing progress!');
+        }
+      };
+      reader.readAsText(file);
     }
   };
 
@@ -1686,6 +1739,10 @@ export default function AdditionFlashcardApp() {
     : 0;
   const checkpointCleared = Object.values(checkpointState.cardsData || {}).filter(entry => entry.correct > 0).length;
 
+  if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
+    return <Register onRegister={handleRegister} onImport={importGameState} />;
+  }
+
   if (showDashboard) {
     return <ParentDashboard gameState={gameState} onClose={() => setShowDashboard(false)} />;
   }
@@ -1698,6 +1755,7 @@ export default function AdditionFlashcardApp() {
         onShowDashboard={() => setShowDashboard(true)}
         onExport={exportGameState}
         onImport={importGameState}
+        onLogout={handleLogout}
       />
     );
   }
