@@ -41,7 +41,7 @@ const Register = ({ onRegister, onImport }) => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Child's Name
+              Child&apos;s Name
             </label>
             <input
               type="text"
