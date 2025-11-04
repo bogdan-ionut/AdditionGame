@@ -10,6 +10,11 @@ import {
 } from './lib/aiPersonalization';
 import { resolveMotifTheme } from './lib/motifThemes';
 import {
+  resolveMotifTheme,
+  buildThemePacksForInterests,
+  maybeGenerateOnDeviceThemePacks,
+} from './lib/motifThemes';
+import {
   saveGeminiKeyPlaceholder,
   requestGeminiPlan,
   isGeminiConfigured,
