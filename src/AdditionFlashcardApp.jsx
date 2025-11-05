@@ -3,6 +3,7 @@ import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, 
 import ParentAISettings from './components/ParentAISettings';
 import NextUpCard from './components/NextUpCard';
 import ThemeDebugPanel from './components/ThemeDebugPanel';
+import RemotePlannerPanel from './components/RemotePlannerPanel';
 import {
   ensurePersonalization,
   updatePersonalizationAfterAttempt,
@@ -1270,7 +1271,19 @@ const ModeSelection = ({
                 configured={geminiReady}
                 onStartAiPath={onStartAiPath}
                 onRefreshPlan={onRefreshPlan}
+                isFallback={Boolean(aiPlanStatus?.meta?.used_model && aiPlanStatus.meta.used_model !== 'gemini-2.5-pro')}
+                usedModel={aiPlanStatus?.meta?.used_model}
+                rateLimited={aiPlanStatus?.rateLimited}
+                retryIn={aiPlanStatus?.retryIn}
               />
+              {aiPlanStatus?.rateLimited && (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 text-sm">
+                  <div className="font-medium">Atingem limita temporară a API-ului.</div>
+                  <div>
+                    Reîncearcă în <b>{aiPlanStatus.retryIn}s</b>. Între timp, folosim <i>planul local</i>.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1382,7 +1395,14 @@ export default function AdditionFlashcardApp() {
   const [attemptCount, setAttemptCount] = useState(0);
   const [problemStartTime, setProblemStartTime] = useState(null);
   const [guidedHelp, setGuidedHelp] = useState({ active: false, step: 0, complete: false });
-  const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
+  const [aiPlanStatus, setAiPlanStatus] = useState({
+    loading: false,
+    error: null,
+    source: null,
+    rateLimited: false,
+    retryIn: 0,
+    meta: null,
+  });
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [interestDraft, setInterestDraft] = useState('');
@@ -1396,6 +1416,7 @@ export default function AdditionFlashcardApp() {
     status: 'idle',
   });
   const inputRef = useRef(null);
+  const aiPlanStatusRef = useRef(aiPlanStatus);
   const gameStateRef = useRef(gameState);
 
   const { studentInfo } = gameState;
@@ -1418,6 +1439,36 @@ export default function AdditionFlashcardApp() {
     aiPersonalization,
     setGameState,
   });
+
+  useEffect(() => {
+    aiPlanStatusRef.current = aiPlanStatus;
+  }, [aiPlanStatus]);
+
+  useEffect(() => {
+    if (!aiPlanStatus.rateLimited) return;
+    if (aiPlanStatus.retryIn <= 0) {
+      setAiPlanStatus((prev) => {
+        if (!prev.rateLimited) return prev;
+        return { ...prev, rateLimited: false, retryIn: 0 };
+      });
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setAiPlanStatus((prev) => {
+        if (!prev.rateLimited) return prev;
+        const nextRetry = Math.max(prev.retryIn - 1, 0);
+        if (nextRetry <= 0) {
+          return { ...prev, rateLimited: false, retryIn: 0 };
+        }
+        return { ...prev, retryIn: nextRetry };
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [aiPlanStatus.rateLimited, aiPlanStatus.retryIn]);
 
   useEffect(() => {
     gameStateRef.current = gameState;
@@ -1449,10 +1500,20 @@ export default function AdditionFlashcardApp() {
       learner_name: current.studentInfo?.name || 'Learner',
     };
 
-    if (geminiConfigured) {
+    if (geminiConfigured && !aiPlanStatusRef.current?.rateLimited) {
       try {
-        const remotePlan = await requestGeminiPlan(payload);
-        if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
+        const remoteResult = await requestGeminiPlan(payload);
+        if (remoteResult?.rateLimited) {
+          setAiPlanStatus((prev) => ({
+            ...prev,
+            loading: false,
+            error: null,
+            rateLimited: true,
+            retryIn: remoteResult.retryInSeconds,
+          }));
+        } else if (remoteResult?.plan && Array.isArray(remoteResult.plan.items) && remoteResult.plan.items.length) {
+          const remotePlan = remoteResult.plan;
+          const usedModel = remoteResult?.meta?.used_model || remotePlan.source || 'gemini-2.5-pro';
           const normalized = remotePlan.items.map((item, index) => ({
             id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
             a: item.a ?? item.operands?.[0] ?? 0,
@@ -1464,7 +1525,7 @@ export default function AdditionFlashcardApp() {
             hints: item.hints ?? [],
             praise: item.praise || '',
             microStory: remotePlan.microStory || remotePlan.story || '',
-            source: remotePlan.source || 'gemini-2.5-pro',
+            source: usedModel,
             planId: remotePlan.planId || `gemini-${Date.now()}`,
           }));
 
@@ -1486,7 +1547,14 @@ export default function AdditionFlashcardApp() {
             };
           });
 
-          setAiPlanStatus({ loading: false, error: null, source: normalized[0]?.source || 'gemini-2.5-pro' });
+          setAiPlanStatus({
+            loading: false,
+            error: null,
+            source: usedModel,
+            rateLimited: false,
+            retryIn: 0,
+            meta: remoteResult?.meta || null,
+          });
           return { reused: false, appended: normalized, plan: remotePlan };
         }
       } catch (error) {
@@ -1521,7 +1589,13 @@ export default function AdditionFlashcardApp() {
       };
     });
 
-    setAiPlanStatus({ loading: false, error: null, source: fallbackPlan.source });
+    setAiPlanStatus((prev) => ({
+      ...prev,
+      loading: false,
+      error: null,
+      source: fallbackPlan.source,
+      meta: null,
+    }));
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
   }, [geminiReady]);
 
@@ -1628,6 +1702,10 @@ export default function AdditionFlashcardApp() {
     setShowHint(false);
     setAttemptCount(0);
     setGuidedHelp({ active: false, step: 0, complete: false });
+  }, [ensureAiPlan]);
+
+  const onRefreshPlan = useCallback(() => {
+    ensureAiPlan(true);
   }, [ensureAiPlan]);
 
   const handleGeminiSaved = useCallback(() => {
@@ -1762,11 +1840,19 @@ export default function AdditionFlashcardApp() {
   useEffect(() => {
     if (gameMode === 'ai-path') return;
     if (aiPlanStatus.loading) return;
+    if (aiPlanStatus.rateLimited) return;
     const queueLength = aiPersonalization.planQueue?.length || 0;
     if (queueLength < 4 && (aiPersonalization.learnerProfile?.interests?.length || queueLength === 0)) {
       ensureAiPlan(false);
     }
-  }, [aiPlanStatus.loading, aiPersonalization.planQueue, aiPersonalization.learnerProfile?.interests?.length, ensureAiPlan, gameMode]);
+  }, [
+    aiPlanStatus.loading,
+    aiPlanStatus.rateLimited,
+    aiPersonalization.planQueue,
+    aiPersonalization.learnerProfile?.interests?.length,
+    ensureAiPlan,
+    gameMode,
+  ]);
 
   // Start session timer when card changes
   useEffect(() => {
@@ -2327,7 +2413,7 @@ export default function AdditionFlashcardApp() {
           onAddInterest={handleAddInterest}
           onRemoveInterest={handleRemoveInterest}
           onStartAiPath={startAiPath}
-          onRefreshPlan={() => ensureAiPlan(true)}
+          onRefreshPlan={onRefreshPlan}
           geminiReady={geminiReady}
           themeDebug={themeDebug}
         />
@@ -2406,6 +2492,7 @@ export default function AdditionFlashcardApp() {
         themePacks={Array.isArray(learnerThemePacks) ? learnerThemePacks : []}
         debug={themeDebug}
       />
+      <RemotePlannerPanel />
 
       {/* Mode indicator */}
       <div className="mb-2 flex items-center gap-2">
