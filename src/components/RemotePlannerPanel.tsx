@@ -29,8 +29,7 @@ export function RemotePlannerPanel() {
 
       {status === "rate-limited" && (
         <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 text-sm">
-          <div className="font-medium">Atingem limita temporară a API-ului.</div>
-          <div>Reîncearcă în <b>{retryIn}s</b>. Între timp, folosim <i>planul local</i>.</div>
+          <div className="font-medium">Rate limit — retrying in {retryIn}s (using local assets).</div>
         </div>
       )}
 

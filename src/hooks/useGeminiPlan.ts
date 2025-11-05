@@ -7,13 +7,14 @@ type Status = "idle" | "loading" | "ok" | "rate-limited" | "error" | "disabled";
 type Meta = { used_model?: string; fallbackFrom?: string } | undefined;
 type ErrorState = any;
 
-export function useAiPlan() {
+export function useGeminiPlan() {
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<any>(null);
   const [meta, setMeta] = useState<Meta>(undefined);
   const [error, setError] = useState<ErrorState>(null);
   const [retryIn, setRetryIn] = useState(0);
   const timerRef = useRef<number | null>(null);
+  const lastPromptRef = useRef<string | null>(null);
 
   const checkStatus = useCallback(async () => {
     const runtime = await getAiRuntime();
@@ -27,7 +28,13 @@ export function useAiPlan() {
   }, [checkStatus]);
 
   useEffect(() => {
-    if (status !== "rate-limited" || retryIn <= 0) return;
+    if (status !== "rate-limited" || retryIn <= 0) {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
     timerRef.current = window.setInterval(() => {
       setRetryIn((current) => (current > 1 ? current - 1 : 0));
     }, 1000);
@@ -39,14 +46,9 @@ export function useAiPlan() {
     };
   }, [status, retryIn]);
 
-  useEffect(() => {
-    if (status === "rate-limited" && retryIn === 0 && timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, [status, retryIn]);
+  const requestPlan = useCallback(async (prompt: string) => {
+    lastPromptRef.current = prompt;
 
-  async function requestPlan(prompt: string) {
     const runtime = await getAiRuntime();
     if (!runtime.aiEnabled) {
       setStatus("disabled");
@@ -64,6 +66,7 @@ export function useAiPlan() {
         setData(result.data);
         setMeta(result.meta);
         setStatus("ok");
+        setRetryIn(0);
       } else if (result.rateLimited) {
         setRetryIn(result.retryInSeconds);
         setStatus("rate-limited");
@@ -75,7 +78,13 @@ export function useAiPlan() {
       setError(e);
       setStatus("error");
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (status === "rate-limited" && retryIn === 0 && lastPromptRef.current) {
+      requestPlan(lastPromptRef.current);
+    }
+  }, [status, retryIn, requestPlan]);
 
   return {
     status,

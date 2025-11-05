@@ -1,7 +1,8 @@
 import { getAiRuntime } from "../lib/ai/runtime";
+import { withSlash } from "../lib/utils";
 
-const BATCH_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/batch/";
-const STEP_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/step/";
+const BATCH_ENDPOINT = "https://ionutbogdan.ro/api/sprites/create_job/";
+const STEP_ENDPOINT = "https://ionutbogdan.ro/api/sprites/step/";
 
 export type SpriteRow = {
   interest: string;
@@ -67,7 +68,7 @@ function toSnapshot(payload: SpriteJobPayload, fallback?: SpriteJobSnapshot | nu
 }
 
 async function request(endpoint: string, body: Record<string, unknown>) {
-  const res = await fetch(endpoint, {
+  const res = await fetch(withSlash(endpoint), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

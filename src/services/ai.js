@@ -1,19 +1,10 @@
 // src/services/ai.js
 import { getAiRuntime } from '../lib/ai/runtime';
-
-const getApiBase = () => {
-  let base = import.meta.env?.VITE_AI_PROXY_URL;
-  if (typeof window !== 'undefined' && window.localStorage) {
-    const override = window.localStorage.getItem('VITE_AI_PROXY_URL');
-    if (override) base = override;
-  }
-  if (!base) return '/api';
-  return base.endsWith('/') ? base.slice(0, -1) : base;
-};
+import { withSlash } from '../lib/utils';
 
 export async function saveApiKey(apiKey) {
-  const base = getApiBase();
-  const response = await fetch(`${base}/gemini/svsm/entry/key/`, {
+  const url = withSlash('https://ionutbogdan.ro/api/ai/key/');
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -35,13 +26,13 @@ export async function requestPlan(prompt) {
     throw new Error('AI features are not configured.');
   }
 
-  const base = getApiBase();
   const payload = {
     prompt,
     model: runtime.planningModel,
   };
 
-  const response = await fetch(`${base}/gemini/plan`, {
+  const url = withSlash('https://ionutbogdan.ro/api/gemini/plan/');
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
