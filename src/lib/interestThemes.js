@@ -129,7 +129,7 @@ function themeMatchesTerm(theme, term) {
 function createProceduralInterestTheme(interest = '') {
   const slug = slugify(interest) || `interest-${Math.random().toString(36).slice(2)}`;
   const label = `${titleCase(interest || slug)} Adventure`;
-  const matchers = Array.from(new Set([slug, ...(interest.split(/\\s|-/).map((part) => part.trim().toLowerCase()).filter(Boolean))]));
+  const matchers = Array.from(new Set([slug, ...(interest.split(/\s|-/g).map((part) => part.trim().toLowerCase()).filter(Boolean))]));
   const icons = chooseIconsForInterest(interest);
   const swatches = createProceduralSwatches(slug);
   return { key: `interest-${slug}`, label, matchers, icons, swatches, source: 'fallback-procedural' };
