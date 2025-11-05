@@ -21,38 +21,44 @@ import {
 import { getAiRuntime } from "./lib/ai/runtime";
 
 
-const SpriteGenerationCard = ({ jobStatus, onCancel }) => {
-  if (!jobStatus) return null;
-
-  const total = jobStatus.job.done + jobStatus.job.pending;
-  const progress = total > 0 ? (jobStatus.job.done / total) * 100 : 0;
+const SpriteGenerationCard = ({ jobStatus, onCancel, spriteRateLimit, retryIn }) => {
+  if (!jobStatus && spriteRateLimit === 0) return null;
 
   let message = "";
-  if (jobStatus._meta.retry_in_seconds) {
-    message = `Rate limit—retrying in ${jobStatus._meta.retry_in_seconds}s. You can keep playing.`;
-  } else if (jobStatus._meta.error) {
+  if (spriteRateLimit > 0) {
+    message = `Rate limit — retrying in ${retryIn}s. You can keep playing.`;
+  } else if (jobStatus?._meta?.error) {
     message = "Network hiccup—retrying…";
-  } else if (jobStatus.job.pending === 0) {
+  } else if (jobStatus?.job?.pending === 0) {
     message = "All sprites ready ✅";
   }
+
+  const total = jobStatus?.job ? jobStatus.job.done + jobStatus.job.pending : 0;
+  const progress = total > 0 ? (jobStatus.job.done / total) * 100 : 0;
 
   return (
     <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sky-800 text-sm">
       <div className="flex justify-between items-center mb-2">
         <span className="font-semibold">Sprite Generation</span>
-        <button onClick={onCancel} className="text-sky-600 hover:text-sky-800">
-          <X size={16} />
-        </button>
+        {onCancel && (
+          <button onClick={onCancel} className="text-sky-600 hover:text-sky-800">
+            <X size={16} />
+          </button>
+        )}
       </div>
-      <div className="w-full bg-sky-200 rounded-full h-2.5">
-        <div
-          className="bg-sky-600 h-2.5 rounded-full"
-          style={{ width: `${progress}%` }}
-        ></div>
-      </div>
-      <div className="text-center mt-2 text-xs">
-        {jobStatus.job.done}/{total} sprites ready
-      </div>
+      {jobStatus && (
+        <>
+          <div className="w-full bg-sky-200 rounded-full h-2.5">
+            <div
+              className="bg-sky-600 h-2.5 rounded-full"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          <div className="text-center mt-2 text-xs">
+            {jobStatus.job.done}/{total} sprites ready
+          </div>
+        </>
+      )}
       {message && <div className="text-center mt-1 text-xs">{message}</div>}
     </div>
   );
@@ -104,6 +110,8 @@ export default function AdditionFlashcardApp() {
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [spriteRateLimit, setSpriteRateLimit] = useState(0);
+  const [spriteRetryIn, setSpriteRetryIn] = useState(0);
+  const spriteRetryTimerRef = useRef(null);
   const [spriteJobState, setSpriteJobState] = useState(null);
   const [spriteJobId, setSpriteJobId] = useState(() => localStorage.getItem("ai.spriteJobId"));
   const [spritePoller, setSpritePoller] = useState(null);
@@ -236,6 +244,39 @@ export default function AdditionFlashcardApp() {
     ensureAiPlan(true);
   }, [ensureAiPlan]);
 
+  const handleGenerateSprites = useCallback(async () => {
+    const runtime = await getAiRuntime();
+    if (!runtime.aiEnabled) return;
+
+    const interests = aiPersonalization.learnerProfile.interestThemes ?? [];
+    if (!interests.length) return;
+
+    try {
+      const { jobId } = await createSpriteJob(runtime.spriteModel, interests);
+      setSpriteJobId(jobId);
+      localStorage.setItem("ai.spriteJobId", jobId);
+    } catch (error) {
+      if (error instanceof SpriteRateLimitError) {
+        setSpriteRateLimit(error.retryAfter);
+        setSpriteRetryIn(error.retryAfter);
+      } else {
+        console.error("Sprite job creation failed:", error);
+      }
+    }
+  }, [aiPersonalization.learnerProfile.interestThemes]);
+
+  useEffect(() => {
+    if (spriteRateLimit > 0 && spriteRetryIn > 0) {
+      spriteRetryTimerRef.current = setTimeout(() => {
+        setSpriteRetryIn(val => val - 1);
+      }, 1000);
+    } else if (spriteRateLimit > 0 && spriteRetryIn === 0) {
+      setSpriteRateLimit(0);
+      handleGenerateSprites();
+    }
+    return () => clearTimeout(spriteRetryTimerRef.current);
+  }, [spriteRateLimit, spriteRetryIn, handleGenerateSprites]);
+
   const activeInterestTheme = useMemo(
     () => resolveInterestTheme({
       interests: aiPersonalization.learnerProfile.interests,
@@ -270,9 +311,11 @@ export default function AdditionFlashcardApp() {
           onInterestDraftChange={setInterestDraft}
           onAddInterest={handleAddInterest}
           onRemoveInterest={handleRemoveInterest}
+
           onStartAiPath={startAiPath}
           onRefreshPlan={onRefreshPlan}
           spriteRateLimit={spriteRateLimit}
+          spriteRetryIn={spriteRetryIn}
           spriteJobState={spriteJobState}
           onGenerateSprites={handleGenerateSprites}
           jobStatus={jobStatus}
