@@ -19,6 +19,7 @@ import {
   SpriteJobPoller,
 } from "./lib/ai/spriteGeneration";
 import { getAiRuntime } from "./lib/ai/runtime";
+import { createDefaultGameState, migrateGameState } from './lib/utils';
 
 
 const SpriteGenerationCard = ({ jobStatus, onCancel, spriteRateLimit, retryIn }) => {
