@@ -3,6 +3,7 @@ import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, 
 import ParentAISettings from './components/ParentAISettings';
 import NextUpCard from './components/NextUpCard';
 import CountGrid from './components/CountGrid';
+import ModeSelection from './components/ModeSelection';
 import {
   ensurePersonalization,
   updatePersonalizationAfterAttempt,

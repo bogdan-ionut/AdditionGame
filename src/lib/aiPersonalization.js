@@ -1,5 +1,5 @@
 // src/lib/aiPersonalization.js
-import { sanitizeInterestThemes } from './interestThemes';
+import { sanitizeInterestThemes } from "./interestThemes";
 
 export const TARGET_SUCCESS_BAND = {
   low: 0.65,
