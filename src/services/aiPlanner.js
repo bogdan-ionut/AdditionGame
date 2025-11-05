@@ -4,7 +4,13 @@ const GEMINI_SHADOW_KEY = 'additionFlashcardsGeminiKeyShadow';
 const GEMINI_STATUS_UPDATED_AT_KEY = 'additionFlashcardsGeminiKeySavedAt';
 
 const getApiBase = () => {
-  const base = import.meta.env?.VITE_AI_PROXY_URL;
+  let base = import.meta.env?.VITE_AI_PROXY_URL;
+
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const override = window.localStorage.getItem('VITE_AI_PROXY_URL');
+    if (override) base = override;
+  }
+
   if (!base) return '/api';
   return base.endsWith('/') ? base.slice(0, -1) : base;
 };
@@ -17,14 +23,18 @@ export function isGeminiConfigured() {
 export async function saveGeminiKeyPlaceholder(geminiKey) {
   const base = getApiBase();
   try {
-    const response = await fetch(`${base}/parent/saveGeminiKey`, {
+    const response = await fetch(`${base}/gemini/svsm/entry/key`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ geminiKey }),
+      body: JSON.stringify({ apiKey: geminiKey }),
     });
     if (!response.ok) {
       throw new Error(`Server responded with ${response.status}`);
+    }
+    const result = await response.json().catch(() => ({ ok: true }));
+    if (result?.ok === false) {
+      throw new Error(result?.error || 'Gemini key storage failed');
     }
     if (typeof window !== 'undefined') {
       localStorage.setItem(GEMINI_STATUS_KEY, 'remote');
@@ -79,7 +89,7 @@ export function getGeminiKeyStatus() {
 export async function requestGeminiPlan(payload) {
   const base = getApiBase();
   try {
-    const response = await fetch(`${base}/ai/plan`, {
+    const response = await fetch(`${base}/gemini/plan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -99,7 +109,7 @@ export async function requestGeminiPlan(payload) {
 export async function requestInterestMotifs(interests) {
   const base = getApiBase();
   try {
-    const response = await fetch(`${base}/interests/pack`, {
+    const response = await fetch(`${base}/interests/packs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
