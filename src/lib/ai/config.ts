@@ -1,37 +1,60 @@
 // src/lib/ai/config.ts
+import { AiModelConfig } from './models';
 
-export type AiConfigV1 = {
-  planningModel: string | null;
-  spriteModel: string | null;
-  savedAt: string;
-};
+const LS_PLANNING_MODEL = 'alpha.ai.model.planning';
+const LS_SPRITE_MODEL = 'alpha.ai.model.sprites';
 
-const LS_AI_CONFIG = "ai.config.v1";
+// --- Migration from legacy keys ---
+const LS_LEGACY_AI_CONFIG = 'ai.config.v1';
 
-export function loadAiConfig(): AiConfigV1 {
-  if (typeof window === 'undefined') {
-    return { planningModel: null, spriteModel: 'gemini-1.5-flash-image', savedAt: new Date().toISOString() };
-  }
-  const raw = localStorage.getItem(LS_AI_CONFIG);
-  if (raw) {
+function migrateLegacyConfig() {
+  // Transfer main AI config
+  const legacyConfigRaw = localStorage.getItem(LS_LEGACY_AI_CONFIG);
+  if (legacyConfigRaw) {
     try {
-      const parsed = JSON.parse(raw);
-      return {
-        ...parsed,
-        spriteModel: parsed.spriteModel ?? 'gemini-1.5-flash-image',
-      };
+      const parsed = JSON.parse(legacyConfigRaw);
+      if (parsed.planningModel) {
+        localStorage.setItem(LS_PLANNING_MODEL, parsed.planningModel);
+      }
+      if (parsed.spriteModel) {
+        localStorage.setItem(LS_SPRITE_MODEL, parsed.spriteModel);
+      }
     } catch (e) {
-      console.warn('Invalid AI config in localStorage', e);
+      console.warn('Could not parse legacy AI config for migration', e);
     }
+    localStorage.removeItem(LS_LEGACY_AI_CONFIG);
   }
-  return { planningModel: null, spriteModel: 'gemini-1.5-flash-image', savedAt: new Date().toISOString() };
+
+  // Clear other legacy keys
+}
+// --- End Migration ---
+
+export function loadAiConfig(): AiModelConfig {
+  if (typeof window === 'undefined') {
+    return { planning: null, sprites: null };
+  }
+
+  // Always run migration check on load
+  migrateLegacyConfig();
+
+  return {
+    planning: localStorage.getItem(LS_PLANNING_MODEL) as AiModelConfig['planning'] || null,
+    sprites: localStorage.getItem(LS_SPRITE_MODEL) as AiModelConfig['sprites'] || null,
+  };
 }
 
-export function saveAiConfig(cfg: Partial<AiConfigV1>) {
-  const cur = loadAiConfig();
-  const merged = { ...cur, ...cfg, savedAt: new Date().toISOString() };
+export function saveAiConfig(cfg: AiModelConfig) {
   if (typeof window !== 'undefined') {
-    localStorage.setItem(LS_AI_CONFIG, JSON.stringify(merged));
+    if (cfg.planning) {
+      localStorage.setItem(LS_PLANNING_MODEL, cfg.planning);
+    } else {
+      localStorage.removeItem(LS_PLANNING_MODEL);
+    }
+    if (cfg.sprites) {
+      localStorage.setItem(LS_SPRITE_MODEL, cfg.sprites);
+    } else {
+      localStorage.removeItem(LS_SPRITE_MODEL);
+    }
   }
-  return merged;
+  return cfg;
 }
