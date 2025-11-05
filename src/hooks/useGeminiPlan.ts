@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchGeminiPlan } from "../api/geminiPlan";
 
-const DEFAULT_MODEL = "gemini-2.5-pro";
+type Status = "idle" | "loading" | "ok" | "rate-limited" | "error";
+
+type Meta = { used_model?: string; fallbackFrom?: string } | undefined;
+
+type ErrorState = any;
 
 export function useGeminiPlan() {
-  const [status, setStatus] = useState("idle");
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const [status, setStatus] = useState<Status>("idle");
+  const [data, setData] = useState<any>(null);
+  const [meta, setMeta] = useState<Meta>(undefined);
+  const [error, setError] = useState<ErrorState>(null);
   const [retryIn, setRetryIn] = useState(0);
-  const [meta, setMeta] = useState(undefined);
-
-  const timerRef = useRef(null);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (status !== "rate-limited" || retryIn <= 0) return;
 
     timerRef.current = window.setInterval(() => {
-      setRetryIn((current) => (current > 0 ? current - 1 : 0));
+      setRetryIn((current) => (current > 1 ? current - 1 : 0));
     }, 1000);
 
     return () => {
@@ -34,29 +37,28 @@ export function useGeminiPlan() {
     }
   }, [status, retryIn]);
 
-  async function requestPlan(prompt, model = DEFAULT_MODEL) {
+  async function requestPlan(prompt: string) {
     setStatus("loading");
     setError(null);
     setMeta(undefined);
 
-    const result = await fetchGeminiPlan({ prompt, model, allowFallback: true });
+    const result = await fetchGeminiPlan(prompt, "gemini-2.5-pro");
 
     if (result.ok) {
       setData(result.data);
       setMeta(result.meta);
       setStatus("ok");
-      return result.data;
+      return;
     }
 
     if (result.rateLimited) {
       setRetryIn(result.retryInSeconds);
       setStatus("rate-limited");
-      return null;
+      return;
     }
 
     setError(result);
     setStatus("error");
-    return null;
   }
 
   return {
@@ -66,7 +68,7 @@ export function useGeminiPlan() {
     retryIn,
     meta,
     requestPlan,
-    isFallback: Boolean(meta?.used_model && meta.used_model !== DEFAULT_MODEL),
+    isFallback: Boolean(meta?.used_model && meta.used_model !== "gemini-2.5-pro"),
   };
 }
 
