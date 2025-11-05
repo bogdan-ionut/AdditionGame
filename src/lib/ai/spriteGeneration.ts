@@ -1,13 +1,15 @@
 // src/lib/ai/spriteGeneration.ts
-import { getAiRuntime } from "./runtime";
 import { spriteRegistry } from "../SpriteRegistry";
+import type { SpriteModel } from "./models";
 
 const API_BASE_URL = "https://ionutbogdan.ro/api/sprites";
 
-export async function createSpriteJob(interests: string[]): Promise<string | null> {
-  const { aiEnabled, spriteModel } = await getAiRuntime();
-  if (!aiEnabled || !spriteModel) {
-    console.warn("AI is not enabled or sprite model is not set.");
+export async function createSpriteJob(
+  interests: string[],
+  model: SpriteModel | null
+): Promise<string | null> {
+  if (!model) {
+    console.warn("Sprite model is not set.");
     return null;
   }
 
@@ -15,7 +17,7 @@ export async function createSpriteJob(interests: string[]): Promise<string | nul
     const response = await fetch(`${API_BASE_URL}/create_job`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interests, model: spriteModel }),
+      body: JSON.stringify({ interests, model }),
     });
 
     if (!response.ok) {

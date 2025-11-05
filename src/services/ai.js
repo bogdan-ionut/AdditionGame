@@ -1,5 +1,6 @@
 // src/services/ai.js
 import { getAiRuntime } from '../lib/ai/runtime';
+import { TARGET_SUCCESS_BAND } from '../lib/aiPersonalization';
 
 const getApiBase = () => {
   let base = import.meta.env?.VITE_AI_PROXY_URL;
@@ -29,18 +30,33 @@ export async function saveApiKey(apiKey) {
   return { success: true, message: 'API key stored securely on server.' };
 }
 
-export async function requestPlan(prompt) {
+export async function requestPlan({ personalization }) {
   const runtime = await getAiRuntime();
   if (!runtime.aiEnabled || !runtime.planningModel) {
     throw new Error('AI features are not configured.');
   }
 
-  const base = getApiBase();
+  const weakFamilies = Object.entries(personalization.mastery || {})
+    .map(([key, node]) => ({
+      key,
+      sum: Number(key.replace('sum=', '')),
+      predicted: node?.alpha ? node.alpha / (node.alpha + node.beta) : TARGET_SUCCESS_BAND.midpoint,
+    }))
+    .sort((a, b) => a.predicted - b.predicted)
+    .slice(0, 3)
+    .map((entry) => `sum=${entry.sum}`);
+
   const payload = {
-    prompt,
     model: runtime.planningModel,
+    plan_for: personalization.learnerProfile.learnerId,
+    target_success: personalization.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint,
+    weak_families: weakFamilies,
+    interest_themes: personalization.learnerProfile.interestThemes || [],
+    need_items: 10,
+    learner_name: personalization.learnerProfile.name || 'Learner',
   };
 
+  const base = getApiBase();
   const response = await fetch(`${base}/gemini/plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -59,7 +75,7 @@ export async function requestPlan(prompt) {
     const headerRetry = Number(response.headers.get('Retry-After') ?? '0');
     const bodyRetry = Number(json?.retry_in_seconds ?? 0);
     const retryInSeconds = Math.max(headerRetry || 0, bodyRetry || 0) || 45;
-    return { ok: false, rateLimited: true, retryInSeconds, data: json };
+    return { ok: false, rateLimited: true, retryInSeconds, plan: json?.plan, meta: json?._meta };
   }
 
   if (!response.ok) {
@@ -68,5 +84,5 @@ export async function requestPlan(prompt) {
     throw error;
   }
 
-  return { ok: true, data: json?.plan?.items ? json.plan : json, meta: json?._meta };
+  return { ok: true, plan: json?.plan, meta: json?._meta };
 }
