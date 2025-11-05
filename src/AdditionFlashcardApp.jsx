@@ -287,6 +287,62 @@ export default function AdditionFlashcardApp() {
     [aiPersonalization.learnerProfile.interests, aiPersonalization.learnerProfile.interestThemes],
   );
 
+  const handleRegister = (studentData) => {
+    const newGameState = createDefaultGameState();
+    newGameState.studentInfo = { ...studentData, registered: Date.now() };
+    setGameState(newGameState);
+    localStorage.setItem(`additionFlashcardsGameState_${studentData.name}`, JSON.stringify(newGameState));
+    localStorage.setItem('additionFlashcardsLastUser', studentData.name);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('additionFlashcardsLastUser');
+    setGameState(createDefaultGameState());
+    setGameMode(null);
+  };
+
+  const exportGameState = () => {
+    const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+      JSON.stringify(gameState)
+    )}`;
+    const link = document.createElement("a");
+    link.href = jsonString;
+    link.download = `additionFlashcardsGameState_${gameState.studentInfo.name}.json`;
+    link.click();
+  };
+
+  const importGameState = (event) => {
+    const fileReader = new FileReader();
+    fileReader.onload = (e) => {
+      try {
+        const importedState = JSON.parse(e.target.result);
+        const migratedState = migrateGameState(importedState);
+        setGameState(migratedState);
+        localStorage.setItem(`additionFlashcardsGameState_${migratedState.studentInfo.name}`, JSON.stringify(migratedState));
+        localStorage.setItem('additionFlashcardsLastUser', migratedState.studentInfo.name);
+      } catch (error) {
+        console.error("Error parsing imported game state:", error);
+        alert("Error importing file. Please make sure it's a valid game state file.");
+      }
+    };
+    fileReader.readAsText(event.target.files[0]);
+  };
+
+  const handleModeSelect = (mode) => {
+    setGameMode(mode);
+    // This will be expanded later to generate cards based on the selected mode
+  };
+
+  const startAiPath = () => {
+    if (aiPreviewItem) {
+      handleModeSelect('ai');
+    }
+  };
+
+  const onRefreshPlan = () => {
+    ensureAiPlan(true);
+  };
+
   if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
     return <Register onRegister={handleRegister} onImport={importGameState} />;
   }
