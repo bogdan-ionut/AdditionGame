@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Bug, ChevronDown, ChevronRight, Sparkles, Activity, AlertTriangle } from 'lucide-react';
+import { clearSpriteCache } from '../lib/spriteCache';
 
 function formatTimestamp(value) {
   if (!value) return '—';
@@ -83,6 +84,18 @@ export default function ThemeDebugPanel({ activeTheme, motifHints = [], themePac
         </button>
         {expanded && (
           <div className="space-y-4 border-t border-indigo-100 px-4 py-4 text-sm text-slate-600">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="text-xs font-semibold text-indigo-600 underline"
+                onClick={() => {
+                  clearSpriteCache();
+                  alert('Sprite cache cleared.');
+                }}
+              >
+                Clear sprites cache
+              </button>
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-xl bg-slate-50/80 p-3">
                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">

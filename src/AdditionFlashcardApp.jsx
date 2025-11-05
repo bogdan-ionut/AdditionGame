@@ -4,6 +4,7 @@ import ParentAISettings from './components/ParentAISettings';
 import NextUpCard from './components/NextUpCard';
 import ThemeDebugPanel from './components/ThemeDebugPanel';
 import RemotePlannerPanel from './components/RemotePlannerPanel';
+import CountGrid from './components/CountGrid';
 import {
   ensurePersonalization,
   updatePersonalizationAfterAttempt,
@@ -18,6 +19,8 @@ import {
 } from './services/aiPlanner';
 import useInterestThemeSync from './hooks/useInterestThemeSync';
 import Register from './Register';
+import { requestSpriteBatch, stepSpriteJob, SpriteRateLimitError } from './api/sprites';
+import { getSpriteUrl, setSpriteUrl } from './lib/spriteCache';
 
 // --- Helpers & Migration (Sprint 2) ---
 const dayKey = (ts = Date.now()) => {
@@ -956,6 +959,8 @@ const ModeSelection = ({
   onRefreshPlan,
   geminiReady,
   themeDebug,
+  spriteRateLimit = 0,
+  spriteJobState = null,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1003,6 +1008,11 @@ const ModeSelection = ({
     const prevAccuracy = prev && prev.totalAttempts > 0 ? prev.correctAttempts / prev.totalAttempts : 0;
     return !(prev && (prev.level === 'mastered' || prevAccuracy >= 0.9));
   };
+
+  const spriteJob = spriteJobState && spriteJobState.pending > 0 ? spriteJobState : null;
+  const spriteJobTotal = spriteJob ? Math.max(spriteJob.total || 0, spriteJob.completed + spriteJob.pending) : 0;
+  const spriteJobCompleted = spriteJob ? Math.min(spriteJob.completed, spriteJobTotal || spriteJob.completed) : 0;
+  const spriteJobDisplayTotal = spriteJobTotal > 0 ? spriteJobTotal : spriteJobCompleted || spriteJob?.pending || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
@@ -1228,6 +1238,15 @@ const ModeSelection = ({
                   Add
                 </button>
               </div>
+              {spriteRateLimit > 0 ? (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 text-sm">
+                  Rate limited, retry în <b>{spriteRateLimit}s</b>; folosim formele implicite până atunci.
+                </div>
+              ) : spriteJob ? (
+                <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sky-800 text-sm">
+                  Se pregătesc imaginile ({spriteJobCompleted}/{spriteJobDisplayTotal || 0})… poți continua să înveți; apar pe măsură ce sunt gata.
+                </div>
+              ) : null}
               {aiPersonalization?.learnerProfile?.interestMotifs?.length > 0 && (
                 <div className="text-xs text-gray-500">
                   Motifs: {aiPersonalization.learnerProfile.interestMotifs.slice(0, 6).join(', ')}
@@ -1405,6 +1424,8 @@ export default function AdditionFlashcardApp() {
   });
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [showAiSettings, setShowAiSettings] = useState(false);
+  const [spriteRateLimit, setSpriteRateLimit] = useState(0);
+  const [spriteJobState, setSpriteJobState] = useState(null);
   const [interestDraft, setInterestDraft] = useState('');
   const [geminiReady, setGeminiReady] = useState(() => isGeminiConfigured());
   const [checkpointState, setCheckpointState] = useState({
@@ -1418,6 +1439,10 @@ export default function AdditionFlashcardApp() {
   const inputRef = useRef(null);
   const aiPlanStatusRef = useRef(aiPlanStatus);
   const gameStateRef = useRef(gameState);
+
+  const spriteRateLimited = spriteRateLimit > 0;
+  const spriteJobRef = useRef(spriteJobState);
+  const spritePollRef = useRef(null);
 
   const { studentInfo } = gameState;
   const aiPersonalization = useMemo(
@@ -1445,6 +1470,10 @@ export default function AdditionFlashcardApp() {
   }, [aiPlanStatus]);
 
   useEffect(() => {
+    spriteJobRef.current = spriteJobState;
+  }, [spriteJobState]);
+
+  useEffect(() => {
     if (!aiPlanStatus.rateLimited) return;
     if (aiPlanStatus.retryIn <= 0) {
       setAiPlanStatus((prev) => {
@@ -1469,6 +1498,58 @@ export default function AdditionFlashcardApp() {
       window.clearInterval(timer);
     };
   }, [aiPlanStatus.rateLimited, aiPlanStatus.retryIn]);
+
+  useEffect(() => {
+    if (!spriteRateLimited) return undefined;
+    const timer = window.setInterval(() => {
+      setSpriteRateLimit((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [spriteRateLimited]);
+
+  useEffect(() => {
+    if (spriteRateLimit > 0 || !spriteJobState?.jobId || spriteJobState.pending <= 0) {
+      if (spritePollRef.current) {
+        window.clearInterval(spritePollRef.current);
+        spritePollRef.current = null;
+      }
+      return undefined;
+    }
+
+    if (spritePollRef.current) {
+      return undefined;
+    }
+
+    const tick = () => {
+      const currentJob = spriteJobRef.current;
+      if (!currentJob?.jobId) return;
+      stepSpriteJob(currentJob.jobId, 2)
+        .then((snapshot) => {
+          storeSpriteRows(snapshot.sprites);
+          updateSpriteJob(snapshot);
+          setSpriteRateLimit(0);
+        })
+        .catch((error) => {
+          if (error instanceof SpriteRateLimitError) {
+            setSpriteRateLimit(Math.max(1, Math.round(error.retryAfter || 0)));
+          } else {
+            console.warn('Failed to step sprite job', error);
+          }
+        });
+    };
+
+    tick();
+    spritePollRef.current = window.setInterval(tick, 1200);
+
+    return () => {
+      if (spritePollRef.current) {
+        window.clearInterval(spritePollRef.current);
+        spritePollRef.current = null;
+      }
+    };
+  }, [spriteJobState?.jobId, spriteJobState?.pending, spriteRateLimit, storeSpriteRows, updateSpriteJob]);
 
   useEffect(() => {
     gameStateRef.current = gameState;
@@ -1599,10 +1680,55 @@ export default function AdditionFlashcardApp() {
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
   }, [geminiReady]);
 
+  const storeSpriteRows = useCallback((rows) => {
+    if (!Array.isArray(rows)) return;
+    rows.forEach((row) => {
+      if (!row?.interest) return;
+      if (row.url) {
+        setSpriteUrl(row.interest, row.url);
+      }
+    });
+  }, []);
+
+  const updateSpriteJob = useCallback((snapshot) => {
+    if (!snapshot) return;
+    setSpriteJobState((prev) => {
+      const prevJobId = prev?.jobId ?? '';
+      const jobId = snapshot.jobId || prevJobId;
+      if (!jobId) return prev ?? null;
+
+      const toNum = (value, fallback = 0) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : fallback;
+      };
+
+      const completed = toNum(snapshot.completed, toNum(prev?.completed, 0));
+      const totalCandidate = toNum(snapshot.total, toNum(prev?.total, completed));
+      let pending = toNum(snapshot.pending, toNum(prev?.pending, Math.max(totalCandidate - completed, 0)));
+      let total = totalCandidate > 0 ? totalCandidate : completed + pending;
+      if (total < completed) total = completed;
+      if (pending < 0) pending = Math.max(total - completed, 0);
+
+      if (total <= 0 && pending <= 0) {
+        return null;
+      }
+
+      const normalized = {
+        jobId,
+        total: total > 0 ? total : completed + pending,
+        completed,
+        pending,
+      };
+
+      return normalized.pending <= 0 ? null : normalized;
+    });
+  }, []);
+
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
     if (!trimmed) return;
     let updatedList = [];
+    let didAdd = false;
     setGameState((prev) => {
       const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
       if (ai.learnerProfile.interests?.some((interest) => interest.toLowerCase() === trimmed.toLowerCase())) {
@@ -1610,6 +1736,7 @@ export default function AdditionFlashcardApp() {
       }
       const updated = [...(ai.learnerProfile.interests || []), trimmed].slice(0, 8);
       updatedList = updated;
+      didAdd = updated.some((interest) => interest.toLowerCase() === trimmed.toLowerCase());
       return {
         ...prev,
         aiPersonalization: {
@@ -1621,11 +1748,30 @@ export default function AdditionFlashcardApp() {
         },
       };
     });
-    if (updatedList.length) {
+    if (didAdd && updatedList.length) {
       refreshInterestMotifs(updatedList);
+      const cached = getSpriteUrl(trimmed);
+      if (cached) {
+        setSpriteRateLimit(0);
+        setSpriteJobState((prev) => (prev && prev.pending > 0 ? prev : null));
+      } else {
+        void requestSpriteBatch([trimmed])
+          .then((snapshot) => {
+            storeSpriteRows(snapshot.sprites);
+            updateSpriteJob(snapshot);
+            setSpriteRateLimit(0);
+          })
+          .catch((error) => {
+            if (error instanceof SpriteRateLimitError) {
+              setSpriteRateLimit(Math.max(1, Math.round(error.retryAfter || 0)));
+            } else {
+              console.warn('Failed to start sprite batch', error);
+            }
+          });
+      }
     }
     setInterestDraft('');
-  }, [interestDraft, refreshInterestMotifs, setGameState]);
+  }, [interestDraft, refreshInterestMotifs, requestSpriteBatch, setGameState, storeSpriteRows, updateSpriteJob]);
 
   const handleRemoveInterest = useCallback((interest) => {
     let nextInterests = [];
@@ -2362,6 +2508,9 @@ export default function AdditionFlashcardApp() {
   const learnerInterests = learnerProfile.interests;
   const learnerThemePacks = learnerProfile.interestThemePacks;
   const themeDebug = learnerProfile.interestThemeDebug;
+  const primaryInterest = Array.isArray(learnerInterests) && learnerInterests.length
+    ? learnerInterests[learnerInterests.length - 1]
+    : '';
 
   const motifHints = useMemo(() => {
     const sources = [];
@@ -2416,6 +2565,8 @@ export default function AdditionFlashcardApp() {
           onRefreshPlan={onRefreshPlan}
           geminiReady={geminiReady}
           themeDebug={themeDebug}
+          spriteRateLimit={spriteRateLimit}
+          spriteJobState={spriteJobState}
         />
         {showAiSettings && (
           <ParentAISettings
@@ -2585,7 +2736,7 @@ export default function AdditionFlashcardApp() {
           {/* First operand */}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-mono font-bold text-gray-900 mb-2">{card.a}</div>
-            <CountableObjects digit={card.a} type={card.a} motifTheme={activeMotifTheme} />
+            <CountGrid count={card.a} interest={primaryInterest} size={64} />
           </div>
 
           {/* Plus sign */}
@@ -2594,7 +2745,7 @@ export default function AdditionFlashcardApp() {
           {/* Second operand */}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-mono font-bold text-gray-900 mb-2">{card.b}</div>
-            <CountableObjects digit={card.b} type={card.b} motifTheme={activeMotifTheme} />
+            <CountGrid count={card.b} interest={primaryInterest} size={64} />
           </div>
 
           {/* Equals sign */}
