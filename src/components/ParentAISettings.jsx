@@ -1,149 +1,157 @@
-import { useEffect, useState } from 'react';
-import { X, Lock, ShieldCheck } from 'lucide-react';
-import { getGeminiKeyStatus } from '../services/aiPlanner';
+import { useEffect, useState, useCallback } from 'react';
+import { X, Lock, ShieldCheck, CheckCircle, AlertTriangle } from 'lucide-react';
+import { loadAiConfig, saveAiConfig } from '../lib/ai/config';
+import { getAiRuntime } from '../lib/ai/runtime';
+
+async function testApiKey() {
+  try {
+    const response = await fetch('https://ionutbogdan.ro/api/health/gemini_post.php');
+    if (!response.ok) {
+      throw new Error(`Health check failed with status ${response.status}`);
+    }
+    const data = await response.json();
+    return { success: true, hasKey: data?.have_key ?? false };
+  } catch (error) {
+    return { success: false, hasKey: false, error: error.message };
+  }
+}
 
 export default function ParentAISettings({ onClose, onSaved, saveKey }) {
-  const [key, setKey] = useState('');
-  const [status, setStatus] = useState({ saving: false, success: false, error: null, message: null });
-  const [savedLocation, setSavedLocation] = useState(null);
-  const [savedPreview, setSavedPreview] = useState(null);
-  const [savedAt, setSavedAt] = useState(null);
+  const [apiKey, setApiKey] = useState('');
+  const [planningModel, setPlanningModel] = useState('');
+  const [spriteModel, setSpriteModel] = useState('');
+  const [runtimeState, setRuntimeState] = useState({
+    aiEnabled: false,
+    serverHasKey: false,
+  });
+  const [status, setStatus] = useState({
+    key: { saving: false, success: false, error: null, message: null },
+    models: { saving: false, success: false, error: null, message: null },
+    test: { testing: false, success: false, error: null, message: null },
+  });
 
-  useEffect(() => {
-    const existing = getGeminiKeyStatus();
-    if (existing.configured) {
-      setSavedLocation(existing.location);
-      setSavedPreview(existing.preview);
-      setSavedAt(existing.savedAt);
-      setStatus({ saving: false, success: false, error: null, message: null });
-    } else {
-      setSavedLocation(null);
-      setSavedPreview(null);
-      setSavedAt(null);
-      setStatus({ saving: false, success: false, error: null, message: null });
-    }
+  const refreshRuntime = useCallback(async () => {
+    setStatus(s => ({ ...s, test: { ...s.test, testing: true } }));
+    const state = await getAiRuntime();
+    setRuntimeState(state);
+    setStatus(s => ({ ...s, test: { ...s.test, testing: false } }));
   }, []);
 
-  const handleSave = async () => {
-    if (!key.trim()) {
-      setStatus({ saving: false, success: false, error: 'Please paste a valid Google Gemini API key.', message: null });
+  useEffect(() => {
+    const config = loadAiConfig();
+    setPlanningModel(config.planningModel || 'gemini-2.5-pro');
+    setSpriteModel(config.spriteModel || 'gemini-2.5-flash-image');
+    refreshRuntime();
+  }, [refreshRuntime]);
+
+  const handleSaveKey = async () => {
+    if (!apiKey.trim()) {
+      setStatus(s => ({ ...s, key: { ...s.key, error: 'Please paste a valid Google Gemini API key.' } }));
       return;
     }
-
-    setStatus({ saving: true, success: false, error: null, message: null });
+    setStatus({ ...status, key: { saving: true, success: false, error: null, message: null } });
     try {
-      const response = await saveKey(key.trim());
-      setStatus({
-        saving: false,
-        success: true,
-        error: null,
-        message: response?.message || 'API key saved securely.',
-      });
-      setSavedLocation(response?.remote ? 'remote' : 'local');
-      setSavedPreview(response?.remote ? null : key.trim().slice(0, 8));
-      setSavedAt(new Date().toISOString());
-      setKey('');
-      onSaved?.(response);
+      await saveKey(apiKey.trim());
+      setStatus(s => ({ ...s, key: { saving: false, success: true, message: 'API key stored securely on server.' } }));
+      setApiKey('');
+      await refreshRuntime();
+      onSaved?.();
     } catch (error) {
-      setStatus({
-        saving: false,
-        success: false,
-        error: error.message || 'We could not save the API key. Please try again.',
-        message: null,
-      });
+      setStatus(s => ({ ...s, key: { saving: false, error: error.message || 'Could not save the API key.' } }));
     }
+  };
+
+  const handleTestKey = async () => {
+    setStatus(s => ({ ...s, test: { testing: true, success: false, error: null, message: null } }));
+    const result = await testApiKey();
+    if (result.success) {
+      const message = result.hasKey ? 'Key OK' : 'Key not found on server.';
+      setStatus(s => ({ ...s, test: { testing: false, success: result.hasKey, message } }));
+    } else {
+      setStatus(s => ({ ...s, test: { testing: false, error: result.error } }));
+    }
+    await refreshRuntime();
+  };
+
+  const handleSaveModels = () => {
+    if (!planningModel || !spriteModel) {
+      setStatus(s => ({ ...s, models: { error: 'Please select both a planning and a sprite model.' } }));
+      return;
+    }
+    saveAiConfig({ planningModel, spriteModel });
+    setStatus(s => ({ ...s, models: { success: true, message: 'Model choices saved locally.' } }));
+    refreshRuntime();
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Paste your Google Gemini API key. We store it securely on your server (or locally for demos) so the browser never sees it again.
-            </p>
+            <p className="text-sm text-gray-600 mt-1">Configure your own Google Gemini models for personalized learning.</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-800 p-1 rounded-full hover:bg-gray-100"
-            aria-label="Close AI settings"
-          >
-            <X size={20} />
-          </button>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-800 p-1 rounded-full"><X size={20} /></button>
         </div>
 
         <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex gap-3">
-          <Lock className="text-indigo-500" size={24} />
+          <Lock className="text-indigo-500 flex-shrink-0" size={24} />
           <div className="text-sm text-indigo-800">
             <p className="font-semibold">Why we need this</p>
-            <p>
-              The Gemini 2.5 Pro model crafts personalized lesson plans, while Gemini Nano helps generate interest motifs on-device.
-              Your key lets us call these models from the secure edge proxy you configure.
-            </p>
+            <p>We use your key only on the server (browser never sees it). Planning uses text models; sprites use image models.</p>
           </div>
         </div>
 
-        <div className="space-y-3">
-          <label className="block text-sm font-medium text-gray-700" htmlFor="gemini-key">
-            Google Gemini API key
-          </label>
-          <input
-            id="gemini-key"
-            type="password"
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-            placeholder="AIzaSy..."
-            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
+        {/* --- API Key Section --- */}
+        <div className="space-y-3 p-4 border rounded-2xl">
+          <label className="block text-sm font-medium text-gray-700" htmlFor="gemini-key">Google Gemini API key</label>
+          <input id="gemini-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" />
+          <div className="flex flex-wrap gap-3">
+            <button onClick={handleSaveKey} disabled={status.key.saving} className="px-5 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400">
+              {status.key.saving ? 'Saving…' : 'Save API Key'}
+            </button>
+            <button onClick={handleTestKey} disabled={status.test.testing} className="px-5 py-2 rounded-xl font-semibold bg-white border-2 border-gray-200 hover:bg-gray-50 disabled:bg-gray-300">
+              {status.test.testing ? 'Testing…' : 'Test Key'}
+            </button>
+          </div>
+          {status.key.error && <div className="text-sm text-red-600">{status.key.error}</div>}
+          {status.key.success && <div className="text-sm text-green-600">{status.key.message}</div>}
+          {status.test.message && <div className={`text-sm ${status.test.success ? 'text-green-600' : 'text-yellow-700'}`}>{status.test.message}</div>}
+          {status.test.error && <div className="text-sm text-red-600">{status.test.error}</div>}
         </div>
 
-        {savedLocation && (
-          <div className="flex items-start gap-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
-            <ShieldCheck className="text-indigo-500" size={18} />
+        {/* --- Model Selection Section --- */}
+        <div className="space-y-4 p-4 border rounded-2xl">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="font-semibold">Key configured</p>
-              <p>
-                {savedLocation === 'remote'
-                  ? 'Stored via your secure proxy. '
-                  : 'Stored locally for demo use. '}
-                {savedPreview ? `Begins with ${savedPreview}. ` : ''}
-                {savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}.` : ''}
-              </p>
+              <label htmlFor="planning-model" className="block text-sm font-medium text-gray-700 mb-1">Planning model</label>
+              <select id="planning-model" value={planningModel} onChange={(e) => setPlanningModel(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl">
+                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="sprite-model" className="block text-sm font-medium text-gray-700 mb-1">Sprite model</label>
+              <input id="sprite-model" type="text" value={spriteModel} onChange={(e) => setSpriteModel(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" placeholder="e.g., gemini-2.5-flash-image" />
             </div>
           </div>
-        )}
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleSave}
-            disabled={status.saving}
-            className={`px-5 py-3 rounded-xl font-semibold text-white shadow ${
-              status.saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-            }`}
-          >
-            {status.saving ? 'Saving…' : 'Save API Key'}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-5 py-3 rounded-xl font-semibold bg-white border-2 border-gray-200 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
+          <button onClick={handleSaveModels} className="px-5 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700">Save Model Choices</button>
+          {status.models.error && <div className="text-sm text-red-600">{status.models.error}</div>}
+          {status.models.success && <div className="text-sm text-green-600">{status.models.message}</div>}
         </div>
 
-        {status.success && (
-          <div className="flex items-start gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-2xl p-4">
-            <ShieldCheck className="text-green-500" size={18} />
-            <span>{status.message}</span>
+        {/* --- Status Section --- */}
+        <div className="flex items-center gap-4 text-sm bg-gray-50 p-3 rounded-2xl">
+          <div className="flex items-center gap-2">
+            {runtimeState.serverHasKey ? <CheckCircle className="text-green-500" size={18} /> : <AlertTriangle className="text-yellow-500" size={18} />}
+            <span>Key configured on server: <strong>{runtimeState.serverHasKey ? 'Yes' : 'No'}</strong></span>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            {runtimeState.aiEnabled ? <CheckCircle className="text-green-500" size={18} /> : <AlertTriangle className="text-yellow-500" size={18} />}
+            <span>AI enabled: <strong>{runtimeState.aiEnabled ? 'Yes' : 'No'}</strong></span>
+          </div>
+        </div>
 
-        {status.error && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-2xl p-3">
-            {status.error}
-          </div>
-        )}
       </div>
     </div>
   );

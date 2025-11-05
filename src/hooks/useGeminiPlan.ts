@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { fetchGeminiPlan } from "../api/geminiPlan";
+import { getAiRuntime } from "../lib/ai/runtime";
 
-type Status = "idle" | "loading" | "ok" | "rate-limited" | "error";
+type Status = "idle" | "loading" | "ok" | "rate-limited" | "error" | "disabled";
 
 type Meta = { used_model?: string; fallbackFrom?: string } | undefined;
 
@@ -14,6 +15,17 @@ export function useGeminiPlan() {
   const [error, setError] = useState<ErrorState>(null);
   const [retryIn, setRetryIn] = useState(0);
   const timerRef = useRef<number | null>(null);
+
+  const checkStatus = useCallback(async () => {
+    const runtime = await getAiRuntime();
+    if (!runtime.aiEnabled) {
+      setStatus("disabled");
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
 
   useEffect(() => {
     if (status !== "rate-limited" || retryIn <= 0) return;
@@ -38,11 +50,18 @@ export function useGeminiPlan() {
   }, [status, retryIn]);
 
   async function requestPlan(prompt: string) {
+    const runtime = await getAiRuntime();
+    if (!runtime.aiEnabled || !runtime.planningModel) {
+      setStatus("disabled");
+      setError({ message: "AI features are not configured." });
+      return;
+    }
+
     setStatus("loading");
     setError(null);
     setMeta(undefined);
 
-    const result = await fetchGeminiPlan(prompt, "gemini-2.5-pro");
+    const result = await fetchGeminiPlan(prompt, runtime.planningModel);
 
     if (result.ok) {
       setData(result.data);
