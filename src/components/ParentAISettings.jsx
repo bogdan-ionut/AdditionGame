@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { X, Lock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { loadAiConfig, saveAiConfig } from '../lib/ai/config';
 import { getAiRuntime } from '../lib/ai/runtime';
-import { PlanningModel, SpriteModel } from '../lib/ai/models';
 
 export default function ParentAISettings({ onClose, onSaved, saveKey }) {
   const [apiKey, setApiKey] = useState('');
