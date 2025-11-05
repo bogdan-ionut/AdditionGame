@@ -23,7 +23,7 @@ function slugify(value = '') {
 }
 
 function titleCase(value = '') {
-  return value.split(/\\s|-/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+  return value.split(/\s|-/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }
 
 function stringHash(value = '') {

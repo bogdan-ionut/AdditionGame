@@ -9,12 +9,19 @@ export const TARGET_SUCCESS_BAND = {
 
 // ... (rest of the file with "motif" replaced by "theme")
 export function ensurePersonalization(raw = {}, studentInfo = {}) {
-  // ...
-  const baseProfile = {
-    // ...
-    interestThemes: Array.isArray(raw?.learnerProfile?.interestThemes) ? raw.learnerProfile.interestThemes : [],
+  const personalization = {
+    ...raw,
+    activeSession: raw.activeSession || null,
+    learnerProfile: {
+      ...raw.learnerProfile,
+      learnerId: raw.learnerProfile?.learnerId || studentInfo.name,
+      interestThemes: sanitizeInterestThemes(raw.learnerProfile?.interestThemes),
+    },
+    mastery: raw.mastery || {},
+    planQueue: raw.planQueue || [],
+    targetSuccess: raw.targetSuccess || TARGET_SUCCESS_BAND.midpoint,
   };
-  // ...
+  return personalization;
 }
 
 export function deriveThemesFromInterests(interests = []) {
