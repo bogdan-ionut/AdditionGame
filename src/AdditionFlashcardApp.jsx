@@ -1473,6 +1473,50 @@ export default function AdditionFlashcardApp() {
     spriteJobRef.current = spriteJobState;
   }, [spriteJobState]);
 
+  const storeSpriteRows = useCallback((rows) => {
+    if (!Array.isArray(rows)) return;
+    rows.forEach((row) => {
+      if (!row?.interest) return;
+      if (row.url) {
+        setSpriteUrl(row.interest, row.url);
+      }
+    });
+  }, []);
+
+  const updateSpriteJob = useCallback((snapshot) => {
+    if (!snapshot) return;
+    setSpriteJobState((prev) => {
+      const prevJobId = prev?.jobId ?? '';
+      const jobId = snapshot.jobId || prevJobId;
+      if (!jobId) return prev ?? null;
+
+      const toNum = (value, fallback = 0) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : fallback;
+      };
+
+      const completed = toNum(snapshot.completed, toNum(prev?.completed, 0));
+      const totalCandidate = toNum(snapshot.total, toNum(prev?.total, completed));
+      let pending = toNum(snapshot.pending, toNum(prev?.pending, Math.max(totalCandidate - completed, 0)));
+      let total = totalCandidate > 0 ? totalCandidate : completed + pending;
+      if (total < completed) total = completed;
+      if (pending < 0) pending = Math.max(total - completed, 0);
+
+      if (total <= 0 && pending <= 0) {
+        return null;
+      }
+
+      const normalized = {
+        jobId,
+        total: total > 0 ? total : completed + pending,
+        completed,
+        pending,
+      };
+
+      return normalized.pending <= 0 ? null : normalized;
+    });
+  }, []);
+
   useEffect(() => {
     if (!aiPlanStatus.rateLimited) return;
     if (aiPlanStatus.retryIn <= 0) {
@@ -1679,50 +1723,6 @@ export default function AdditionFlashcardApp() {
     }));
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
   }, [geminiReady]);
-
-  const storeSpriteRows = useCallback((rows) => {
-    if (!Array.isArray(rows)) return;
-    rows.forEach((row) => {
-      if (!row?.interest) return;
-      if (row.url) {
-        setSpriteUrl(row.interest, row.url);
-      }
-    });
-  }, []);
-
-  const updateSpriteJob = useCallback((snapshot) => {
-    if (!snapshot) return;
-    setSpriteJobState((prev) => {
-      const prevJobId = prev?.jobId ?? '';
-      const jobId = snapshot.jobId || prevJobId;
-      if (!jobId) return prev ?? null;
-
-      const toNum = (value, fallback = 0) => {
-        const num = Number(value);
-        return Number.isFinite(num) ? num : fallback;
-      };
-
-      const completed = toNum(snapshot.completed, toNum(prev?.completed, 0));
-      const totalCandidate = toNum(snapshot.total, toNum(prev?.total, completed));
-      let pending = toNum(snapshot.pending, toNum(prev?.pending, Math.max(totalCandidate - completed, 0)));
-      let total = totalCandidate > 0 ? totalCandidate : completed + pending;
-      if (total < completed) total = completed;
-      if (pending < 0) pending = Math.max(total - completed, 0);
-
-      if (total <= 0 && pending <= 0) {
-        return null;
-      }
-
-      const normalized = {
-        jobId,
-        total: total > 0 ? total : completed + pending,
-        completed,
-        pending,
-      };
-
-      return normalized.pending <= 0 ? null : normalized;
-    });
-  }, []);
 
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
