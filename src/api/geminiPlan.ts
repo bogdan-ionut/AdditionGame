@@ -7,7 +7,7 @@ const ENDPOINT = "https://ionutbogdan.ro/api/gemini/plan";
 
 export async function fetchGeminiPlan(
   prompt: string,
-  model: "gemini-2.5-pro" | "gemini-2.5-flash" = "gemini-2.5-pro",
+  model: string,
 ): Promise<PlanResult> {
   let res: Response;
   try {

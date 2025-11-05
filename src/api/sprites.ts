@@ -1,3 +1,5 @@
+import { getAiRuntime } from "../lib/ai/runtime";
+
 const BATCH_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/batch";
 const STEP_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/step";
 
@@ -94,11 +96,15 @@ async function request(endpoint: string, body: Record<string, unknown>) {
 }
 
 export async function requestSpriteBatch(interests: string[]): Promise<SpriteJobSnapshot> {
+  const runtime = await getAiRuntime();
+  if (!runtime.aiEnabled || !runtime.spriteModel) {
+    throw new Error("ai-disabled");
+  }
   if (!Array.isArray(interests) || interests.length === 0) {
     throw new Error("interests-required");
   }
 
-  const payload = await request(BATCH_ENDPOINT, { interests });
+  const payload = await request(BATCH_ENDPOINT, { interests, model: runtime.spriteModel });
   return toSnapshot(payload, null);
 }
 
