@@ -21,6 +21,49 @@ import useInterestThemeSync from './hooks/useInterestThemeSync';
 import Register from './Register';
 import { requestSpriteBatch, stepSpriteJob, SpriteRateLimitError } from './api/sprites';
 import { getSpriteUrl, setSpriteUrl } from './lib/spriteCache';
+import {
+  createSpriteJob,
+  SpriteJobPoller,
+} from "./lib/ai/spriteGeneration";
+import { getAiRuntime } from "./lib/ai/runtime";
+
+
+const SpriteGenerationCard = ({ jobStatus, onCancel }) => {
+  if (!jobStatus) return null;
+
+  const total = jobStatus.job.done + jobStatus.job.pending;
+  const progress = total > 0 ? (jobStatus.job.done / total) * 100 : 0;
+
+  let message = "";
+  if (jobStatus._meta.retry_in_seconds) {
+    message = `Rate limit—retrying in ${jobStatus._meta.retry_in_seconds}s. You can keep playing.`;
+  } else if (jobStatus._meta.error) {
+    message = "Network hiccup—retrying…";
+  } else if (jobStatus.job.pending === 0) {
+    message = "All sprites ready ✅";
+  }
+
+  return (
+    <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sky-800 text-sm">
+      <div className="flex justify-between items-center mb-2">
+        <span className="font-semibold">Sprite Generation</span>
+        <button onClick={onCancel} className="text-sky-600 hover:text-sky-800">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="w-full bg-sky-200 rounded-full h-2.5">
+        <div
+          className="bg-sky-600 h-2.5 rounded-full"
+          style={{ width: `${progress}%` }}
+        ></div>
+      </div>
+      <div className="text-center mt-2 text-xs">
+        {jobStatus.job.done}/{total} sprites ready
+      </div>
+      {message && <div className="text-center mt-1 text-xs">{message}</div>}
+    </div>
+  );
+};
 
 // --- Helpers & Migration (Sprint 2) ---
 const dayKey = (ts = Date.now()) => {
@@ -344,8 +387,27 @@ const computeLearningPathInsights = (gameState) => {
   };
 };
 
+import { spriteRegistry } from './lib/SpriteRegistry';
+
 // Beautiful SVG object renderer for each digit with optional motif theming
 const CountableObjects = ({ digit, type, motifTheme = null }) => {
+  const renderSpriteAsset = (asset, index) => {
+    const jitterX = Math.sin(index * 2.5) * 4;
+    const jitterY = Math.cos(index * 3.2) * 4;
+    const rotation = Math.sin(index * 1.7) * 12;
+    return (
+      <img
+        key={asset.file}
+        src={asset.url}
+        alt={asset.object}
+        className="w-16 h-16 transition-transform duration-200 ease-out"
+        style={{
+          transform: `translate(${jitterX}px, ${jitterY}px) rotate(${rotation}deg)`,
+        }}
+      />
+    );
+  };
+
   const renderMotifObject = (index) => {
     const jitterX = Math.sin(index * 2.5) * 4;
     const jitterY = Math.cos(index * 3.2) * 4;
@@ -547,6 +609,14 @@ const CountableObjects = ({ digit, type, motifTheme = null }) => {
   };
 
   const renderObject = (index) => {
+    const interest = motifTheme?.interest || '';
+    const assets = interest ? spriteRegistry.byInterest(interest) : spriteRegistry.all();
+
+    if (assets.length > 0) {
+      const asset = assets[index % assets.length];
+      return renderSpriteAsset(asset, index);
+    }
+
     if (motifTheme) {
       return renderMotifObject(index);
     }
@@ -961,6 +1031,9 @@ const ModeSelection = ({
   themeDebug,
   spriteRateLimit = 0,
   spriteJobState = null,
+  onGenerateSprites,
+  jobStatus,
+  aiEnabled,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1237,8 +1310,18 @@ const ModeSelection = ({
                 >
                   Add
                 </button>
+                {aiEnabled && (
+                  <button
+                    onClick={onGenerateSprites}
+                    className="px-4 py-2 bg-green-600 text-white rounded-xl font-semibold shadow hover:bg-green-700"
+                  >
+                    Generate sprites
+                  </button>
+                )}
               </div>
-              {spriteRateLimit > 0 ? (
+              {jobStatus ? (
+                <SpriteGenerationCard jobStatus={jobStatus} onCancel={handleCancelSpriteGeneration} />
+              ) : spriteRateLimit > 0 ? (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 text-sm">
                   Rate limited, retry în <b>{spriteRateLimit}s</b>; folosim formele implicite până atunci.
                 </div>
@@ -1426,6 +1509,9 @@ export default function AdditionFlashcardApp() {
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [spriteRateLimit, setSpriteRateLimit] = useState(0);
   const [spriteJobState, setSpriteJobState] = useState(null);
+  const [spriteJobId, setSpriteJobId] = useState(() => localStorage.getItem("ai.spriteJobId"));
+  const [spritePoller, setSpritePoller] = useState(null);
+  const [jobStatus, setJobStatus] = useState(null);
   const [interestDraft, setInterestDraft] = useState('');
   const [geminiReady, setGeminiReady] = useState(() => isGeminiConfigured());
   const [checkpointState, setCheckpointState] = useState({
@@ -1443,6 +1529,69 @@ export default function AdditionFlashcardApp() {
   const spriteRateLimited = spriteRateLimit > 0;
   const spriteJobRef = useRef(spriteJobState);
   const spritePollRef = useRef(null);
+  const [aiRuntime, setAiRuntime] = useState({ aiEnabled: false });
+
+  useEffect(() => {
+    getAiRuntime().then(setAiRuntime);
+  }, []);
+
+  const startSpritePolling = useCallback((jobId, interests) => {
+    if (spritePoller) {
+      spritePoller.stop();
+    }
+
+    const poller = new SpriteJobPoller(
+      jobId,
+      interests,
+      (status) => setJobStatus(status),
+      () => {
+        setJobStatus(null);
+        setSpriteJobId(null);
+        localStorage.removeItem("ai.spriteJobId");
+        poller.stop();
+      },
+      (error) => {
+        console.error(error);
+        setJobStatus(null);
+        setSpriteJobId(null);
+        localStorage.removeItem("ai.spriteJobId");
+        poller.stop();
+      }
+    );
+
+    setSpritePoller(poller);
+    poller.start();
+  }, [spritePoller]);
+
+  useEffect(() => {
+    if (spriteJobId && aiRuntime.aiEnabled) {
+      const interests = gameState.aiPersonalization?.learnerProfile?.interests || [];
+      startSpritePolling(spriteJobId, interests);
+    }
+  }, [spriteJobId, aiRuntime.aiEnabled]);
+
+  const handleGenerateSprites = async () => {
+    const interests = gameState.aiPersonalization?.learnerProfile?.interests || [];
+    if (interests.length === 0) {
+      alert("Please add at least one interest to generate sprites.");
+      return;
+    }
+    const jobId = await createSpriteJob(interests);
+    if (jobId) {
+      setSpriteJobId(jobId);
+      localStorage.setItem("ai.spriteJobId", jobId);
+      startSpritePolling(jobId, interests);
+    }
+  };
+
+  const handleCancelSpriteGeneration = () => {
+    if (spritePoller) {
+      spritePoller.stop();
+    }
+    setJobStatus(null);
+    setSpriteJobId(null);
+    localStorage.removeItem("ai.spriteJobId");
+  };
 
   const { studentInfo } = gameState;
   const aiPersonalization = useMemo(
@@ -1750,24 +1899,8 @@ export default function AdditionFlashcardApp() {
     });
     if (didAdd && updatedList.length) {
       refreshInterestMotifs(updatedList);
-      const cached = getSpriteUrl(trimmed);
-      if (cached) {
-        setSpriteRateLimit(0);
-        setSpriteJobState((prev) => (prev && prev.pending > 0 ? prev : null));
-      } else {
-        void requestSpriteBatch([trimmed])
-          .then((snapshot) => {
-            storeSpriteRows(snapshot.sprites);
-            updateSpriteJob(snapshot);
-            setSpriteRateLimit(0);
-          })
-          .catch((error) => {
-            if (error instanceof SpriteRateLimitError) {
-              setSpriteRateLimit(Math.max(1, Math.round(error.retryAfter || 0)));
-            } else {
-              console.warn('Failed to start sprite batch', error);
-            }
-          });
+      if (window.confirm("Update sprites for new interests?")) {
+        handleGenerateSprites();
       }
     }
     setInterestDraft('');
@@ -2567,6 +2700,9 @@ export default function AdditionFlashcardApp() {
           themeDebug={themeDebug}
           spriteRateLimit={spriteRateLimit}
           spriteJobState={spriteJobState}
+          onGenerateSprites={handleGenerateSprites}
+          jobStatus={jobStatus}
+          aiEnabled={aiRuntime.aiEnabled}
         />
         {showAiSettings && (
           <ParentAISettings
