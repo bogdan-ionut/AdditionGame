@@ -1,7 +1,7 @@
 import { getAiRuntime } from "../lib/ai/runtime";
 
-const BATCH_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/batch";
-const STEP_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/step";
+const BATCH_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/batch/";
+const STEP_ENDPOINT = "https://ionutbogdan.ro/api/gemini/sprites/step/";
 
 export type SpriteRow = {
   interest: string;

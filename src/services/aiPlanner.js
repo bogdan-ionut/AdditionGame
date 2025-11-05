@@ -23,7 +23,7 @@ export function isGeminiConfigured() {
 export async function saveGeminiKeyPlaceholder(geminiKey) {
   const base = getApiBase();
   try {
-    const response = await fetch(`${base}/gemini/svsm/entry/key`, {
+    const response = await fetch(`${base}/gemini/svsm/entry/key/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
