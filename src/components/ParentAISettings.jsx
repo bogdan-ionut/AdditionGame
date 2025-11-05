@@ -1,20 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { X, Lock, ShieldCheck, CheckCircle, AlertTriangle } from 'lucide-react';
+import { X, Lock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { loadAiConfig, saveAiConfig } from '../lib/ai/config';
 import { getAiRuntime } from '../lib/ai/runtime';
-
-async function testApiKey() {
-  try {
-    const response = await fetch('https://ionutbogdan.ro/api/health/gemini_post.php');
-    if (!response.ok) {
-      throw new Error(`Health check failed with status ${response.status}`);
-    }
-    const data = await response.json();
-    return { success: true, hasKey: data?.have_key ?? false };
-  } catch (error) {
-    return { success: false, hasKey: false, error: error.message };
-  }
-}
+import { PlanningModel, SpriteModel } from '../lib/ai/models';
 
 export default function ParentAISettings({ onClose, onSaved, saveKey }) {
   const [apiKey, setApiKey] = useState('');
@@ -25,16 +13,15 @@ export default function ParentAISettings({ onClose, onSaved, saveKey }) {
     serverHasKey: false,
   });
   const [status, setStatus] = useState({
-    key: { saving: false, success: false, error: null, message: null },
-    models: { saving: false, success: false, error: null, message: null },
-    test: { testing: false, success: false, error: null, message: null },
+    saving: false,
+    success: false,
+    error: null,
+    message: null,
   });
 
   const refreshRuntime = useCallback(async () => {
-    setStatus(s => ({ ...s, test: { ...s.test, testing: true } }));
     const state = await getAiRuntime();
     setRuntimeState(state);
-    setStatus(s => ({ ...s, test: { ...s.test, testing: false } }));
   }, []);
 
   useEffect(() => {
@@ -44,43 +31,29 @@ export default function ParentAISettings({ onClose, onSaved, saveKey }) {
     refreshRuntime();
   }, [refreshRuntime]);
 
-  const handleSaveKey = async () => {
-    if (!apiKey.trim()) {
-      setStatus(s => ({ ...s, key: { ...s.key, error: 'Please paste a valid Google Gemini API key.' } }));
+  const handleSave = async () => {
+    if (!apiKey.trim() && !runtimeState.serverHasKey) {
+      setStatus({ ...status, error: 'Please paste a valid Google Gemini API key.' });
       return;
     }
-    setStatus({ ...status, key: { saving: true, success: false, error: null, message: null } });
+    if (!planningModel || !spriteModel) {
+      setStatus({ ...status, error: 'Please select both a planning and a sprite model.' });
+      return;
+    }
+
+    setStatus({ saving: true, success: false, error: null, message: null });
     try {
-      await saveKey(apiKey.trim());
-      setStatus(s => ({ ...s, key: { saving: false, success: true, message: 'API key stored securely on server.' } }));
+      if (apiKey.trim()) {
+        await saveKey(apiKey.trim());
+      }
+      saveAiConfig({ planningModel, spriteModel });
+      setStatus({ saving: false, success: true, message: 'Settings saved successfully.' });
       setApiKey('');
       await refreshRuntime();
       onSaved?.();
     } catch (error) {
-      setStatus(s => ({ ...s, key: { saving: false, error: error.message || 'Could not save the API key.' } }));
+      setStatus({ saving: false, error: error.message || 'Could not save settings.' });
     }
-  };
-
-  const handleTestKey = async () => {
-    setStatus(s => ({ ...s, test: { testing: true, success: false, error: null, message: null } }));
-    const result = await testApiKey();
-    if (result.success) {
-      const message = result.hasKey ? 'Key OK' : 'Key not found on server.';
-      setStatus(s => ({ ...s, test: { testing: false, success: result.hasKey, message } }));
-    } else {
-      setStatus(s => ({ ...s, test: { testing: false, error: result.error } }));
-    }
-    await refreshRuntime();
-  };
-
-  const handleSaveModels = () => {
-    if (!planningModel || !spriteModel) {
-      setStatus(s => ({ ...s, models: { error: 'Please select both a planning and a sprite model.' } }));
-      return;
-    }
-    saveAiConfig({ planningModel, spriteModel });
-    setStatus(s => ({ ...s, models: { success: true, message: 'Model choices saved locally.' } }));
-    refreshRuntime();
   };
 
   return (
@@ -106,18 +79,6 @@ export default function ParentAISettings({ onClose, onSaved, saveKey }) {
         <div className="space-y-3 p-4 border rounded-2xl">
           <label className="block text-sm font-medium text-gray-700" htmlFor="gemini-key">Google Gemini API key</label>
           <input id="gemini-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" />
-          <div className="flex flex-wrap gap-3">
-            <button onClick={handleSaveKey} disabled={status.key.saving} className="px-5 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400">
-              {status.key.saving ? 'Saving…' : 'Save API Key'}
-            </button>
-            <button onClick={handleTestKey} disabled={status.test.testing} className="px-5 py-2 rounded-xl font-semibold bg-white border-2 border-gray-200 hover:bg-gray-50 disabled:bg-gray-300">
-              {status.test.testing ? 'Testing…' : 'Test Key'}
-            </button>
-          </div>
-          {status.key.error && <div className="text-sm text-red-600">{status.key.error}</div>}
-          {status.key.success && <div className="text-sm text-green-600">{status.key.message}</div>}
-          {status.test.message && <div className={`text-sm ${status.test.success ? 'text-green-600' : 'text-yellow-700'}`}>{status.test.message}</div>}
-          {status.test.error && <div className="text-sm text-red-600">{status.test.error}</div>}
         </div>
 
         {/* --- Model Selection Section --- */}
@@ -132,13 +93,20 @@ export default function ParentAISettings({ onClose, onSaved, saveKey }) {
             </div>
             <div>
               <label htmlFor="sprite-model" className="block text-sm font-medium text-gray-700 mb-1">Sprite model</label>
-              <input id="sprite-model" type="text" value={spriteModel} onChange={(e) => setSpriteModel(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" placeholder="e.g., gemini-2.5-flash-image" />
+              <select id="sprite-model" value={spriteModel} onChange={(e) => setSpriteModel(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl">
+                <option value="gemini-2.5-flash-image">Flash-Image (aka Nano Banana)</option>
+              </select>
             </div>
           </div>
-          <button onClick={handleSaveModels} className="px-5 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700">Save Model Choices</button>
-          {status.models.error && <div className="text-sm text-red-600">{status.models.error}</div>}
-          {status.models.success && <div className="text-sm text-green-600">{status.models.message}</div>}
         </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button onClick={handleSave} disabled={status.saving || (!apiKey.trim() && !runtimeState.serverHasKey) || !planningModel || !spriteModel} className="px-5 py-2 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400">
+            {status.saving ? 'Saving…' : 'Save Settings'}
+          </button>
+        </div>
+        {status.error && <div className="text-sm text-red-600">{status.error}</div>}
+        {status.success && <div className="text-sm text-green-600">{status.message}</div>}
 
         {/* --- Status Section --- */}
         <div className="flex items-center gap-4 text-sm bg-gray-50 p-3 rounded-2xl">

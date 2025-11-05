@@ -1,14 +1,13 @@
+// src/hooks/useGeminiPlan.ts
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchGeminiPlan } from "../api/geminiPlan";
+import { requestPlan as fetchPlan } from "../services/ai";
 import { getAiRuntime } from "../lib/ai/runtime";
 
 type Status = "idle" | "loading" | "ok" | "rate-limited" | "error" | "disabled";
-
 type Meta = { used_model?: string; fallbackFrom?: string } | undefined;
-
 type ErrorState = any;
 
-export function useGeminiPlan() {
+export function useAiPlan() {
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<any>(null);
   const [meta, setMeta] = useState<Meta>(undefined);
@@ -29,11 +28,9 @@ export function useGeminiPlan() {
 
   useEffect(() => {
     if (status !== "rate-limited" || retryIn <= 0) return;
-
     timerRef.current = window.setInterval(() => {
       setRetryIn((current) => (current > 1 ? current - 1 : 0));
     }, 1000);
-
     return () => {
       if (timerRef.current) {
         window.clearInterval(timerRef.current);
@@ -51,7 +48,7 @@ export function useGeminiPlan() {
 
   async function requestPlan(prompt: string) {
     const runtime = await getAiRuntime();
-    if (!runtime.aiEnabled || !runtime.planningModel) {
+    if (!runtime.aiEnabled) {
       setStatus("disabled");
       setError({ message: "AI features are not configured." });
       return;
@@ -61,23 +58,23 @@ export function useGeminiPlan() {
     setError(null);
     setMeta(undefined);
 
-    const result = await fetchGeminiPlan(prompt, runtime.planningModel);
-
-    if (result.ok) {
-      setData(result.data);
-      setMeta(result.meta);
-      setStatus("ok");
-      return;
+    try {
+      const result = await fetchPlan(prompt);
+      if (result.ok) {
+        setData(result.data);
+        setMeta(result.meta);
+        setStatus("ok");
+      } else if (result.rateLimited) {
+        setRetryIn(result.retryInSeconds);
+        setStatus("rate-limited");
+      } else {
+        setError(result);
+        setStatus("error");
+      }
+    } catch (e) {
+      setError(e);
+      setStatus("error");
     }
-
-    if (result.rateLimited) {
-      setRetryIn(result.retryInSeconds);
-      setStatus("rate-limited");
-      return;
-    }
-
-    setError(result);
-    setStatus("error");
   }
 
   return {
@@ -90,5 +87,3 @@ export function useGeminiPlan() {
     isFallback: Boolean(meta?.used_model && meta.used_model !== "gemini-2.5-pro"),
   };
 }
-
-export default useGeminiPlan;

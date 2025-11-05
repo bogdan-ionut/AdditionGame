@@ -1,22 +1,40 @@
 // src/lib/ai/runtime.ts
 import { loadAiConfig } from './config';
+import { PlanningModel, SpriteModel } from './models';
 
 export type AiRuntimeState = {
   aiEnabled: boolean;
   serverHasKey: boolean;
-  planningModel: string | null;
-  spriteModel: string | null;
+  planningModel: PlanningModel | null;
+  spriteModel: SpriteModel | null;
 };
 
+async function checkServerHealth(): Promise<{ have_key: boolean }> {
+  try {
+    const response = await fetch('https://ionutbogdan.ro/api/health/gemini_post.php');
+    if (!response.ok) return { have_key: false };
+    return await response.json();
+  } catch (error) {
+    console.warn('AI server health check failed:', error);
+    return { have_key: false };
+  }
+}
+
 export async function getAiRuntime(): Promise<AiRuntimeState> {
-  const cfg = loadAiConfig();
-  const health = await fetch('https://ionutbogdan.ro/api/health/gemini_post.php').then(r => r.json());
-  const serverHasKey = !!health?.have_key;
-  const aiEnabled = !!(serverHasKey && cfg.planningModel && cfg.spriteModel);
+  const config = loadAiConfig();
+  const health = await checkServerHealth();
+  const serverHasKey = health?.have_key ?? false;
+
+  const aiEnabled = !!(serverHasKey && config.planning && config.sprites);
+
   return {
     aiEnabled,
     serverHasKey,
-    planningModel: cfg.planningModel,
-    spriteModel: cfg.spriteModel,
+    planningModel: config.planning,
+    spriteModel: config.sprites,
   };
+}
+
+export function isAiEnabled(runtimeState: AiRuntimeState): boolean {
+  return runtimeState.aiEnabled;
 }
