@@ -16,10 +16,6 @@ export default function NextUpCard({
   configured = false,
   onStartAiPath,
   onRefreshPlan,
-  isFallback = false,
-  usedModel,
-  rateLimited = false,
-  retryIn = 0,
 }) {
   const predicted = formatPredicted(item, targetSuccess);
   const display = item?.display || (item ? `${item.a} + ${item.b}` : null);
@@ -31,16 +27,9 @@ export default function NextUpCard({
           <Sparkles className="text-indigo-500" size={18} />
           AI-Driven Next Step
         </h3>
-        <div className="flex items-center gap-2">
-          {isFallback && (
-            <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-sky-700 border-sky-300 bg-sky-50">
-              ⚡ fast fallback (<code>{usedModel || 'gemini-2.5-flash'}</code>)
-            </span>
-          )}
-          <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">
-            Target ≈{targetSuccess}%
-          </span>
-        </div>
+        <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">
+          Target ≈{targetSuccess}%
+        </span>
       </div>
 
       <div className="flex-1 bg-gradient-to-br from-indigo-50 to-white border-2 border-indigo-100 rounded-3xl p-5 shadow-inner">
@@ -81,28 +70,16 @@ export default function NextUpCard({
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           onClick={onStartAiPath}
-          disabled={!item || loading || rateLimited}
+          disabled={!item || loading}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold shadow ${
-            !item || loading || rateLimited
-              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            !item || loading ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
           }`}
         >
-          <PlayCircle size={18} />
-          {loading
-            ? 'Planning…'
-            : rateLimited
-              ? `Rate limited… (${retryIn}s)`
-              : 'Start AI Path'}
+          <PlayCircle size={18} /> Start AI Path
         </button>
         <button
           onClick={onRefreshPlan}
-          disabled={loading || rateLimited}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold border-2 ${
-            loading || rateLimited
-              ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-              : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50'
-          }`}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold bg-white border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
         >
           <RefreshCw size={16} /> Refresh Plan
         </button>
