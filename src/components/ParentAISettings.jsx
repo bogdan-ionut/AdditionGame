@@ -14,6 +14,7 @@ const initialRuntime = {
   spriteModel: null,
   audioModel: null,
   aiAllowed: true,
+  lastError: null,
 };
 
 const StatusChip = ({ active }) => (
@@ -72,8 +73,11 @@ export default function ParentAISettings({ onClose, onSaved }) {
       setTestStatus({ state: 'loading', ok: null, message: null });
       try {
         const response = await testGeminiKey();
-        const ok = Boolean(response?.have_key);
-        setTestStatus({ state: 'success', ok, message: ok ? 'Key OK' : 'Key missing on server' });
+        const ok = Boolean(response?.have_key ?? response?.haveKey ?? response?.server_has_key);
+        const message = ok
+          ? 'Gemini key detected on server.'
+          : response?.error || response?.message || 'Gemini key missing on server.';
+        setTestStatus({ state: 'success', ok, message });
         await syncRuntime(notify);
       } catch (error) {
         setTestStatus({ state: 'error', ok: false, message: error.message || 'Unable to verify key.' });
@@ -91,7 +95,10 @@ export default function ParentAISettings({ onClose, onSaved }) {
     setKeyStatus({ state: 'loading', message: null });
     try {
       const response = await saveGeminiKey(keyInput.trim());
-      setKeyStatus({ state: 'success', message: response?.message || 'API key saved securely.' });
+      const message = response?.message
+        || (response?.ok ? 'API key saved securely.' : null)
+        || 'API key saved securely.';
+      setKeyStatus({ state: 'success', message });
       setKeyInput('');
       await runHealthCheck(true);
     } catch (error) {
@@ -144,6 +151,11 @@ export default function ParentAISettings({ onClose, onSaved }) {
             <div className="text-xs text-gray-500 space-y-1">
               <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
               <p>AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)</p>
+              {runtime.lastError && (
+                <p className="text-red-600 font-medium flex items-center gap-2">
+                  <AlertCircle size={14} /> {runtime.lastError}
+                </p>
+              )}
             </div>
           </div>
           <button

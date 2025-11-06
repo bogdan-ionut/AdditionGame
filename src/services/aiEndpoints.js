@@ -7,10 +7,14 @@ export function getApiBase() {
 }
 
 export function getGeminiKeyUrl() {
-  return `${getApiBase()}/gemini/svsm/entry/key`;
+  return `${getApiBase()}/ai/key`;
 }
 
 export function getGeminiHealthUrl() {
+  return `${getApiBase()}/ai/status`;
+}
+
+export function getLegacyGeminiHealthUrl() {
   return `${getApiBase()}/health/gemini_post.php`;
 }
 
@@ -18,6 +22,6 @@ export function getPlanningUrl() {
   return `${getApiBase()}/gemini/plan`;
 }
 
-export function getSpriteBatchUrl() {
-  return `${getApiBase()}/gemini/sprites/batch`;
+export function getInterestPacksUrl() {
+  return `${getApiBase()}/interests/packs`;
 }
