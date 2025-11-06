@@ -1,3 +1,5 @@
+import { buildThemePacksForInterests } from './interestThemes.js';
+
 export const TARGET_SUCCESS_BAND = {
   min: 0.8,
   midpoint: 0.825,
@@ -65,21 +67,14 @@ export function updateMasteryNode(node, correct) {
   };
 }
 
-export function deriveMotifsFromInterests(interests = []) {
-  if (!Array.isArray(interests) || !interests.length) return [];
-  const templates = ['quest', 'parade', 'mission', 'challenge', 'festival', 'journey', 'safari'];
-  const motifs = [];
-  interests.forEach((interest, index) => {
-    if (typeof interest !== 'string' || !interest.trim()) return;
-    const base = interest.trim().split(/\s+/)[0].toLowerCase();
-    const template = templates[index % templates.length];
-    const motif = `${base} ${template}`.replace(/[^a-z0-9\s]/g, '').trim();
-    if (motif && !motifs.includes(motif)) {
-      motifs.push(motif);
-    }
-  });
-  return motifs.slice(0, 8);
-}
+export const deriveMotifsFromInterests = (interests) => {
+  if (!Array.isArray(interests) || interests.length === 0) {
+    return [];
+  }
+  const themePacks = buildThemePacksForInterests(interests);
+  // Return the pack 'key' or 'label' as the motif string
+  return themePacks.map(pack => pack.key || pack.label).filter(Boolean);
+};
 
 function buildFactsForSum(sum) {
   const facts = [];

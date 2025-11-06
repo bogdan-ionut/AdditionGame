@@ -9,6 +9,7 @@ import {
   deriveMotifsFromInterests,
   TARGET_SUCCESS_BAND,
 } from './lib/aiPersonalization';
+import { buildThemePacksForInterests, resolveMotifTheme } from './lib/interestThemes';
 import {
   saveGeminiKeyPlaceholder,
   requestGeminiPlan,
@@ -338,7 +339,21 @@ const computeLearningPathInsights = (gameState) => {
 };
 
 // Beautiful SVG object renderer for each digit
-const CountableObjects = ({ digit, type }) => {
+const CountableObjects = ({ digit, type, theme = null }) => {
+  const renderThemedObject = (index) => {
+    if (!theme || !theme.icons || theme.icons.length === 0) return null;
+    const icon = theme.icons[index % theme.icons.length];
+    const jitterX = (Math.sin(index * 2.5) * 4);
+    const jitterY = (Math.cos(index * 3.2) * 4);
+    const rotation = (Math.sin(index * 1.7) * 15);
+
+    return (
+      <div key={index} style={{ transform: `translate(${jitterX}px, ${jitterY}px) rotate(${rotation}deg)`, fontSize: '2.5rem' }}>
+        {icon}
+      </div>
+    );
+  };
+
   const renderObject = (index) => {
     const jitterX = (Math.sin(index * 2.5) * 4);
     const jitterY = (Math.cos(index * 3.2) * 4);
@@ -518,7 +533,7 @@ const CountableObjects = ({ digit, type }) => {
           gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`
         }}
       >
-        {Array.from({ length: itemsToRender }, (_, i) => renderObject(i))}
+        {Array.from({ length: itemsToRender }, (_, i) => theme ? renderThemedObject(i) : renderObject(i))}
       </div>
     </div>
   );
@@ -1315,6 +1330,7 @@ export default function AdditionFlashcardApp() {
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [interestDraft, setInterestDraft] = useState('');
   const [geminiReady, setGeminiReady] = useState(() => isGeminiConfigured());
+  const [activeTheme, setActiveTheme] = useState(null);
   const [checkpointState, setCheckpointState] = useState({
     active: false,
     reviewCards: [],
@@ -2097,6 +2113,15 @@ export default function AdditionFlashcardApp() {
   };
 
   const handleModeSelect = (mode, number = null) => {
+    const interests = gameStateRef.current?.aiPersonalization?.learnerProfile?.interests || [];
+    const motifs = gameStateRef.current?.aiPersonalization?.learnerProfile?.interestMotifs || [];
+    if (mode !== 'ai-path') {
+      const themePacks = buildThemePacksForInterests(interests, { motifHints: motifs });
+      const theme = resolveMotifTheme({ themePacks });
+      setActiveTheme(theme);
+    } else {
+      setActiveTheme(null);
+    }
     setGameMode(mode);
     setFocusNumber(number);
   };
@@ -2384,7 +2409,19 @@ export default function AdditionFlashcardApp() {
       </div>
 
       {/* Flashcard */}
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl p-8 mb-6">
+      <div
+        key={activeTheme ? activeTheme.key : 'default'}
+        className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl p-8 mb-6"
+        style={
+          activeTheme && activeTheme.swatches[0]
+            ? {
+                backgroundColor: activeTheme.swatches[0].bg,
+                borderColor: activeTheme.swatches[0].border,
+                boxShadow: activeTheme.swatches[0].shadow,
+              }
+            : {}
+        }
+      >
         {/* Decorative stars */}
         <Star className="absolute top-4 left-4 text-yellow-400 fill-yellow-400" size={20} />
         <Star className="absolute top-4 right-4 text-pink-400 fill-pink-400" size={20} />
@@ -2454,7 +2491,7 @@ export default function AdditionFlashcardApp() {
           {/* First operand */}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-mono font-bold text-gray-900 mb-2">{card.a}</div>
-            <CountableObjects digit={card.a} type={card.a} />
+            <CountableObjects digit={card.a} type={card.a} theme={activeTheme} />
           </div>
 
           {/* Plus sign */}
@@ -2463,7 +2500,7 @@ export default function AdditionFlashcardApp() {
           {/* Second operand */}
           <div className="flex flex-col items-center">
             <div className="text-6xl font-mono font-bold text-gray-900 mb-2">{card.b}</div>
-            <CountableObjects digit={card.b} type={card.b} />
+            <CountableObjects digit={card.b} type={card.b} theme={activeTheme} />
           </div>
 
           {/* Equals sign */}
