@@ -3,8 +3,11 @@ import {
   getGeminiHealthUrl,
   getLegacyGeminiHealthUrl,
   getPlanningUrl,
-  getInterestPacksUrl,
+  postInterestsPacks,
+  getSpriteJobStatus,
+  postProcessJob,
 } from './aiEndpoints';
+import { deriveMotifsFromInterests } from '../lib/aiPersonalization';
 
 const handleErrorResponse = async (response, fallbackMessage) => {
   let detail = '';
@@ -163,38 +166,315 @@ export async function requestGeminiPlan(payload, model) {
   return data;
 }
 
-export async function requestInterestMotifs(interests, model) {
-  const body = { interests };
-  if (model) {
-    body.model = model;
-  }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const response = await fetch(getInterestPacksUrl(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+const sanitizeInterests = (interests = []) => {
+  if (!Array.isArray(interests)) return [];
+  const seen = new Set();
+  return interests
+    .map((interest) => (typeof interest === 'string' ? interest.trim() : ''))
+    .filter(Boolean)
+    .filter((interest) => {
+      const lower = interest.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    });
+};
+
+const sanitizeSpriteItems = (items = []) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      interest: typeof item.interest === 'string' ? item.interest : null,
+      status: item.status || null,
+      url: typeof item.url === 'string' ? item.url : null,
+    }));
+};
+
+const parseSpriteJobStatus = (payload = {}) => {
+  const items = sanitizeSpriteItems(payload.items);
+  const done = Number.isFinite(payload.done)
+    ? Number(payload.done)
+    : items.filter((item) => item.status === 'done').length;
+  const pending = Number.isFinite(payload.pending)
+    ? Number(payload.pending)
+    : items.filter((item) => item.status !== 'done').length;
+  const jobId = typeof payload.job_id === 'string'
+    ? payload.job_id
+    : typeof payload.jobId === 'string'
+      ? payload.jobId
+      : null;
+  return {
+    jobId,
+    done: Number.isFinite(done) ? done : 0,
+    pending: Number.isFinite(pending) ? pending : 0,
+    items,
+  };
+};
+
+const collectSpriteUrls = (items = []) => {
+  return sanitizeSpriteItems(items)
+    .filter((item) => item.status === 'done' && item.url)
+    .map((item) => item.url)
+    .filter(Boolean);
+};
+
+const SPRITE_CACHE_VERSION = 'v1';
+const SPRITE_CACHE_KEY = 'ai.sprite.cache';
+const SPRITE_CACHE_LIMIT = 12;
+
+const makeInterestCacheKey = (interests = [], model = '') => {
+  const normalized = sanitizeInterests(interests).map((value) => value.toLowerCase());
+  normalized.sort();
+  const modelSuffix = model ? `|${model.toLowerCase()}` : '';
+  return `${SPRITE_CACHE_VERSION}|${normalized.join('|')}${modelSuffix}`;
+};
+
+const readSpriteCache = () => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return { version: SPRITE_CACHE_VERSION, entries: {} };
+  }
+  try {
+    const raw = window.localStorage.getItem(SPRITE_CACHE_KEY);
+    if (!raw) {
+      return { version: SPRITE_CACHE_VERSION, entries: {} };
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== SPRITE_CACHE_VERSION || typeof parsed.entries !== 'object') {
+      return { version: SPRITE_CACHE_VERSION, entries: {} };
+    }
+    return { version: SPRITE_CACHE_VERSION, entries: parsed.entries || {} };
+  } catch (error) {
+    return { version: SPRITE_CACHE_VERSION, entries: {} };
+  }
+};
+
+const writeSpriteCache = (cache) => {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(SPRITE_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    // ignore quota issues
+  }
+};
+
+const saveSpriteCacheEntry = (key, entry) => {
+  if (!key) return;
+  const cache = readSpriteCache();
+  const entries = { ...(cache.entries || {}) };
+  entries[key] = {
+    ...(entry || {}),
+    updatedAt: Date.now(),
+  };
+  const keys = Object.keys(entries);
+  if (keys.length > SPRITE_CACHE_LIMIT) {
+    keys
+      .sort((a, b) => {
+        const aTs = entries[a]?.updatedAt || 0;
+        const bTs = entries[b]?.updatedAt || 0;
+        return aTs - bTs;
+      })
+      .slice(0, keys.length - SPRITE_CACHE_LIMIT)
+      .forEach((stale) => {
+        delete entries[stale];
+      });
+  }
+  writeSpriteCache({ version: SPRITE_CACHE_VERSION, entries });
+};
+
+const readSpriteCacheEntry = (key) => {
+  if (!key) return null;
+  const cache = readSpriteCache();
+  return cache.entries?.[key] || null;
+};
+
+const mergeUrls = (set, urls = []) => {
+  urls.forEach((url) => {
+    if (typeof url === 'string' && url.trim()) {
+      set.add(url.trim());
+    }
   });
+};
 
-  if (!response.ok) {
-    await handleErrorResponse(response, 'Gemini sprite batch request failed');
+const clampPositive = (value, fallback = 0) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || Number.isNaN(num)) return fallback;
+  return Math.max(0, num);
+};
+
+const deriveSpriteFallback = (interests = []) => deriveMotifsFromInterests(interests);
+
+const ensureTimeBudget = (value, defaultValue) => {
+  if (!Number.isFinite(value) || value <= 0) return defaultValue;
+  return value;
+};
+
+export async function requestInterestMotifs(
+  interests,
+  model,
+  {
+    aiEnabled = true,
+    timeoutMs = 15000,
+    pollIntervalMs = 2000,
+    batchLimit = 1,
+    syncMs = 6000,
+    syncTickLimit = 1,
+  } = {},
+) {
+  const sanitizedInterests = sanitizeInterests(interests);
+  if (!sanitizedInterests.length) {
+    return { source: 'fallback', motifs: [], jobId: null, pending: 0, done: 0 };
   }
 
-  const data = await response.json();
-  if (Array.isArray(data)) return data.map((entry) => String(entry));
-  if (Array.isArray(data?.motifs)) return data.motifs.map((entry) => String(entry));
-  if (Array.isArray(data?.packs)) {
-    return data.packs
-      .map((pack) => (typeof pack === 'string' ? pack : pack?.key || pack?.label))
-      .filter(Boolean)
-      .map((entry) => String(entry));
+  const fallbackMotifs = deriveSpriteFallback(sanitizedInterests);
+
+  if (!aiEnabled || !model) {
+    return { source: 'fallback', motifs: fallbackMotifs, jobId: null, pending: 0, done: 0 };
   }
-  if (Array.isArray(data?.items)) {
-    return data.items
-      .map((item) => item?.motif || item?.label || item?.object || item?.interest)
-      .filter(Boolean)
-      .map((entry) => String(entry));
+
+  const timeoutBudget = ensureTimeBudget(timeoutMs, 15000);
+  const pollDelay = ensureTimeBudget(pollIntervalMs, 2000);
+  const kickLimit = Math.max(1, Number.isFinite(batchLimit) ? Math.floor(batchLimit) : 1);
+
+  const cacheKey = makeInterestCacheKey(sanitizedInterests, model);
+  const cachedEntry = readSpriteCacheEntry(cacheKey);
+  if (cachedEntry?.urls && Array.isArray(cachedEntry.urls) && cachedEntry.urls.length) {
+    return {
+      source: 'ai',
+      urls: [...new Set(cachedEntry.urls.filter((url) => typeof url === 'string' && url.trim()))],
+      jobId: cachedEntry.jobId || null,
+      pending: clampPositive(cachedEntry.pending, 0),
+      done: clampPositive(cachedEntry.done, cachedEntry.urls.length),
+      cacheKey,
+      motifs: fallbackMotifs,
+    };
   }
-  return [];
+
+  const startedAt = Date.now();
+  const attemptSync = async () => {
+    const response = await postInterestsPacks({
+      interests: sanitizedInterests,
+      mode: 'sync',
+      sync_ms: syncMs,
+      tick_limit: syncTickLimit,
+      model,
+    });
+    return response;
+  };
+
+  let syncResponse = await attemptSync();
+  if (!syncResponse.ok && syncResponse.status === 429 && syncResponse.retryAfter) {
+    await sleep(syncResponse.retryAfter);
+    syncResponse = await attemptSync();
+  }
+
+  if (!syncResponse.ok || !syncResponse.data) {
+    return { source: 'fallback', motifs: fallbackMotifs, jobId: null, pending: 0, done: 0 };
+  }
+
+  const syncData = syncResponse.data || {};
+  const syncStatus = parseSpriteJobStatus(syncData);
+  const readySet = new Set();
+  mergeUrls(readySet, Array.isArray(syncData.urls) ? syncData.urls : []);
+  mergeUrls(readySet, collectSpriteUrls(syncStatus.items));
+
+  let jobId = syncStatus.jobId;
+  if (!jobId && typeof syncData.jobId === 'string') jobId = syncData.jobId;
+  if (!jobId && typeof syncData.job_id === 'string') jobId = syncData.job_id;
+
+  let pending = clampPositive(syncStatus.pending, Number.isFinite(syncData.pending) ? Number(syncData.pending) : 0);
+  let done = clampPositive(syncStatus.done, Number.isFinite(syncData.done) ? Number(syncData.done) : readySet.size);
+  let nextRetryAt = syncResponse.retryAfter ? Date.now() + syncResponse.retryAfter : null;
+
+  if ((!jobId || pending <= 0) && readySet.size) {
+    const urls = [...readySet];
+    saveSpriteCacheEntry(cacheKey, { urls, jobId: jobId || null, pending: 0, done: urls.length });
+    return { source: 'ai', urls, jobId: jobId || null, pending: 0, done: urls.length, cacheKey, motifs: fallbackMotifs };
+  }
+
+  if (!jobId) {
+    if (readySet.size) {
+      const urls = [...readySet];
+      saveSpriteCacheEntry(cacheKey, { urls, jobId: null, pending: 0, done: urls.length });
+      return { source: 'ai', urls, jobId: null, pending: 0, done: urls.length, cacheKey, motifs: fallbackMotifs };
+    }
+    return { source: 'fallback', motifs: fallbackMotifs, jobId: null, pending: 0, done: 0 };
+  }
+
+  let lastStatus = syncStatus;
+  let rateLimitedUntil = nextRetryAt;
+
+  while (Date.now() - startedAt < timeoutBudget && pending > 0) {
+    const now = Date.now();
+    if (rateLimitedUntil && rateLimitedUntil > now) {
+      await sleep(Math.min(rateLimitedUntil - now, pollDelay));
+      continue;
+    }
+
+    const processResult = await postProcessJob({ jobId, limit: kickLimit, model });
+    if (!processResult.ok) {
+      if (processResult.status === 429 && processResult.retryAfter) {
+        rateLimitedUntil = Date.now() + processResult.retryAfter;
+        continue;
+      }
+      if (processResult.status === 404) {
+        break;
+      }
+    }
+    if (processResult.retryAfter) {
+      rateLimitedUntil = Date.now() + processResult.retryAfter;
+    }
+    mergeUrls(readySet, Array.isArray(processResult.data?.new_urls) ? processResult.data.new_urls : []);
+
+    await sleep(pollDelay);
+    const statusResult = await getSpriteJobStatus(jobId);
+    if (!statusResult.ok) {
+      if (statusResult.status === 429 && statusResult.retryAfter) {
+        rateLimitedUntil = Date.now() + statusResult.retryAfter;
+        continue;
+      }
+      break;
+    }
+
+    const parsed = parseSpriteJobStatus(statusResult.data || {});
+    lastStatus = parsed;
+    pending = clampPositive(parsed.pending, pending);
+    done = clampPositive(parsed.done, done);
+    mergeUrls(readySet, collectSpriteUrls(parsed.items));
+
+    if (statusResult.retryAfter) {
+      rateLimitedUntil = Date.now() + statusResult.retryAfter;
+    }
+
+    if (pending <= 0) {
+      break;
+    }
+  }
+
+  const finalUrls = [...readySet];
+  if (finalUrls.length) {
+    saveSpriteCacheEntry(cacheKey, {
+      urls: finalUrls,
+      jobId,
+      pending: Math.max(0, pending),
+      done: done || finalUrls.length,
+    });
+    return {
+      source: 'ai',
+      urls: finalUrls,
+      jobId,
+      pending: Math.max(0, pending),
+      done: done || finalUrls.length,
+      cacheKey,
+      motifs: fallbackMotifs,
+      nextRetryAt: rateLimitedUntil || null,
+      lastStatus,
+    };
+  }
+
+  return { source: 'fallback', motifs: fallbackMotifs, jobId, pending: Math.max(0, pending), done };
 }
 
 export async function getServerKeyStatus() {
