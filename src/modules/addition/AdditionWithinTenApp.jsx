@@ -1,18 +1,19 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info } from 'lucide-react';
-import ParentAISettings from './components/ParentAISettings';
-import NextUpCard from './components/NextUpCard';
+import ParentAISettings from '../../components/ParentAISettings';
+import NextUpCard from '../../components/NextUpCard';
 import {
   ensurePersonalization,
   updatePersonalizationAfterAttempt,
   generateLocalPlan,
   deriveMotifsFromInterests,
   TARGET_SUCCESS_BAND,
-} from './lib/aiPersonalization';
-import { buildThemePacksForInterests, resolveMotifTheme } from './lib/interestThemes';
-import { requestGeminiPlan, requestInterestMotifs } from './services/aiPlanner';
-import { getAiRuntime } from './lib/ai/runtime';
-import Register from './Register';
+} from '../../lib/aiPersonalization';
+import { buildThemePacksForInterests, resolveMotifTheme } from '../../lib/interestThemes';
+import { requestGeminiPlan, requestInterestMotifs } from '../../services/aiPlanner';
+import { getAiRuntime } from '../../lib/ai/runtime';
+import { OPERATIONS } from '../../lib/learningPaths';
+import Register from '../../Register';
 
 // --- Helpers & Migration (Sprint 2) ---
 const dayKey = (ts = Date.now()) => {
@@ -921,6 +922,8 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
 
 // Mode selection screen (with Mastery Gates)
 const ModeSelection = ({
+  learningPath,
+  onExit,
   onSelectMode,
   gameState,
   onShowDashboard,
@@ -941,6 +944,14 @@ const ModeSelection = ({
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
+  const pathMeta = {
+    title: 'Addition Flashcards',
+    description: 'AI-Powered Mastery Learning for sums within 10.',
+    recommendedAges: 'Ages 3-6',
+    operationLabel: 'Addition',
+    ...learningPath,
+  };
+  const exitHandler = onExit ?? (() => {});
   const learningInsights = useMemo(() => computeLearningPathInsights(gameState), [gameState]);
   const overrides = learningInsights.overrides || new Set();
   const metrics = learningInsights.metrics || { overallAccuracy: 0, streak: 0, avgTime: '0.0' };
@@ -989,9 +1000,22 @@ const ModeSelection = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
       <div className="max-w-5xl w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <button
+            onClick={exitHandler}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur rounded-xl shadow hover:shadow-lg transition"
+          >
+            <ArrowLeft size={18} />
+            <span>Learning Paths</span>
+          </button>
+          <div className="text-sm text-gray-600 sm:text-right">
+            <div className="font-semibold uppercase tracking-wider text-indigo-500">{pathMeta.operationLabel || 'Operation'}</div>
+            <div>{pathMeta.recommendedAges}</div>
+          </div>
+        </div>
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-gray-800 mb-4">Addition Flashcards</h1>
-          <p className="text-xl text-gray-600">AI-Powered Mastery Learning</p>
+          <h1 className="text-5xl font-bold text-gray-800 mb-4">{pathMeta.title}</h1>
+          <p className="text-xl text-gray-600">{pathMeta.description}</p>
         </div>
 
         <div className="flex justify-center mb-6">
@@ -1095,10 +1119,10 @@ const ModeSelection = ({
           <div className="bg-white rounded-3xl shadow-lg border-2 border-amber-200 p-8 mb-8">
             <div className="flex items-center gap-3 mb-4">
               <Info className="text-amber-600" size={24} />
-              <h3 className="text-2xl font-bold text-gray-800">About Addition Flashcards</h3>
+              <h3 className="text-2xl font-bold text-gray-800">About {activeLearningPath.title || 'Addition Flashcards'}</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              Addition Flashcards blends classic fact practice with adaptive planning. Use this guide to see what is powered by AI and how to try it out.
+              {(activeLearningPath.title || 'Addition Flashcards')} blends classic fact practice with adaptive planning. Use this guide to see what is powered by AI and how to try it out.
             </p>
             <div className="grid gap-6 md:grid-cols-2">
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
@@ -1322,7 +1346,24 @@ const ModeSelection = ({
 };
 
 // --- Main App ---
-export default function AdditionFlashcardApp() {
+export default function AdditionWithinTenApp({ learningPath, onExit }) {
+  const defaultPathMeta = {
+    id: 'addition-within-10',
+    title: 'Addition • 0-9 Sums',
+    description: 'Build fluency with single-digit addition using adaptive, story-driven practice.',
+    recommendedAges: 'Ages 3-6',
+    operation: 'addition',
+    operationLabel: 'Addition',
+  };
+  const operationMeta = (learningPath?.operation && OPERATIONS[learningPath.operation]) || OPERATIONS.addition;
+  const activeLearningPath = {
+    ...defaultPathMeta,
+    ...learningPath,
+    operationLabel: learningPath?.operationLabel || operationMeta?.label || defaultPathMeta.operationLabel,
+    recommendedAges: learningPath?.recommendedAges || defaultPathMeta.recommendedAges,
+  };
+  const handleExit = onExit ?? (() => {});
+
   const [gameState, setGameState] = useState(() => {
     try {
       const lastUser = localStorage.getItem('additionFlashcardsLastUser');
@@ -2376,6 +2417,8 @@ export default function AdditionFlashcardApp() {
     return (
       <>
         <ModeSelection
+          learningPath={activeLearningPath}
+          onExit={handleExit}
           onSelectMode={handleModeSelect}
           gameState={gameState}
           onShowDashboard={() => setShowDashboard(true)}
@@ -2438,13 +2481,31 @@ export default function AdditionFlashcardApp() {
   return (
     <>
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex flex-col items-center justify-center">
+      <div className="w-full max-w-4xl mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <button
+            onClick={handleExit}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur rounded-xl shadow hover:shadow-lg transition"
+          >
+            <ArrowLeft size={18} />
+            <span>Learning Paths</span>
+          </button>
+          <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-xl shadow text-sm text-gray-700 flex flex-col sm:items-end gap-1">
+            <span className="text-xs font-semibold uppercase tracking-widest text-indigo-500">{activeLearningPath.operationLabel || 'Operation'}</span>
+            <span className="text-base font-semibold text-gray-800">{activeLearningPath.title}</span>
+            {activeLearningPath.recommendedAges && (
+              <span className="text-xs text-gray-500">{activeLearningPath.recommendedAges}</span>
+            )}
+          </div>
+        </div>
+      </div>
       {/* Header */}
       <div className="w-full max-w-2xl mb-6 flex justify-between items-center">
         <button
           onClick={resetToMenu}
           className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
         >
-          <ArrowLeft size={18} />
+          <Hash size={18} />
           <span>Menu</span>
         </button>
 
