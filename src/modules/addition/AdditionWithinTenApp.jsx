@@ -1056,6 +1056,8 @@ const ModeSelection = ({
   onStartAiPath,
   onRefreshPlan,
   aiRuntime,
+  motifJobState,
+  motifRetrySeconds,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1074,6 +1076,9 @@ const ModeSelection = ({
   const focusRecommendations = (learningInsights.path || [])
     .filter((entry) => entry.level !== 'mastered' || entry.unlockedByPath)
     .slice(0, 5);
+
+  const safeMotifJobState = motifJobState || createDefaultMotifJobState();
+  const safeMotifRetrySeconds = typeof motifRetrySeconds === 'number' ? motifRetrySeconds : null;
 
   const modes = [
     { id: 'sequential', name: 'All Numbers', desc: 'Practice all additions 0-9 in order', icon: Hash, color: 'blue' },
@@ -1374,8 +1379,8 @@ const ModeSelection = ({
                     ...(aiPersonalization?.learnerProfile?.interestMotifs || []),
                   ],
                 );
-                const total = Math.max(0, (motifJobState.done || 0) + (motifJobState.pending || 0));
-                const ready = Math.max(0, motifJobState.done || 0);
+                const total = Math.max(0, (safeMotifJobState.done || 0) + (safeMotifJobState.pending || 0));
+                const ready = Math.max(0, safeMotifJobState.done || 0);
 
                 return (
                   <>
@@ -1406,19 +1411,19 @@ const ModeSelection = ({
                         Motifs: {motifLabels.slice(0, 6).join(', ')}
                       </div>
                     )}
-                    {motifJobState.loading && (
+                    {safeMotifJobState.loading && (
                       <div className="text-xs text-indigo-500">Generating AI sprites…</div>
                     )}
-                    {!motifJobState.loading && motifJobState.jobId && total > 0 && (
+                    {!safeMotifJobState.loading && safeMotifJobState.jobId && total > 0 && (
                       <div className="text-xs text-indigo-500">
                         Sprites ready: {ready} / {total}
-                        {motifJobState.pending > 0 && motifRetrySeconds != null && motifRetrySeconds > 0 && (
-                          <span> — retrying in {motifRetrySeconds}s</span>
+                        {safeMotifJobState.pending > 0 && safeMotifRetrySeconds != null && safeMotifRetrySeconds > 0 && (
+                          <span> — retrying in {safeMotifRetrySeconds}s</span>
                         )}
                       </div>
                     )}
-                    {motifJobState.error && !motifJobState.loading && (
-                      <div className="text-xs text-red-500">AI motif error: {motifJobState.error}</div>
+                    {safeMotifJobState.error && !safeMotifJobState.loading && (
+                      <div className="text-xs text-red-500">AI motif error: {safeMotifJobState.error}</div>
                     )}
                   </>
                 );
@@ -2901,6 +2906,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
           onStartAiPath={startAiPath}
           onRefreshPlan={() => ensureAiPlan(true)}
           aiRuntime={aiRuntime}
+          motifJobState={motifJobState}
+          motifRetrySeconds={motifRetrySeconds}
         />
         {showAiSettings && (
           <ParentAISettings
