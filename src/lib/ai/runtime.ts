@@ -1,4 +1,4 @@
-import { getGeminiHealthUrl } from '../../services/aiEndpoints';
+import { getGeminiHealthUrl, getLegacyGeminiHealthUrl } from '../../services/aiEndpoints';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
 
@@ -70,6 +70,31 @@ export type AiRuntimeState = {
   spriteModel: string | null;
   audioModel: string | null;
   aiAllowed: boolean;
+  lastError: string | null;
+};
+
+type HealthResult = {
+  ok: boolean;
+  payload: Record<string, unknown> | null;
+  error: string | null;
+};
+
+const fetchHealthPayload = async (url: string): Promise<HealthResult> => {
+  try {
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) {
+      return {
+        ok: false,
+        payload: null,
+        error: `Health check failed (HTTP ${response.status})`,
+      };
+    }
+    const json = await response.json().catch(() => null);
+    return { ok: true, payload: (json as Record<string, unknown>) ?? null, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to reach AI status endpoint';
+    return { ok: false, payload: null, error: message };
+  }
 };
 
 export async function getAiRuntime(): Promise<AiRuntimeState> {
@@ -83,22 +108,34 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       spriteModel: cfg.spriteModel,
       audioModel: cfg.audioModel,
       aiAllowed: cfg.aiAllowed,
+      lastError: null,
     };
   }
 
   let serverHasKey = false;
-  try {
-    const response = await fetch(getGeminiHealthUrl(), {
-      method: 'GET',
-    });
-    if (response.ok) {
-      const health = await response.json();
-      serverHasKey = Boolean(health?.have_key);
-    } else {
-      console.warn('Gemini health endpoint returned non-OK status', response.status);
+  let lastError: string | null = null;
+
+  const healthUrls = [getGeminiHealthUrl(), getLegacyGeminiHealthUrl()];
+  for (const url of healthUrls) {
+    if (!url) continue;
+    const result = await fetchHealthPayload(url);
+    if (!result.ok) {
+      lastError = lastError || result.error;
+      continue;
     }
-  } catch (error) {
-    console.warn('Unable to reach Gemini health endpoint', error);
+
+    const payload = result.payload || {};
+    serverHasKey = Boolean(payload.have_key ?? payload.haveKey ?? payload.server_has_key);
+    const reportedError = (payload.error || payload.message || payload.reason) as string | undefined;
+    if (reportedError && reportedError.trim()) {
+      lastError = reportedError.trim();
+    } else if (!serverHasKey) {
+      lastError = lastError || 'Gemini API key missing on server.';
+    }
+
+    if (serverHasKey || lastError) {
+      break;
+    }
   }
 
   const aiAllowed = cfg.aiAllowed !== false;
@@ -111,5 +148,6 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     spriteModel: cfg.spriteModel,
     audioModel: cfg.audioModel,
     aiAllowed,
+    lastError,
   };
 }
