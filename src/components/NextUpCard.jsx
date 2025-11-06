@@ -19,6 +19,7 @@ export default function NextUpCard({
 }) {
   const predicted = formatPredicted(item, targetSuccess);
   const display = item?.display || (item ? `${item.a} + ${item.b}` : null);
+  const showPlan = configured && !!item;
 
   return (
     <div className="flex flex-col h-full">
@@ -39,7 +40,7 @@ export default function NextUpCard({
             <div className="h-10 bg-indigo-200/70 rounded" />
             <div className="h-4 bg-indigo-200/70 rounded w-1/2" />
           </div>
-        ) : item ? (
+        ) : showPlan ? (
           <div className="space-y-3">
             {story && <p className="text-sm text-indigo-700 italic">{story}</p>}
             <div className="text-4xl font-extrabold text-gray-900 tracking-wide text-center">
@@ -61,7 +62,7 @@ export default function NextUpCard({
             <p>
               {configured
                 ? 'Complete a few more practice rounds to teach the AI engine what feels “just right.”'
-                : 'Paste your Gemini API key in AI Settings to unlock cloud-personalized lesson planning. Until then, we can generate local practice sets.'}
+                : 'AI features are turned off. Paste your Gemini key and save model choices in AI Settings to unlock cloud-personalized planning. Until then, we will use the built-in planner.'}
             </p>
           </div>
         )}
@@ -70,9 +71,9 @@ export default function NextUpCard({
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           onClick={onStartAiPath}
-          disabled={!item || loading}
+          disabled={!showPlan || loading}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold shadow ${
-            !item || loading ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            !showPlan || loading ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
           }`}
         >
           <PlayCircle size={18} /> Start AI Path
