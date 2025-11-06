@@ -521,8 +521,8 @@ const CountableObjects = ({ digit, type, theme = null }) => {
   };
 
   const cols = digit <= 3 ? digit : Math.ceil(Math.sqrt(digit));
-  const rows = digit === 0 ? 1 : Math.ceil(digit / cols);
-  const itemsToRender = digit === 0 ? 1 : digit;
+  const rows = digit === 0 ? 0 : Math.ceil(digit / cols);
+  const itemsToRender = digit;
 
   return (
     <div className="flex items-center justify-center min-h-[130px] p-2">
