@@ -1,5 +1,31 @@
 import { buildThemePacksForInterests } from './interestThemes.js';
 
+export function normalizeMotifTokens(motifs) {
+  if (!Array.isArray(motifs)) return [];
+  return motifs
+    .map((motif) => {
+      if (!motif) return null;
+      if (typeof motif === 'string') {
+        return motif.trim();
+      }
+      if (typeof motif === 'object') {
+        const candidates = [
+          motif.label,
+          motif.name,
+          motif.title,
+          motif.motif,
+          motif.interest,
+          motif.theme,
+          motif.url,
+        ];
+        const match = candidates.find((value) => typeof value === 'string' && value.trim());
+        if (match) return match.trim();
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
 export const TARGET_SUCCESS_BAND = {
   min: 0.8,
   midpoint: 0.825,
@@ -25,6 +51,12 @@ export function ensurePersonalization(raw = {}, studentInfo = {}) {
     interests: Array.isArray(raw?.learnerProfile?.interests) ? raw.learnerProfile.interests : [],
     interestMotifs: Array.isArray(raw?.learnerProfile?.interestMotifs) ? raw.learnerProfile.interestMotifs : [],
     motifsUpdatedAt: raw?.learnerProfile?.motifsUpdatedAt ?? null,
+    motifJob: raw?.learnerProfile?.motifJob || null,
+    motifSprites: Array.isArray(raw?.learnerProfile?.motifSprites)
+      ? raw.learnerProfile.motifSprites
+      : [],
+    motifSpritesUpdatedAt: raw?.learnerProfile?.motifSpritesUpdatedAt ?? null,
+    motifSpriteCacheKey: raw?.learnerProfile?.motifSpriteCacheKey || null,
   };
 
   return {
@@ -196,8 +228,9 @@ export function generateLocalPlan({ personalization, history = {}, timeline = []
     pushItem(fact, 'balanced');
   }
 
-  const motifs = ai.learnerProfile.interestMotifs?.length
-    ? ai.learnerProfile.interestMotifs
+  const motifTokens = normalizeMotifTokens(ai.learnerProfile.interestMotifs);
+  const motifs = motifTokens.length
+    ? motifTokens
     : deriveMotifsFromInterests(ai.learnerProfile.interests);
   const motif = motifs[0] || 'math adventure';
   const focusFamilies = weakFamilies.slice(0, 2).map((family) => family.sum).join(' & ');

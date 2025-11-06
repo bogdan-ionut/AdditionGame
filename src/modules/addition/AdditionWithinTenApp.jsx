@@ -8,9 +8,11 @@ import {
   generateLocalPlan,
   deriveMotifsFromInterests,
   TARGET_SUCCESS_BAND,
+  normalizeMotifTokens,
 } from '../../lib/aiPersonalization';
 import { buildThemePacksForInterests, resolveMotifTheme } from '../../lib/interestThemes';
 import { requestGeminiPlan, requestInterestMotifs } from '../../services/aiPlanner';
+import { postProcessJob, getSpriteJobStatus } from '../../services/aiEndpoints';
 import { getAiRuntime } from '../../lib/ai/runtime';
 import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
@@ -22,6 +24,115 @@ const dayKey = (ts = Date.now()) => {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
+};
+
+const createDefaultMotifJobState = () => ({
+  jobId: null,
+  loading: false,
+  error: null,
+  done: 0,
+  pending: 0,
+  lastUpdated: null,
+  nextRetryAt: null,
+  rateLimited: false,
+  cacheKey: null,
+});
+
+const sanitizeSpriteItemsForUi = (items = []) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      interest: typeof item.interest === 'string' ? item.interest : null,
+      status: item.status || null,
+      url: typeof item.url === 'string' ? item.url : null,
+    }));
+};
+
+const collectSpriteUrlsForUi = (items = []) => {
+  return sanitizeSpriteItemsForUi(items)
+    .filter((item) => item.status === 'done' && item.url)
+    .map((item) => item.url)
+    .filter(Boolean);
+};
+
+const parseSpriteJobStatusForUi = (payload = {}) => {
+  const items = sanitizeSpriteItemsForUi(payload.items);
+  const done = Number.isFinite(payload.done)
+    ? Number(payload.done)
+    : items.filter((item) => item.status === 'done').length;
+  const pending = Number.isFinite(payload.pending)
+    ? Number(payload.pending)
+    : items.filter((item) => item.status !== 'done').length;
+  const jobId = typeof payload.job_id === 'string'
+    ? payload.job_id
+    : typeof payload.jobId === 'string'
+      ? payload.jobId
+      : null;
+  return {
+    jobId,
+    done: Number.isFinite(done) ? done : 0,
+    pending: Number.isFinite(pending) ? pending : 0,
+    items,
+  };
+};
+
+const describeSpriteUrl = (url = '') => {
+  if (typeof url !== 'string') return '';
+  try {
+    const trimmed = url.split('?')[0];
+    const parts = trimmed.split('/');
+    const last = parts[parts.length - 1] || '';
+    const base = last.replace(/\.png$/i, '').replace(/[_-]+/g, ' ').trim();
+    if (base) {
+      return base.length > 60 ? `${base.slice(0, 57)}…` : base;
+    }
+  } catch (error) {
+    // ignore parsing issues
+  }
+  return 'sprite motif';
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const SPRITE_CACHE_STORAGE_KEY = 'ai.sprite.cache';
+const SPRITE_CACHE_VERSION = 'v1';
+const SPRITE_CACHE_LIMIT = 12;
+
+const updateSpriteCacheEntryFromUi = (cacheKey, updater) => {
+  if (!cacheKey || typeof window === 'undefined' || !window.localStorage || typeof updater !== 'function') {
+    return;
+  }
+  try {
+    const raw = window.localStorage.getItem(SPRITE_CACHE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const base =
+      parsed && parsed.version === SPRITE_CACHE_VERSION && typeof parsed.entries === 'object'
+        ? parsed
+        : { version: SPRITE_CACHE_VERSION, entries: {} };
+    const currentEntry = base.entries?.[cacheKey] || {};
+    const nextEntry = updater(currentEntry) || {};
+    const entries = { ...(base.entries || {}), [cacheKey]: { ...nextEntry, updatedAt: Date.now() } };
+    const keys = Object.keys(entries);
+    if (keys.length > SPRITE_CACHE_LIMIT) {
+      keys
+        .sort((a, b) => {
+          const aTs = entries[a]?.updatedAt || 0;
+          const bTs = entries[b]?.updatedAt || 0;
+          return aTs - bTs;
+        })
+        .slice(0, keys.length - SPRITE_CACHE_LIMIT)
+        .forEach((stale) => {
+          delete entries[stale];
+        });
+    }
+    window.localStorage.setItem(
+      SPRITE_CACHE_STORAGE_KEY,
+      JSON.stringify({ version: SPRITE_CACHE_VERSION, entries }),
+    );
+  } catch (error) {
+    // ignore quota/JSON issues in UI
+  }
 };
 
 const createDefaultGameState = () => ({
@@ -79,6 +190,10 @@ const createDefaultGameState = () => ({
       interests: [],
       interestMotifs: [],
       motifsUpdatedAt: null,
+      motifJob: null,
+      motifSprites: [],
+      motifSpritesUpdatedAt: null,
+      motifSpriteCacheKey: null,
     },
     mastery: {},
     planQueue: [],
@@ -1249,11 +1364,65 @@ const ModeSelection = ({
                   Add
                 </button>
               </div>
-              {aiPersonalization?.learnerProfile?.interestMotifs?.length > 0 && (
-                <div className="text-xs text-gray-500">
-                  Motifs: {aiPersonalization.learnerProfile.interestMotifs.slice(0, 6).join(', ')}
-                </div>
-              )}
+              {(() => {
+                const motifSprites = Array.isArray(aiPersonalization?.learnerProfile?.motifSprites)
+                  ? aiPersonalization.learnerProfile.motifSprites.filter((url) => typeof url === 'string' && url.trim())
+                  : [];
+                const motifLabels = normalizeMotifTokens(
+                  [
+                    ...(motifSprites.map((url) => ({ url, label: describeSpriteUrl(url) }))),
+                    ...(aiPersonalization?.learnerProfile?.interestMotifs || []),
+                  ],
+                );
+                const total = Math.max(0, (motifJobState.done || 0) + (motifJobState.pending || 0));
+                const ready = Math.max(0, motifJobState.done || 0);
+
+                return (
+                  <>
+                    {motifSprites.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {motifSprites.slice(0, 6).map((url) => (
+                          <div
+                            key={url}
+                            className="w-12 h-12 rounded-xl overflow-hidden border border-indigo-200 bg-indigo-50 flex items-center justify-center"
+                          >
+                            <img
+                              src={url}
+                              alt={describeSpriteUrl(url)}
+                              className="w-full h-full object-contain"
+                              loading="lazy"
+                            />
+                          </div>
+                        ))}
+                        {motifSprites.length > 6 && (
+                          <div className="w-12 h-12 rounded-xl border border-dashed border-indigo-300 text-xs flex items-center justify-center text-indigo-500">
+                            +{motifSprites.length - 6}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {motifLabels.length > 0 && (
+                      <div className="text-xs text-gray-500">
+                        Motifs: {motifLabels.slice(0, 6).join(', ')}
+                      </div>
+                    )}
+                    {motifJobState.loading && (
+                      <div className="text-xs text-indigo-500">Generating AI sprites…</div>
+                    )}
+                    {!motifJobState.loading && motifJobState.jobId && total > 0 && (
+                      <div className="text-xs text-indigo-500">
+                        Sprites ready: {ready} / {total}
+                        {motifJobState.pending > 0 && motifRetrySeconds != null && motifRetrySeconds > 0 && (
+                          <span> — retrying in {motifRetrySeconds}s</span>
+                        )}
+                      </div>
+                    )}
+                    {motifJobState.error && !motifJobState.loading && (
+                      <div className="text-xs text-red-500">AI motif error: {motifJobState.error}</div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm">
               <NextUpCard
@@ -1404,6 +1573,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     aiAllowed: true,
   });
   const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
+  const [motifJobState, setMotifJobState] = useState(() => createDefaultMotifJobState());
+  const motifPollingRef = useRef(null);
+  const [motifRetrySeconds, setMotifRetrySeconds] = useState(null);
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [interestDraft, setInterestDraft] = useState('');
@@ -1463,67 +1635,350 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     refreshAiRuntime();
   }, [refreshAiRuntime]);
 
-  const refreshInterestMotifs = useCallback(async (interests) => {
-    if (!Array.isArray(interests)) return;
-    if (interests.length === 0) {
-      setGameState((prev) => {
-        const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-        if (!ai.learnerProfile.interestMotifs?.length) return prev;
-        return {
-          ...prev,
-          aiPersonalization: {
-            ...ai,
-            learnerProfile: {
-              ...ai.learnerProfile,
-              interestMotifs: [],
-              motifsUpdatedAt: Date.now(),
-            },
-          },
-        };
-      });
-      return;
+  useEffect(() => () => {
+    if (motifPollingRef.current?.cancel) {
+      motifPollingRef.current.cancel();
+      motifPollingRef.current = null;
     }
-    const shouldRequestRemote = aiRuntime.aiEnabled && aiRuntime.spriteModel;
-    if (shouldRequestRemote) {
+  }, []);
+
+  useEffect(() => {
+    if (!motifJobState.nextRetryAt) {
+      setMotifRetrySeconds(null);
+      return () => {};
+    }
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((motifJobState.nextRetryAt - Date.now()) / 1000));
+      setMotifRetrySeconds(remaining);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [motifJobState.nextRetryAt]);
+
+  const refreshInterestMotifs = useCallback(
+    async (rawInterests) => {
+      if (!Array.isArray(rawInterests)) return;
+
+      if (motifPollingRef.current?.cancel) {
+        motifPollingRef.current.cancel();
+        motifPollingRef.current = null;
+      }
+
+      const interests = rawInterests
+        .map((interest) => (typeof interest === 'string' ? interest.trim() : ''))
+        .filter(Boolean);
+
+      if (interests.length === 0) {
+        const now = Date.now();
+        const resetState = { ...createDefaultMotifJobState(), lastUpdated: now };
+        setGameState((prev) => {
+          const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+          if (!ai.learnerProfile.interestMotifs?.length && !ai.learnerProfile.motifSprites?.length) {
+            return prev;
+          }
+          return {
+            ...prev,
+            aiPersonalization: {
+              ...ai,
+              learnerProfile: {
+                ...ai.learnerProfile,
+                interestMotifs: [],
+                motifSprites: [],
+                motifsUpdatedAt: now,
+                motifSpritesUpdatedAt: now,
+                motifSpriteCacheKey: null,
+                motifJob: null,
+              },
+            },
+          };
+        });
+        setMotifJobState(resetState);
+        setMotifRetrySeconds(null);
+        return;
+      }
+
+      const fallbackTokens = deriveMotifsFromInterests(interests);
+      const applyFallback = (errorMessage = null) => {
+        const now = Date.now();
+        setGameState((prev) => {
+          const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+          return {
+            ...prev,
+            aiPersonalization: {
+              ...ai,
+              learnerProfile: {
+                ...ai.learnerProfile,
+                interestMotifs: fallbackTokens,
+                motifSprites: [],
+                motifsUpdatedAt: now,
+                motifSpritesUpdatedAt: now,
+                motifSpriteCacheKey: null,
+                motifJob: null,
+              },
+            },
+          };
+        });
+        setMotifJobState({
+          ...createDefaultMotifJobState(),
+          loading: false,
+          error: errorMessage,
+          done: fallbackTokens.length,
+          pending: 0,
+          lastUpdated: now,
+        });
+        setMotifRetrySeconds(null);
+      };
+
+      if (!aiRuntime.aiEnabled || !aiRuntime.spriteModel) {
+        applyFallback(null);
+        return;
+      }
+
+      const startState = {
+        ...createDefaultMotifJobState(),
+        loading: true,
+        lastUpdated: Date.now(),
+      };
+      setMotifJobState(startState);
+      setMotifRetrySeconds(null);
+
       try {
-        const motifs = await requestInterestMotifs(interests, aiRuntime.spriteModel);
-        if (Array.isArray(motifs) && motifs.length) {
-          setGameState((prev) => {
-            const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-            return {
-              ...prev,
-              aiPersonalization: {
-                ...ai,
-                learnerProfile: {
-                  ...ai.learnerProfile,
-                  interestMotifs: motifs,
-                  motifsUpdatedAt: Date.now(),
+        const result = await requestInterestMotifs(interests, aiRuntime.spriteModel, {
+          aiEnabled: aiRuntime.aiEnabled,
+          timeoutMs: 16000,
+          pollIntervalMs: 2000,
+          batchLimit: 1,
+        });
+
+        const now = Date.now();
+        const spriteUrls = Array.isArray(result?.urls)
+          ? result.urls.filter((url) => typeof url === 'string' && url.trim())
+          : [];
+        const pending = Number.isFinite(result?.pending) ? Math.max(0, result.pending) : 0;
+        const done = Number.isFinite(result?.done) ? Math.max(0, result.done) : spriteUrls.length;
+        const nextRetryAt = result?.nextRetryAt || null;
+        const cacheKey = result?.cacheKey || null;
+        const fallbackMotifs = Array.isArray(result?.motifs) && result.motifs.length
+          ? result.motifs
+          : fallbackTokens;
+
+        setGameState((prev) => {
+          const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+          return {
+            ...prev,
+            aiPersonalization: {
+              ...ai,
+              learnerProfile: {
+                ...ai.learnerProfile,
+                interestMotifs: fallbackMotifs,
+                motifsUpdatedAt: now,
+                motifSprites: spriteUrls,
+                motifSpritesUpdatedAt: now,
+                motifSpriteCacheKey: cacheKey,
+                motifJob: {
+                  jobId: result?.jobId || null,
+                  pending,
+                  done,
+                  lastUpdated: now,
+                  nextRetryAt,
+                  cacheKey,
                 },
               },
-            };
-          });
+            },
+          };
+        });
+
+        setMotifJobState({
+          jobId: result?.jobId || null,
+          loading: false,
+          error: result?.source === 'fallback' && !spriteUrls.length ? 'AI motifs unavailable' : null,
+          done,
+          pending,
+          lastUpdated: now,
+          nextRetryAt,
+          rateLimited: Boolean(nextRetryAt && nextRetryAt > now),
+          cacheKey,
+        });
+
+        setMotifRetrySeconds(
+          nextRetryAt ? Math.max(0, Math.ceil((nextRetryAt - now) / 1000)) : null,
+        );
+
+        if (cacheKey) {
+          updateSpriteCacheEntryFromUi(cacheKey, () => ({
+            urls: spriteUrls,
+            jobId: result?.jobId || null,
+            pending,
+            done,
+          }));
+        }
+
+        if (result?.source !== 'ai' || !result?.jobId || pending <= 0) {
           return;
         }
+
+        const controller = {
+          cancelled: false,
+          cancel() {
+            this.cancelled = true;
+          },
+        };
+        motifPollingRef.current = controller;
+
+        const backgroundFallback = fallbackMotifs;
+        const initialUrls = spriteUrls;
+        const jobId = result.jobId;
+        const maxDuration = 45000;
+        const startedAt = Date.now();
+        let backoffUntil = nextRetryAt || null;
+        let currentPending = pending;
+        let currentDone = done;
+        let readySet = new Set(initialUrls);
+
+        (async () => {
+          while (!controller.cancelled && currentPending > 0 && Date.now() - startedAt < maxDuration) {
+            const nowTick = Date.now();
+            if (backoffUntil && backoffUntil > nowTick) {
+              await sleep(Math.min(backoffUntil - nowTick, 2000));
+              continue;
+            }
+
+            const process = await postProcessJob({ jobId, limit: 1, model: aiRuntime.spriteModel });
+            if (controller.cancelled) return;
+
+            if (!process.ok) {
+              if (process.status === 429 && process.retryAfter) {
+                backoffUntil = Date.now() + process.retryAfter;
+                setMotifJobState((prev) => ({
+                  ...prev,
+                  nextRetryAt: backoffUntil,
+                  rateLimited: true,
+                }));
+                setMotifRetrySeconds(Math.max(0, Math.ceil(process.retryAfter / 1000)));
+                continue;
+              }
+              break;
+            }
+
+            if (process.retryAfter) {
+              backoffUntil = Date.now() + process.retryAfter;
+            }
+
+            const status = await getSpriteJobStatus(jobId);
+            if (controller.cancelled) return;
+
+            if (!status.ok) {
+              if (status.status === 429 && status.retryAfter) {
+                backoffUntil = Date.now() + status.retryAfter;
+                setMotifJobState((prev) => ({
+                  ...prev,
+                  nextRetryAt: backoffUntil,
+                  rateLimited: true,
+                }));
+                setMotifRetrySeconds(Math.max(0, Math.ceil(status.retryAfter / 1000)));
+                continue;
+              }
+              break;
+            }
+
+            const parsed = parseSpriteJobStatusForUi(status.data || {});
+            readySet = new Set([...readySet, ...collectSpriteUrlsForUi(parsed.items)]);
+            currentPending = Math.max(0, parsed.pending);
+            currentDone = Math.max(parsed.done, readySet.size);
+
+            const updateTs = Date.now();
+            const urls = [...readySet];
+            const updatedNextRetry = backoffUntil && backoffUntil > updateTs ? backoffUntil : null;
+
+            setGameState((prev) => {
+              const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+              return {
+                ...prev,
+                aiPersonalization: {
+                  ...ai,
+                  learnerProfile: {
+                    ...ai.learnerProfile,
+                    interestMotifs: backgroundFallback,
+                    motifsUpdatedAt: updateTs,
+                    motifSprites: urls,
+                    motifSpritesUpdatedAt: updateTs,
+                    motifSpriteCacheKey: cacheKey,
+                    motifJob: {
+                      jobId,
+                      pending: currentPending,
+                      done: currentDone,
+                      lastUpdated: updateTs,
+                      nextRetryAt: updatedNextRetry,
+                      cacheKey,
+                    },
+                  },
+                },
+              };
+            });
+
+            setMotifJobState({
+              jobId,
+              loading: false,
+              error: null,
+              done: currentDone,
+              pending: currentPending,
+              lastUpdated: updateTs,
+              nextRetryAt: updatedNextRetry,
+              rateLimited: Boolean(updatedNextRetry),
+              cacheKey,
+            });
+
+            setMotifRetrySeconds(
+              updatedNextRetry ? Math.max(0, Math.ceil((updatedNextRetry - updateTs) / 1000)) : null,
+            );
+
+            if (cacheKey) {
+              updateSpriteCacheEntryFromUi(cacheKey, (prev = {}) => ({
+                ...prev,
+                urls,
+                jobId,
+                pending: currentPending,
+                done: currentDone,
+              }));
+            }
+
+            if (currentPending <= 0) {
+              break;
+            }
+
+            await sleep(2000);
+          }
+        })().catch((error) => {
+          console.warn('Background motif polling failed', error);
+        });
       } catch (error) {
         console.warn('Interest motif request failed, using fallback motifs.', error);
+        const message = error instanceof Error ? error.message : String(error);
+        applyFallback(message);
       }
-    }
-    const fallback = deriveMotifsFromInterests(interests);
-    setGameState((prev) => {
-      const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-      return {
-        ...prev,
-        aiPersonalization: {
-          ...ai,
-          learnerProfile: {
-            ...ai.learnerProfile,
-            interestMotifs: fallback,
-            motifsUpdatedAt: Date.now(),
-          },
-        },
-      };
-    });
-  }, [aiRuntime.aiEnabled, aiRuntime.spriteModel, setGameState]);
+    },
+    [
+      aiRuntime.aiEnabled,
+      aiRuntime.spriteModel,
+      deriveMotifsFromInterests,
+      ensurePersonalization,
+      motifPollingRef,
+      requestInterestMotifs,
+      setGameState,
+    ],
+  );
+
+  const collectMotifHintsForProfile = useCallback((profile) => {
+    if (!profile || typeof profile !== 'object') return [];
+    const spriteHints = Array.isArray(profile.motifSprites)
+      ? profile.motifSprites
+          .filter((url) => typeof url === 'string' && url.trim())
+          .map((url) => ({ url, label: describeSpriteUrl(url) }))
+      : [];
+    const baseMotifs = Array.isArray(profile.interestMotifs) ? profile.interestMotifs : [];
+    return [...spriteHints, ...baseMotifs];
+  }, []);
 
   const ensureAiPlan = useCallback(async (force = false) => {
     const current = gameStateRef.current;
@@ -1541,11 +1996,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       .slice(0, 3)
       .map((entry) => `sum=${entry.sum}`);
 
+    const motifHints = normalizeMotifTokens(collectMotifHintsForProfile(ai.learnerProfile));
     const payload = {
       plan_for: ai.learnerProfile.learnerId || (current.studentInfo?.name || 'learner'),
       target_success: ai.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint,
       weak_families: weakFamilies,
-      interest_motifs: ai.learnerProfile.interestMotifs || [],
+      interest_motifs: motifHints,
       need_items: 10,
       learner_name: current.studentInfo?.name || 'Learner',
     };
@@ -1627,7 +2083,15 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
 
     setAiPlanStatus({ loading: false, error: null, source: resolvedSource || 'local planner' });
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
-  }, [aiRuntime.aiEnabled, aiRuntime.planningModel, ensurePersonalization, gameStateRef, setAiPlanStatus, setGameState]);
+  }, [
+    aiRuntime.aiEnabled,
+    aiRuntime.planningModel,
+    collectMotifHintsForProfile,
+    ensurePersonalization,
+    gameStateRef,
+    setAiPlanStatus,
+    setGameState,
+  ]);
 
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
@@ -2224,8 +2688,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   };
 
   const handleModeSelect = (mode, number = null) => {
-    const interests = gameStateRef.current?.aiPersonalization?.learnerProfile?.interests || [];
-    const motifs = gameStateRef.current?.aiPersonalization?.learnerProfile?.interestMotifs || [];
+    const profile = gameStateRef.current?.aiPersonalization?.learnerProfile || {};
+    const interests = profile?.interests || [];
+    const motifs = collectMotifHintsForProfile(profile);
     if (mode !== 'ai-path') {
       const themePacks = buildThemePacksForInterests(interests, { motifHints: motifs });
       const theme = resolveMotifTheme({ themePacks });

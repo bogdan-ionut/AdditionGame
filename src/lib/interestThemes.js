@@ -329,7 +329,25 @@ export function buildThemePacksForInterests(interests = [], { basePacks = [], mo
   const seen = new Set(sanitized.map((pack) => pack.key));
 
   const motifList = (Array.isArray(motifHints) ? motifHints : [])
-    .map((motif) => (typeof motif === 'string' ? motif.trim() : ''))
+    .map((motif) => {
+      if (typeof motif === 'string') {
+        return motif.trim();
+      }
+      if (motif && typeof motif === 'object') {
+        const candidates = [
+          motif.label,
+          motif.name,
+          motif.title,
+          motif.theme,
+          motif.interest,
+          motif.motif,
+          motif.url,
+        ];
+        const match = candidates.find((value) => typeof value === 'string' && value.trim());
+        if (match) return match.trim();
+      }
+      return '';
+    })
     .filter(Boolean);
 
   motifList.forEach((motif) => {
