@@ -10,12 +10,8 @@ import {
   TARGET_SUCCESS_BAND,
 } from './lib/aiPersonalization';
 import { buildThemePacksForInterests, resolveMotifTheme } from './lib/interestThemes';
-import {
-  saveGeminiKeyPlaceholder,
-  requestGeminiPlan,
-  requestInterestMotifs,
-  isGeminiConfigured,
-} from './services/aiPlanner';
+import { requestGeminiPlan, requestInterestMotifs } from './services/aiPlanner';
+import { getAiRuntime } from './lib/ai/runtime';
 import Register from './Register';
 
 // --- Helpers & Migration (Sprint 2) ---
@@ -631,7 +627,7 @@ const scheduleReview = (needsReview, a, b) => {
 };
 
 // Parent Dashboard Component
-const ParentDashboard = ({ gameState, onClose }) => {
+const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
   const stats = gameState.statistics;
   const mastery = gameState.masteryTracking;
   const knowledgeInsights = computeKnowledgeInsights(gameState);
@@ -694,9 +690,24 @@ const ParentDashboard = ({ gameState, onClose }) => {
               <h2 className="text-3xl font-bold mb-2">Parent Dashboard</h2>
               <p className="text-blue-100">Detailed Learning Analytics</p>
             </div>
-            <button onClick={onClose} className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg">
-              <X size={24} />
-            </button>
+            <div className="flex items-center gap-3">
+              <span
+                className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${
+                  aiRuntime?.aiEnabled
+                    ? 'bg-emerald-400/20 border-emerald-200/40 text-emerald-100'
+                    : 'bg-white/10 border-white/30 text-white'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${aiRuntime?.aiEnabled ? 'bg-emerald-200' : 'bg-red-200'}`}
+                  aria-hidden="true"
+                />
+                {aiRuntime?.aiEnabled ? 'AI Enabled' : 'AI Disabled'}
+              </span>
+              <button onClick={onClose} className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg">
+                <X size={24} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -770,7 +781,9 @@ const ParentDashboard = ({ gameState, onClose }) => {
                 <div className="text-xl font-bold mt-1">{delta.label}</div>
                 <p className="text-sm mt-2">{delta.message}</p>
                 <div className="mt-4 text-xs font-semibold">
-                  AI suggests leaning into +{knowledgeGrade.nextNumber} next to keep growth on pace.
+                  {aiRuntime?.aiEnabled
+                    ? `AI suggests leaning into +${knowledgeGrade.nextNumber} next to keep growth on pace.`
+                    : 'Local insights recommend continuing steady practice while AI features are paused.'}
                 </div>
               </div>
             </div>
@@ -924,7 +937,7 @@ const ModeSelection = ({
   onRemoveInterest,
   onStartAiPath,
   onRefreshPlan,
-  geminiReady,
+  aiRuntime,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -979,6 +992,21 @@ const ModeSelection = ({
         <div className="text-center mb-8">
           <h1 className="text-5xl font-bold text-gray-800 mb-4">Addition Flashcards</h1>
           <p className="text-xl text-gray-600">AI-Powered Mastery Learning</p>
+        </div>
+
+        <div className="flex justify-center mb-6">
+          <div
+            className={`flex items-center gap-3 px-4 py-2 rounded-full border text-sm font-semibold ${
+              aiRuntime?.aiEnabled
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                : 'bg-gray-100 border-gray-200 text-gray-600'
+            }`}
+          >
+            <span>{aiRuntime?.aiEnabled ? 'AI features enabled' : 'AI features disabled'}</span>
+            <span className="text-xs font-normal text-gray-500">
+              Server key: {aiRuntime?.serverHasKey ? 'Yes' : 'No'}
+            </span>
+          </div>
         </div>
 
         {/* Profile Section */}
@@ -1210,7 +1238,7 @@ const ModeSelection = ({
                 loading={aiPlanStatus?.loading}
                 planSource={aiPlanStatus?.source || aiPreviewItem?.source || aiPersonalization?.lastPlan?.source}
                 targetSuccess={targetSuccessPercent}
-                configured={geminiReady}
+                configured={aiRuntime?.aiEnabled}
                 onStartAiPath={onStartAiPath}
                 onRefreshPlan={onRefreshPlan}
               />
@@ -1248,7 +1276,8 @@ const ModeSelection = ({
                 ? (mastery.correctAttempts / mastery.totalAttempts * 100).toFixed(0)
                 : 0;
               const locked = isLocked(mode.number);
-              const aiUnlocked = overrides?.has(mode.number) && mode.number > (learningInsights.highestMastered ?? -1) + 1;
+              const aiUnlocked =
+                aiRuntime?.aiEnabled && overrides?.has(mode.number) && mode.number > (learningInsights.highestMastered ?? -1) + 1;
 
               return (
                 <button
@@ -1325,11 +1354,18 @@ export default function AdditionFlashcardApp() {
   const [attemptCount, setAttemptCount] = useState(0);
   const [problemStartTime, setProblemStartTime] = useState(null);
   const [guidedHelp, setGuidedHelp] = useState({ active: false, step: 0, complete: false });
+  const [aiRuntime, setAiRuntime] = useState({
+    aiEnabled: false,
+    serverHasKey: false,
+    planningModel: null,
+    spriteModel: null,
+    audioModel: null,
+    aiAllowed: true,
+  });
   const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [interestDraft, setInterestDraft] = useState('');
-  const [geminiReady, setGeminiReady] = useState(() => isGeminiConfigured());
   const [activeTheme, setActiveTheme] = useState(null);
   const [checkpointState, setCheckpointState] = useState({
     active: false,
@@ -1362,6 +1398,30 @@ export default function AdditionFlashcardApp() {
     gameStateRef.current = gameState;
   }, [gameState]);
 
+  const refreshAiRuntime = useCallback(async () => {
+    try {
+      const runtime = await getAiRuntime();
+      setAiRuntime(runtime);
+      return runtime;
+    } catch (error) {
+      console.warn('Unable to refresh AI runtime state', error);
+      const fallback = {
+        aiEnabled: false,
+        serverHasKey: false,
+        planningModel: null,
+        spriteModel: null,
+        audioModel: null,
+        aiAllowed: true,
+      };
+      setAiRuntime(fallback);
+      return fallback;
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAiRuntime();
+  }, [refreshAiRuntime]);
+
   const refreshInterestMotifs = useCallback(async (interests) => {
     if (!Array.isArray(interests)) return;
     if (interests.length === 0) {
@@ -1382,27 +1442,30 @@ export default function AdditionFlashcardApp() {
       });
       return;
     }
-    try {
-      const motifs = await requestInterestMotifs(interests);
-      if (Array.isArray(motifs) && motifs.length) {
-        setGameState((prev) => {
-          const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-          return {
-            ...prev,
-            aiPersonalization: {
-              ...ai,
-              learnerProfile: {
-                ...ai.learnerProfile,
-                interestMotifs: motifs,
-                motifsUpdatedAt: Date.now(),
+    const shouldRequestRemote = aiRuntime.aiEnabled && aiRuntime.spriteModel;
+    if (shouldRequestRemote) {
+      try {
+        const motifs = await requestInterestMotifs(interests, aiRuntime.spriteModel);
+        if (Array.isArray(motifs) && motifs.length) {
+          setGameState((prev) => {
+            const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+            return {
+              ...prev,
+              aiPersonalization: {
+                ...ai,
+                learnerProfile: {
+                  ...ai.learnerProfile,
+                  interestMotifs: motifs,
+                  motifsUpdatedAt: Date.now(),
+                },
               },
-            },
-          };
-        });
-        return;
+            };
+          });
+          return;
+        }
+      } catch (error) {
+        console.warn('Interest motif request failed, using fallback motifs.', error);
       }
-    } catch (error) {
-      console.warn('Interest motif request failed, using fallback motifs.', error);
     }
     const fallback = deriveMotifsFromInterests(interests);
     setGameState((prev) => {
@@ -1419,7 +1482,7 @@ export default function AdditionFlashcardApp() {
         },
       };
     });
-  }, [setGameState]);
+  }, [aiRuntime.aiEnabled, aiRuntime.spriteModel, setGameState]);
 
   const ensureAiPlan = useCallback(async (force = false) => {
     const current = gameStateRef.current;
@@ -1428,7 +1491,8 @@ export default function AdditionFlashcardApp() {
       return { reused: true, appended: [] };
     }
 
-    setAiPlanStatus((prev) => ({ ...prev, loading: true, error: null }));
+    setAiPlanStatus((prev) => ({ ...prev, loading: true, error: null, source: aiRuntime.aiEnabled ? aiRuntime.planningModel : 'local planner' }));
+    let resolvedSource = aiRuntime.aiEnabled ? aiRuntime.planningModel || 'gemini-planner' : 'local planner';
 
     const weakFamilies = Object.entries(ai.mastery || {})
       .map(([key, node]) => ({ key, sum: Number(key.replace('sum=', '')), predicted: node?.alpha ? node.alpha / (node.alpha + node.beta) : TARGET_SUCCESS_BAND.midpoint }))
@@ -1445,50 +1509,55 @@ export default function AdditionFlashcardApp() {
       learner_name: current.studentInfo?.name || 'Learner',
     };
 
-    try {
-      const remotePlan = await requestGeminiPlan(payload);
-      if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
-        const normalized = remotePlan.items.map((item, index) => ({
-          id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
-          a: item.a ?? item.operands?.[0] ?? 0,
-          b: item.b ?? item.operands?.[1] ?? 0,
-          answer: item.answer ?? ((item.a ?? item.operands?.[0] ?? 0) + (item.b ?? item.operands?.[1] ?? 0)),
-          display: item.display || `${item.a ?? item.operands?.[0] ?? 0} + ${item.b ?? item.operands?.[1] ?? 0}`,
-          predictedSuccess: item.predictedSuccess ?? item.difficulty ?? payload.target_success,
-          difficulty: item.difficulty ?? item.predictedSuccess ?? payload.target_success,
-          hints: item.hints ?? [],
-          praise: item.praise || '',
-          microStory: remotePlan.microStory || remotePlan.story || '',
-          source: remotePlan.source || 'gemini-2.5-pro',
-          planId: remotePlan.planId || `gemini-${Date.now()}`,
-        }));
+    if (aiRuntime.aiEnabled && aiRuntime.planningModel) {
+      try {
+        const remotePlan = await requestGeminiPlan(payload, aiRuntime.planningModel);
+        if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
+          const planSource = remotePlan.source || remotePlan.items[0]?.source || aiRuntime.planningModel;
+          resolvedSource = planSource;
+          const normalized = remotePlan.items.map((item, index) => ({
+            id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
+            a: item.a ?? item.operands?.[0] ?? 0,
+            b: item.b ?? item.operands?.[1] ?? 0,
+            answer: item.answer ?? ((item.a ?? item.operands?.[0] ?? 0) + (item.b ?? item.operands?.[1] ?? 0)),
+            display: item.display || `${item.a ?? item.operands?.[0] ?? 0} + ${item.b ?? item.operands?.[1] ?? 0}`,
+            predictedSuccess: item.predictedSuccess ?? item.difficulty ?? payload.target_success,
+            difficulty: item.difficulty ?? item.predictedSuccess ?? payload.target_success,
+            hints: item.hints ?? [],
+            praise: item.praise || '',
+            microStory: remotePlan.microStory || remotePlan.story || '',
+            source: planSource,
+            planId: remotePlan.planId || `gemini-${Date.now()}`,
+          }));
 
-        setGameState((prev) => {
-          const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-          return {
-            ...prev,
-            aiPersonalization: {
-              ...aiPrev,
-              planQueue: [...(aiPrev.planQueue || []), ...normalized],
-              lastPlan: {
-                id: normalized[0]?.planId,
-                generatedAt: Date.now(),
-                source: normalized[0]?.source,
-                microStory: normalized[0]?.microStory || '',
-                itemCount: normalized.length,
+          setGameState((prev) => {
+            const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+            return {
+              ...prev,
+              aiPersonalization: {
+                ...aiPrev,
+                planQueue: [...(aiPrev.planQueue || []), ...normalized],
+                lastPlan: {
+                  id: normalized[0]?.planId,
+                  generatedAt: Date.now(),
+                  source: normalized[0]?.source,
+                  microStory: normalized[0]?.microStory || '',
+                  itemCount: normalized.length,
+                },
               },
-            },
-          };
-        });
+            };
+          });
 
-        setAiPlanStatus({ loading: false, error: null, source: normalized[0]?.source || 'gemini-2.5-pro' });
-        return { reused: false, appended: normalized, plan: remotePlan };
+          setAiPlanStatus({ loading: false, error: null, source: planSource });
+          return { reused: false, appended: normalized, plan: remotePlan };
+        }
+      } catch (error) {
+        console.warn('Gemini planning failed, falling back to local planner.', error);
+        setAiPlanStatus((prev) => ({ ...prev, error: error.message || 'Gemini planning failed.' }));
       }
-    } catch (error) {
-      console.warn('Gemini planning failed, falling back to local planner.', error);
-      setAiPlanStatus((prev) => ({ ...prev, error: error.message || 'Gemini planning failed.' }));
     }
 
+    resolvedSource = 'local planner';
     const fallbackPlan = generateLocalPlan({
       personalization: ai,
       history: current.statistics?.problemHistory || {},
@@ -1508,16 +1577,16 @@ export default function AdditionFlashcardApp() {
             id: fallbackPlan.planId,
             generatedAt: fallbackPlan.generatedAt,
             source: fallbackPlan.source,
-            microStory: fallbackPlan.microStory,
+            microStory: fallbackPlan.story || '',
             itemCount: fallbackPlan.items.length,
           },
         },
       };
     });
 
-    setAiPlanStatus({ loading: false, error: null, source: fallbackPlan.source });
+    setAiPlanStatus({ loading: false, error: null, source: resolvedSource || 'local planner' });
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
-  }, []);
+  }, [aiRuntime.aiEnabled, aiRuntime.planningModel, ensurePersonalization, gameStateRef, setAiPlanStatus, setGameState]);
 
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
@@ -1605,7 +1674,7 @@ export default function AdditionFlashcardApp() {
 
     setAiSessionMeta({
       planId: sessionItems[0]?.planId || null,
-      source: sessionItems[0]?.source || 'local-fallback',
+      source: sessionItems[0]?.source || (aiRuntime.aiEnabled ? aiRuntime.planningModel || 'cloud-plan' : 'local-fallback'),
       story: sessionItems[0]?.microStory || '',
     });
 
@@ -1622,13 +1691,14 @@ export default function AdditionFlashcardApp() {
     setShowHint(false);
     setAttemptCount(0);
     setGuidedHelp({ active: false, step: 0, complete: false });
-  }, [ensureAiPlan]);
+  }, [aiRuntime.aiEnabled, aiRuntime.planningModel, ensureAiPlan]);
 
-  const handleGeminiSaved = useCallback(() => {
-    setGeminiReady(true);
-    setShowAiSettings(false);
-    ensureAiPlan(true);
-  }, [ensureAiPlan]);
+  const handleAiSettingsSaved = useCallback(async () => {
+    const runtime = await refreshAiRuntime();
+    if (runtime.aiEnabled) {
+      ensureAiPlan(true);
+    }
+  }, [ensureAiPlan, refreshAiRuntime]);
 
   const handleRegister = (userInfo) => {
     const userKey = `additionFlashcardsGameState_${userInfo.name}`;
@@ -2299,7 +2369,7 @@ export default function AdditionFlashcardApp() {
   }
 
   if (showDashboard) {
-    return <ParentDashboard gameState={gameState} onClose={() => setShowDashboard(false)} />;
+    return <ParentDashboard gameState={gameState} aiRuntime={aiRuntime} onClose={() => setShowDashboard(false)} />;
   }
 
   if (!gameMode) {
@@ -2322,13 +2392,12 @@ export default function AdditionFlashcardApp() {
           onRemoveInterest={handleRemoveInterest}
           onStartAiPath={startAiPath}
           onRefreshPlan={() => ensureAiPlan(true)}
-          geminiReady={geminiReady}
+          aiRuntime={aiRuntime}
         />
         {showAiSettings && (
           <ParentAISettings
             onClose={() => setShowAiSettings(false)}
-            onSaved={handleGeminiSaved}
-            saveKey={saveGeminiKeyPlaceholder}
+            onSaved={handleAiSettingsSaved}
           />
         )}
       </>
@@ -2622,8 +2691,7 @@ export default function AdditionFlashcardApp() {
     {showAiSettings && (
       <ParentAISettings
         onClose={() => setShowAiSettings(false)}
-        onSaved={handleGeminiSaved}
-        saveKey={saveGeminiKeyPlaceholder}
+        onSaved={handleAiSettingsSaved}
       />
     )}
     </>
