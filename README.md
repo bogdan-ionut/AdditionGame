@@ -15,14 +15,6 @@ This repository now uses [Vite](https://vitejs.dev/) for the React build. To run
 
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds the app and publishes the contents of `dist/` to the `gh-pages` branch on every push to `main`. Enable **Settings → Pages → Deploy from branch → gh-pages** to serve the latest build at `https://<username>.github.io/AdditionGame/`.
 
-## Gemini integrations
-
-- `src/api/sprites.ts` orchestrates the `https://ionutbogdan.ro/api/gemini/sprites/batch` and `/step` endpoints. New interests create a background job, cache any ready URLs in `localStorage` (`sprite_urls_v1`), and resume automatically after rate limits using the Retry-After hints.
-- `src/components/CountGrid.tsx` renders operand counts in a non-overlapping grid using the cached sprite URLs and skeleton placeholders until a matching sprite arrives via the cache event bus.
-- `src/AdditionFlashcardApp.jsx` shows a "Se pregătesc imaginile (x/n)…" banner while batch jobs finish, pauses polling when a 429 is returned, and displays the countdown banner until the retry window elapses.
-- `src/api/geminiPlan.ts` and `src/hooks/useGeminiPlan.ts` wrap the remote planner endpoint with structured error handling, surface fast-fallback metadata, and enforce retry delays during 429 responses. The planner panel lives in `src/components/RemotePlannerPanel.tsx`.
-- A "Clear sprites cache" button in the theme debug panel flushes the stored URLs for manual testing or QA.
-
 ## Data export folders
 
 Two folders are available for saving JSON exports or other assets:

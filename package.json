@@ -10,16 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@playwright/test": "^1.56.1",
-    "@vitejs/plugin-react": "^5.1.0",
     "lucide-react": "^0.379.0",
-    "playwright": "^1.56.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "eslint": "^8.56.0",
     "eslint-plugin-react": "^7.33.2",
