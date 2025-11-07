@@ -18,6 +18,31 @@ import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
 import mathGalaxyApi, { flushMathGalaxyQueue, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
 
+const DEFAULT_LEARNING_PATH_META = {
+  id: 'addition-within-10',
+  title: 'Addition • 0-9 Sums',
+  description: 'Build fluency with single-digit addition using adaptive, story-driven practice.',
+  recommendedAges: 'Ages 3-6',
+  operation: 'addition',
+  operationLabel: 'Addition',
+};
+
+const resolveActiveLearningPath = (learningPath) => {
+  const operationKey = learningPath?.operation;
+  const operationMeta = (operationKey && OPERATIONS[operationKey]) || OPERATIONS.addition || {};
+  const merged = {
+    ...DEFAULT_LEARNING_PATH_META,
+    ...(learningPath || {}),
+  };
+  return {
+    ...merged,
+    operationLabel:
+      learningPath?.operationLabel || operationMeta.label || DEFAULT_LEARNING_PATH_META.operationLabel,
+    recommendedAges:
+      learningPath?.recommendedAges || merged.recommendedAges || DEFAULT_LEARNING_PATH_META.recommendedAges,
+  };
+};
+
 // --- Helpers & Migration (Sprint 2) ---
 const dayKey = (ts = Date.now()) => {
   const d = new Date(ts);
@@ -1284,10 +1309,10 @@ const ModeSelection = ({
           <div className="bg-white rounded-3xl shadow-lg border-2 border-amber-200 p-8 mb-8">
             <div className="flex items-center gap-3 mb-4">
               <Info className="text-amber-600" size={24} />
-              <h3 className="text-2xl font-bold text-gray-800">About {activeLearningPath.title || 'Addition Flashcards'}</h3>
+              <h3 className="text-2xl font-bold text-gray-800">About {pathMeta.title || 'Addition Flashcards'}</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              {(activeLearningPath.title || 'Addition Flashcards')} blends classic fact practice with adaptive planning. Use this guide to see what is powered by AI and how to try it out.
+              {(pathMeta.title || 'Addition Flashcards')} blends classic fact practice with adaptive planning. Use this guide to see what is powered by AI and how to try it out.
             </p>
             <div className="grid gap-6 md:grid-cols-2">
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
@@ -1566,21 +1591,10 @@ const ModeSelection = ({
 
 // --- Main App ---
 export default function AdditionWithinTenApp({ learningPath, onExit }) {
-  const defaultPathMeta = {
-    id: 'addition-within-10',
-    title: 'Addition • 0-9 Sums',
-    description: 'Build fluency with single-digit addition using adaptive, story-driven practice.',
-    recommendedAges: 'Ages 3-6',
-    operation: 'addition',
-    operationLabel: 'Addition',
-  };
-  const operationMeta = (learningPath?.operation && OPERATIONS[learningPath.operation]) || OPERATIONS.addition;
-  const activeLearningPath = {
-    ...defaultPathMeta,
-    ...learningPath,
-    operationLabel: learningPath?.operationLabel || operationMeta?.label || defaultPathMeta.operationLabel,
-    recommendedAges: learningPath?.recommendedAges || defaultPathMeta.recommendedAges,
-  };
+  const activeLearningPath = useMemo(
+    () => resolveActiveLearningPath(learningPath),
+    [learningPath],
+  );
   const handleExit = onExit ?? (() => {});
 
   const [gameState, setGameState] = useState(() => {
@@ -2038,15 +2052,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
         applyFallback(message);
       }
     },
-    [
-      aiRuntime.aiEnabled,
-      aiRuntime.spriteModel,
-      deriveMotifsFromInterests,
-      ensurePersonalization,
-      motifPollingRef,
-      requestInterestMotifs,
-      setGameState,
-    ],
+    [aiRuntime.aiEnabled, aiRuntime.spriteModel, motifPollingRef, setGameState],
   );
 
   const collectMotifHintsForProfile = useCallback((profile) => {
@@ -2165,15 +2171,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
 
     setAiPlanStatus({ loading: false, error: null, source: resolvedSource || 'local planner' });
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
-  }, [
-    aiRuntime.aiEnabled,
-    aiRuntime.planningModel,
-    collectMotifHintsForProfile,
-    ensurePersonalization,
-    gameStateRef,
-    setAiPlanStatus,
-    setGameState,
-  ]);
+  }, [aiRuntime.aiEnabled, aiRuntime.planningModel, collectMotifHintsForProfile, setAiPlanStatus, setGameState]);
 
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
@@ -2490,7 +2488,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     }, 700);
 
     return () => clearInterval(interval);
-  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard]);
+  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard, showCountTogether]);
 
   // respond to checkpoint review pass/fail outcomes
   useEffect(() => {

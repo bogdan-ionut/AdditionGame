@@ -128,7 +128,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
           : error?.message || 'We could not save the API key. Please try again.';
       setKeyStatus({ state: 'error', message });
     }
-  }, [keyInput, runHealthCheck, syncRuntime]);
+  }, [keyInput, runHealthCheck]);
 
   const handleSaveModels = useCallback(async () => {
     const nextErrors = {
