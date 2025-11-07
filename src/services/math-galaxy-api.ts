@@ -28,13 +28,40 @@ type PostOpts = { beacon?: boolean };
 
 const LSQ_KEY = "mgq_v1";
 
+export type HeaderMap = Record<string, string>;
+
+export type MathGalaxyJsonResult<T = unknown> = {
+  data: T | null;
+  response: Response;
+};
+
+export class MathGalaxyApiError extends Error {
+  status?: number;
+  data?: unknown;
+  headers?: HeaderMap;
+
+  constructor(
+    message: string,
+    options: { status?: number; data?: unknown; headers?: HeaderMap; cause?: unknown } = {},
+  ) {
+    super(message || 'Math Galaxy API error');
+    this.name = 'MathGalaxyApiError';
+    this.status = options.status;
+    this.data = options.data;
+    this.headers = options.headers;
+    if (options.cause) {
+      (this as any).cause = options.cause;
+    }
+  }
+}
+
 function detectBaseUrl(): string {
   // Vite / Webpack env, altfel gol
   // (setează VITE_MATH_API_URL în .env.*)
   const vite = (import.meta as any)?.env?.VITE_MATH_API_URL;
   // @ts-ignore
   const node = typeof process !== "undefined" ? process?.env?.MATH_API_URL : undefined;
-  return vite || node || "";
+  return (vite || node || "").trim();
 }
 
 function defaultDevice(): string {
@@ -70,12 +97,16 @@ function saveQueue(items: AttemptIn[]) {
 export class MathGalaxyAPI {
   readonly baseUrl: string;
   readonly cfg: Required<Omit<ApiConfig, "baseUrl">>;
+
   constructor(cfg: ApiConfig = {}) {
-    const baseUrl = (cfg.baseUrl || detectBaseUrl()).replace(/\/+$/, "");
-    if (!baseUrl) {
-      console.warn("[MathGalaxyAPI] baseUrl is empty. Pass { baseUrl } or set VITE_MATH_API_URL.");
+    const base = (cfg.baseUrl || detectBaseUrl()).replace(/\/+$/, "");
+    if (!base) {
+      throw new MathGalaxyApiError(
+        "MathGalaxyAPI requires a baseUrl. Pass { baseUrl } or set VITE_MATH_API_URL.",
+      );
     }
-    this.baseUrl = baseUrl;
+
+    this.baseUrl = base;
     this.cfg = {
       defaultUserId: cfg.defaultUserId ?? "",
       defaultGame: cfg.defaultGame ?? "addition-0-9",
@@ -86,19 +117,56 @@ export class MathGalaxyAPI {
   }
 
   /** Ping new API */
-  async status() {
-    return this._get("/v1/status");
+  async status<T = any>() {
+    const { data } = await this.getWithMeta<T>("/v1/status");
+    return data;
   }
 
   /** Health */
-  async health() {
-    return this._get("/health");
+  async health<T = any>() {
+    const { data } = await this.getWithMeta<T>("/health");
+    return data;
+  }
+
+  async aiStatus<T = any>() {
+    const { data } = await this.getWithMeta<T>("/v1/ai/status");
+    return data;
+  }
+
+  async aiRuntime<T = any>() {
+    const { data } = await this.getWithMeta<T>("/v1/ai/runtime");
+    return data;
+  }
+
+  async saveAiKey<T = any>(payload: Record<string, unknown>) {
+    return this.post<T>("/v1/ai/key", payload);
+  }
+
+  async aiPlan<T = any>(payload: Record<string, unknown>) {
+    return this.post<T>("/v1/ai/plan", payload);
+  }
+
+  async postSpriteInterests<T = any>(payload: Record<string, unknown>, init: RequestInit = {}) {
+    return this.postWithMeta<T>("/v1/sprites/interests", payload, init);
+  }
+
+  async getSpriteJob<T = any>(jobId: string) {
+    const path = jobId
+      ? `/v1/sprites/jobs/${encodeURIComponent(jobId)}`
+      : "/v1/sprites/jobs";
+    return this.getWithMeta<T>(path);
+  }
+
+  async postSpriteProcessJob<T = any>(jobId: string, payload: Record<string, unknown>) {
+    const encoded = encodeURIComponent(jobId);
+    return this.postWithMeta<T>(`/v1/sprites/jobs/${encoded}/process`, payload);
   }
 
   /** Quick stats for a user */
   async getUserStats(userId: string, days = 30) {
     const u = encodeURIComponent(userId);
-    return this._get(`/v1/sessions/user/${u}/stats?days=${days}`);
+    const { data } = await this.getWithMeta(`/v1/sessions/user/${u}/stats?days=${days}`);
+    return data;
   }
 
   /** High-level helper for + : a + b */
@@ -146,42 +214,36 @@ export class MathGalaxyAPI {
 
   /** Low-level: mirrors FastAPI AttemptIn contract */
   async recordAttempt(body: AttemptIn, opts: PostOpts = {}) {
-    // normalize one of seconds / elapsedMs
     if (body.seconds == null && body.elapsedMs == null) {
-      // if not provided, try meta.elapsedMs or durationMs
       const ms = (body as any).durationMs ?? body.meta?.durationMs;
       if (typeof ms === "number") body.elapsedMs = Math.round(ms);
     }
 
-    // If both present, keep both (API le suportă) — dar păstrăm consistență
-    // Ensure device default
     body.device = body.device || this.cfg.defaultDevice;
 
-    // try sendBeacon for unload events
     if (opts.beacon && typeof navigator !== "undefined" && "sendBeacon" in navigator) {
       try {
         const url = `${this.baseUrl}/v1/sessions/attempt`;
         const blob = new Blob([JSON.stringify(body)], { type: "application/json" });
         const ok = (navigator as any).sendBeacon(url, blob);
         if (ok) return { ok: true, transport: "beacon" };
-        // fall through to fetch if beacon refused
       } catch {
         /* fall back */
       }
     }
 
     try {
-      const res = await this._post("/v1/sessions/attempt", body);
-      // try flush queue (if any older failed)
+      const res = await this.post("/v1/sessions/attempt", body);
       this.flushQueue().catch(() => {});
       return res;
     } catch (err) {
-      // enqueue on failure
       try {
         const q = loadQueue();
         q.push(body);
         saveQueue(q);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       throw err;
     }
   }
@@ -194,7 +256,7 @@ export class MathGalaxyAPI {
     const keep: AttemptIn[] = [];
     for (const item of q) {
       try {
-        await this._post("/v1/sessions/attempt", item, { keepalive: true });
+        await this.post("/v1/sessions/attempt", item, { keepalive: true });
         sent++;
       } catch {
         keep.push(item);
@@ -204,50 +266,160 @@ export class MathGalaxyAPI {
     return { sent, remaining: keep.length };
   }
 
-  // ---------- internals ----------
-  private async _get(path: string) {
-    return this._fetchJson("GET", path);
+  private async getWithMeta<T = unknown>(path: string, init: RequestInit = {}): Promise<MathGalaxyJsonResult<T>> {
+    const response = await this.request(path, { ...init, method: "GET" });
+    const data = await readResponseBody<T>(response);
+    return { data: data as T | null, response };
   }
 
-  private async _post(path: string, body: any, extra?: RequestInit) {
-    return this._fetchJson("POST", path, {
-      ...extra,
-      headers: { "Content-Type": "application/json", ...(extra?.headers || {}) },
-      body: JSON.stringify(body),
-      keepalive: extra?.keepalive ?? false,
-    });
+  private async postWithMeta<T = unknown>(
+    path: string,
+    body: unknown,
+    init: RequestInit = {},
+  ): Promise<MathGalaxyJsonResult<T>> {
+    const headers = new Headers(init.headers ?? {});
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    const prepared: RequestInit & { method: string } = {
+      ...init,
+      method: "POST",
+      headers,
+      body: body == null ? undefined : JSON.stringify(body),
+    };
+    const response = await this.request(path, prepared);
+    const data = await readResponseBody<T>(response);
+    return { data: data as T | null, response };
   }
 
-  private async _fetchJson(method: string, path: string, init: RequestInit = {}) {
+  private async get<T = unknown>(path: string, init: RequestInit = {}) {
+    const { data } = await this.getWithMeta<T>(path, init);
+    return data as T;
+  }
+
+  private async post<T = unknown>(path: string, body: unknown, init: RequestInit = {}) {
+    const { data } = await this.postWithMeta<T>(path, body, init);
+    return data as T;
+  }
+
+  private async request(path: string, init: RequestInit & { method: string }): Promise<Response> {
     const url = `${this.baseUrl}${path}`;
     let attempt = 0;
-    let lastErr: any = null;
+    let lastErr: MathGalaxyApiError | null = null;
 
     while (attempt <= this.cfg.retries) {
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.cfg.timeoutMs);
       try {
-        const res = await fetch(url, { method, signal: ac.signal, ...init });
-        clearTimeout(t);
-        if (!res.ok) {
-          const text = await safeText(res);
-          throw new Error(`HTTP ${res.status} ${res.statusText} – ${text}`);
+        const headers = new Headers(init.headers ?? {});
+        if (!headers.has("Accept")) {
+          headers.set("Accept", "application/json");
         }
-        const ct = res.headers.get("content-type") || "";
-        if (ct.includes("application/json")) return res.json();
-        return res.text();
-      } catch (e) {
-        clearTimeout(t);
-        lastErr = e;
-        // small backoff
-        if (attempt < this.cfg.retries) await sleep(250 * (attempt + 1));
+        const response = await fetch(url, {
+          ...init,
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!response.ok) {
+          throw await this.buildHttpError(response);
+        }
+        return response;
+      } catch (error) {
+        clearTimeout(timeout);
+        const normalized =
+          error instanceof MathGalaxyApiError
+            ? error
+            : new MathGalaxyApiError(
+                error instanceof Error ? error.message : "Network error",
+                { cause: error },
+              );
+
+        if (normalized.status != null) {
+          throw normalized;
+        }
+
+        lastErr = normalized;
+        if (attempt >= this.cfg.retries) {
+          throw normalized;
+        }
+
+        await sleep(250 * (attempt + 1));
       }
       attempt++;
     }
-    throw lastErr ?? new Error("Network error");
+
+    throw lastErr ?? new MathGalaxyApiError("Network error");
+  }
+
+  private async buildHttpError(response: Response): Promise<MathGalaxyApiError> {
+    const { data, raw } = await readResponseData(response);
+    const headers = headersToObject(response.headers);
+    const detail = extractErrorMessage(data) || raw;
+    const message = detail?.trim?.() ? detail : `HTTP ${response.status} ${response.statusText}`;
+    return new MathGalaxyApiError(message, {
+      status: response.status,
+      data,
+      headers,
+    });
   }
 }
 
 async function safeText(res: Response) {
-  try { return await res.text(); } catch { return ""; }
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
+async function readResponseBody<T>(response: Response): Promise<T | null> {
+  const { data } = await readResponseData(response);
+  return (data as T | null) ?? null;
+}
+
+async function readResponseData(response: Response): Promise<{ raw: string; data: unknown }> {
+  const raw = await safeText(response);
+  if (!raw) {
+    return { raw: "", data: null };
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return { raw, data: parseJsonSafe(raw) };
+  }
+  return { raw, data: raw };
+}
+
+function parseJsonSafe(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function headersToObject(headers: Headers): HeaderMap {
+  const result: HeaderMap = {};
+  headers.forEach((value, key) => {
+    result[key.toLowerCase()] = value;
+  });
+  return result;
+}
+
+function extractErrorMessage(data: unknown): string | null {
+  if (!data) return null;
+  if (typeof data === "string") {
+    return data;
+  }
+  if (typeof data === "object") {
+    const source = data as Record<string, unknown>;
+    const fields = ["error", "message", "detail", "reason", "title"];
+    for (const field of fields) {
+      const value = source[field];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+    }
+  }
+  return null;
 }

@@ -1,4 +1,4 @@
-import { getGeminiHealthUrl, getAiRuntimeUrl, isAiProxyConfigured } from '../../services/aiEndpoints';
+import mathGalaxyClient, { MathGalaxyApiError, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
 
@@ -73,12 +73,6 @@ export type AiRuntimeState = {
   lastError: string | null;
 };
 
-type HealthResult = {
-  ok: boolean;
-  payload: Record<string, unknown> | null;
-  error: string | null;
-};
-
 const readString = (value: unknown): string | null => {
   if (typeof value === 'string' && value.trim()) {
     return value;
@@ -119,24 +113,6 @@ const readBooleanFrom = (
   return null;
 };
 
-const fetchHealthPayload = async (url: string): Promise<HealthResult> => {
-  try {
-    const response = await fetch(url, { method: 'GET' });
-    if (!response.ok) {
-      return {
-        ok: false,
-        payload: null,
-        error: `Health check failed (HTTP ${response.status})`,
-      };
-    }
-    const json = await response.json().catch(() => null);
-    return { ok: true, payload: (json as Record<string, unknown>) ?? null, error: null };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to reach AI status endpoint';
-    return { ok: false, payload: null, error: message };
-  }
-};
-
 export async function getAiRuntime(): Promise<AiRuntimeState> {
   const cfg = loadAiConfig();
 
@@ -152,7 +128,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     };
   }
 
-  if (!isAiProxyConfigured()) {
+  if (!isMathGalaxyConfigured) {
     return {
       aiEnabled: false,
       serverHasKey: false,
@@ -160,43 +136,62 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       spriteModel: cfg.spriteModel,
       audioModel: cfg.audioModel,
       aiAllowed: cfg.aiAllowed,
-      lastError: 'AI proxy endpoint is not configured.',
+      lastError: 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.',
     };
   }
 
   let serverHasKey = false;
   let lastError: string | null = null;
-  let runtimePayload: Record<string, unknown> | null = null;
+  const aggregatedPayload: Record<string, unknown> = {};
 
-  const healthUrls = [getAiRuntimeUrl(), getGeminiHealthUrl()].filter(Boolean);
-  for (const url of healthUrls) {
-    if (!url) continue;
-    const result = await fetchHealthPayload(url);
-    if (!result.ok) {
-      lastError = lastError || result.error;
-      continue;
+  const offlineMessage = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+
+  const fetchers = [
+    async () => mathGalaxyClient.aiRuntime(),
+    async () => mathGalaxyClient.aiStatus(),
+  ];
+
+  for (const fetcher of fetchers) {
+    try {
+      const payload = await fetcher();
+      if (payload && typeof payload === 'object') {
+        Object.assign(aggregatedPayload, payload as Record<string, unknown>);
+      }
+    } catch (error) {
+      const message =
+        error instanceof MathGalaxyApiError || error instanceof TypeError
+          ? offlineMessage
+          : error instanceof Error
+            ? error.message
+            : offlineMessage;
+      lastError = lastError || message;
     }
+  }
 
-    const payload = result.payload || {};
-    runtimePayload = { ...(runtimePayload || {}), ...payload };
-    const config = (payload.config ?? payload.settings) as Record<string, unknown> | undefined;
+  const runtimePayload = Object.keys(aggregatedPayload).length ? aggregatedPayload : null;
+
+  if (runtimePayload) {
+    const payloadConfig = (runtimePayload.config ?? runtimePayload.settings) as
+      | Record<string, unknown>
+      | null
+      | undefined;
+
     serverHasKey = Boolean(
-      payload.have_key ??
-        payload.haveKey ??
-        payload.server_has_key ??
-        payload.key_configured ??
-        readBooleanFrom(config, ['have_key', 'has_key', 'key_present']) ??
+      runtimePayload.have_key ??
+        runtimePayload.haveKey ??
+        runtimePayload.server_has_key ??
+        runtimePayload.key_configured ??
+        readBooleanFrom(payloadConfig, ['have_key', 'has_key', 'key_present']) ??
         serverHasKey,
     );
-    const reportedError = (payload.error || payload.message || payload.reason) as string | undefined;
+
+    const reportedError = (runtimePayload.error || runtimePayload.message || runtimePayload.reason) as
+      | string
+      | undefined;
     if (reportedError && reportedError.trim()) {
       lastError = reportedError.trim();
-    } else if (!serverHasKey) {
-      lastError = lastError || 'Gemini API key missing on server.';
-    }
-
-    if (serverHasKey || lastError) {
-      break;
+    } else if (!serverHasKey && !lastError) {
+      lastError = 'Gemini API key missing on server.';
     }
   }
 
