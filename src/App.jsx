@@ -1,11 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import LearningPathDashboard from './components/learning-path/LearningPathDashboard.jsx';
 import { LEARNING_PATHS, OPERATIONS } from './lib/learningPaths.js';
 import { moduleRegistry } from './modules/index.js';
+import { flushMathGalaxyQueue, isMathGalaxyConfigured } from './services/mathGalaxyClient';
 
 function App() {
   const [activePathId, setActivePathId] = useState(null);
+
+  useEffect(() => {
+    if (!isMathGalaxyConfigured) return;
+    flushMathGalaxyQueue().catch(() => {});
+  }, []);
 
   const activePath = useMemo(() => {
     if (!activePathId) return null;
