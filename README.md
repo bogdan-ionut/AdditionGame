@@ -11,6 +11,16 @@ This repository now uses [Vite](https://vitejs.dev/) for the React build. To run
 3. Create a production bundle with `npm run build` (artifacts land in `dist/`).
 4. Preview the production build with `npm run preview` if needed.
 
+### Environment configuration
+
+Create a `.env.local` (or the appropriate Vite environment file) with the new backend endpoint:
+
+```
+VITE_MATH_API_URL=https://math-api-811756754621.us-central1.run.app
+```
+
+The frontend SDK falls back to this value automatically when recording addition attempts.
+
 ## GitHub Pages deployment
 
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds the app and publishes the contents of `dist/` to the `gh-pages` branch on every push to `main`. Enable **Settings → Pages → Deploy from branch → gh-pages** to serve the latest build at `https://<username>.github.io/AdditionGame/`.

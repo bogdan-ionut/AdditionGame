@@ -16,6 +16,7 @@ import { postProcessJob, getSpriteJobStatus } from '../../services/aiEndpoints';
 import { getAiRuntime } from '../../lib/ai/runtime';
 import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
+import mathGalaxyApi, { flushMathGalaxyQueue, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
 
 // --- Helpers & Migration (Sprint 2) ---
 const dayKey = (ts = Date.now()) => {
@@ -1596,6 +1597,25 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   const inputRef = useRef(null);
   const gameStateRef = useRef(gameState);
 
+  useEffect(() => {
+    if (!isMathGalaxyConfigured) return;
+    flushMathGalaxyQueue().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isMathGalaxyConfigured) return;
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushMathGalaxyQueue().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   const { studentInfo } = gameState;
   const aiPersonalization = useMemo(
     () => ensurePersonalization(gameState.aiPersonalization, gameState.studentInfo),
@@ -2497,6 +2517,21 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     const problemKey = `${card.a}+${card.b}`;
     const timeSec = timeSpent / 1000;
     const attemptTimestamp = Date.now();
+    const deckSize = cards.length;
+    const activeCardIndex = currentCard;
+    const numericAnswer = Number.parseInt(userAnswer, 10);
+    const safeAnswer = Number.isFinite(numericAnswer) ? numericAnswer : Number(card.answer);
+    const answerForApi = Number.isFinite(safeAnswer) ? safeAnswer : 0;
+    const stateSnapshot = gameStateRef.current;
+    const learnerProfile = stateSnapshot?.aiPersonalization?.learnerProfile;
+    const learnerId =
+      (typeof learnerProfile?.learnerId === 'string' && learnerProfile.learnerId.trim()) ||
+      (typeof stateSnapshot?.studentInfo?.name === 'string' && stateSnapshot.studentInfo.name.trim()) ||
+      '';
+    const userIdForApi = learnerId || undefined;
+    const difficultyBefore = stateSnapshot?.adaptiveLearning?.currentDifficulty || null;
+    const sessionStartedAt = stateSnapshot?.sessionData?.currentSession?.startTime || null;
+    const checkpointSnapshot = stateSnapshot?.adaptiveLearning?.checkpoint || null;
 
     setGameState(prev => {
       const statistics = {
@@ -2690,6 +2725,48 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
 
     updateMasteryTracking(card.a, correct);
     updateMasteryTracking(card.b, correct);
+
+    if (isMathGalaxyConfigured) {
+      const meta = {
+        mode: gameMode || 'unknown',
+        focusNumber: focusNumber ?? null,
+        deckSize,
+        cardIndex: activeCardIndex,
+        difficulty: difficultyBefore,
+        attemptTimestamp,
+        review: Boolean(card.review),
+      };
+      if (sessionStartedAt) {
+        meta.sessionStartedAt = sessionStartedAt;
+      }
+      if (checkpointSnapshot) {
+        meta.checkpoint = {
+          pending: Boolean(checkpointSnapshot.pending),
+          inProgress: Boolean(checkpointSnapshot.inProgress),
+        };
+      }
+      if (card.aiPlanItem?.id) meta.aiPlanItemId = card.aiPlanItem.id;
+      if (card.aiPlanItem?.source) meta.aiPlanSource = card.aiPlanItem.source;
+      if (typeof card.deckId === 'string') meta.deckId = card.deckId;
+
+      mathGalaxyApi
+        .recordAdditionAttempt({
+          userId: userIdForApi,
+          a: card.a,
+          b: card.b,
+          answer: answerForApi,
+          correct,
+          elapsedMs: timeSpent,
+          seconds: Number((timeSpent / 1000).toFixed(3)),
+          game: 'addition-within-10',
+          meta,
+        })
+        .catch((error) => {
+          if (import.meta.env.DEV) {
+            console.warn('[MathGalaxyAPI] Failed to record attempt', error);
+          }
+        });
+    }
   };
 
   const handleModeSelect = (mode, number = null) => {
