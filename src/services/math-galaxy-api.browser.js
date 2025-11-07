@@ -1,17 +1,31 @@
 // math-galaxy-api.browser.js
 export class MathGalaxyAPI {
   constructor(cfg = {}) {
-    const vite = (typeof import !== "undefined" && typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_MATH_API_URL) || "";
-    const node = (typeof process !== "undefined" && process.env && process.env.MATH_API_URL) || "";
-    this.baseUrl = (cfg.baseUrl || vite || node || "").replace(/\/+$/, "");
+    let viteEnv = '';
+    try {
+      viteEnv = import.meta?.env?.VITE_MATH_API_URL ?? '';
+    } catch (error) {
+      // ignore environments without import.meta (Node, legacy bundlers)
+      viteEnv = '';
+    }
+    const nodeEnv =
+      typeof globalThis !== 'undefined' && globalThis.process?.env
+        ? globalThis.process.env.MATH_API_URL ?? ''
+        : '';
+    this.baseUrl = (cfg.baseUrl || viteEnv || nodeEnv || '').replace(/\/+$/, '');
+
+    if (!this.baseUrl) {
+      throw new Error('MathGalaxyAPI requires a baseUrl. Set VITE_MATH_API_URL or pass { baseUrl }.');
+    }
+
     this.cfg = {
-      defaultUserId: cfg.defaultUserId || "",
-      defaultGame: cfg.defaultGame || "addition-0-9",
-      defaultDevice: cfg.defaultDevice || "web",
+      defaultUserId: cfg.defaultUserId || '',
+      defaultGame: cfg.defaultGame || 'addition-0-9',
+      defaultDevice: cfg.defaultDevice || 'web',
       timeoutMs: cfg.timeoutMs || 7000,
       retries: cfg.retries ?? 1,
     };
-    this._lsk = "mgq_v1";
+    this._lsk = 'mgq_v1';
   }
   status(){ return this._get("/v1/status"); }
   health(){ return this._get("/health"); }
@@ -38,36 +52,42 @@ export class MathGalaxyAPI {
     }
     body.device = body.device || this.cfg.defaultDevice;
 
-    if (beacon && typeof navigator !== "undefined" && "sendBeacon" in navigator){
-      try{
-        const blob = new Blob([JSON.stringify(body)], {type:"application/json"});
-        if (navigator.sendBeacon(`${this.baseUrl}/v1/sessions/attempt`, blob)) return {ok:true, transport:"beacon"};
-      }catch{}
-    }
+      if (beacon && typeof navigator !== "undefined" && "sendBeacon" in navigator){
+        try{
+          const blob = new Blob([JSON.stringify(body)], {type:"application/json"});
+          if (navigator.sendBeacon(`${this.baseUrl}/v1/sessions/attempt`, blob)) return {ok:true, transport:"beacon"};
+        }catch(error){
+          // ignore beacon transport errors and fall back to fetch
+        }
+      }
     try{
       const res = await this._post("/v1/sessions/attempt", body);
       this.flushQueue().catch(()=>{});
       return res;
-    }catch(e){
-      try{
-        const q = JSON.parse(localStorage.getItem(this._lsk)||"[]"); q.push(body);
-        localStorage.setItem(this._lsk, JSON.stringify(q));
-      }catch{}
-      throw e;
+      }catch(e){
+        try{
+          const q = JSON.parse(localStorage.getItem(this._lsk)||"[]"); q.push(body);
+          localStorage.setItem(this._lsk, JSON.stringify(q));
+        }catch(storageError){
+          // ignore localStorage quota errors when queueing attempts
+        }
+        throw e;
+      }
     }
-  }
-  async flushQueue(){
-    let q;
-    try{ q = JSON.parse(localStorage.getItem(this._lsk)||"[]"); }catch{ q=[]; }
-    if(!q.length) return {sent:0};
-    let sent=0, keep=[];
-    for(const it of q){
-      try{ await this._post("/v1/sessions/attempt", it, {keepalive:true}); sent++; }
-      catch{ keep.push(it); }
+    async flushQueue(){
+      let q;
+      try{ q = JSON.parse(localStorage.getItem(this._lsk)||"[]"); }catch(error){ q=[]; }
+      if(!q.length) return {sent:0};
+      let sent=0, keep=[];
+      for(const it of q){
+        try{ await this._post("/v1/sessions/attempt", it, {keepalive:true}); sent++; }
+        catch(error){ keep.push(it); }
+      }
+      try{ localStorage.setItem(this._lsk, JSON.stringify(keep)); }catch(storageError){
+        // ignore persistence errors when pruning the queue
+      }
+      return {sent, remaining: keep.length};
     }
-    try{ localStorage.setItem(this._lsk, JSON.stringify(keep)); }catch{}
-    return {sent, remaining: keep.length};
-  }
 
   // internals
   async _get(p){ return this._fetchJson("GET", p); }
