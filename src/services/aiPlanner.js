@@ -5,6 +5,7 @@ import {
   postInterestsPacks,
   getSpriteJobStatus,
   postProcessJob,
+  isAiProxyConfigured,
 } from './aiEndpoints';
 import { deriveMotifsFromInterests } from '../lib/aiPersonalization';
 
@@ -28,7 +29,12 @@ export async function saveGeminiKey(key) {
     throw new Error('API key is required.');
   }
 
-  const response = await fetch(getGeminiKeyUrl(), {
+  const url = getGeminiKeyUrl();
+  if (!url) {
+    throw new Error('AI proxy endpoint is not configured.');
+  }
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ apiKey: trimmed, key: trimmed, api_key: trimmed }),
@@ -50,7 +56,11 @@ async function fetchHealth(url) {
 }
 
 export async function testGeminiKey() {
-  return fetchHealth(getGeminiHealthUrl());
+  const url = getGeminiHealthUrl();
+  if (!url) {
+    throw new Error('AI proxy endpoint is not configured.');
+  }
+  return fetchHealth(url);
 }
 
 const stripCodeFence = (text = '') => {
@@ -166,7 +176,12 @@ export async function requestGeminiPlan(payload, model) {
     body.model = model;
   }
 
-  const response = await fetch(getPlanningUrl(), {
+  const url = getPlanningUrl();
+  if (!url) {
+    throw new Error('AI proxy endpoint is not configured.');
+  }
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -393,6 +408,10 @@ export async function requestInterestMotifs(
   const fallbackMotifs = deriveSpriteFallback(sanitizedInterests);
 
   if (!aiEnabled || !model) {
+    return { source: 'fallback', motifs: fallbackMotifs, jobId: null, pending: 0, done: 0 };
+  }
+
+  if (!isAiProxyConfigured()) {
     return { source: 'fallback', motifs: fallbackMotifs, jobId: null, pending: 0, done: 0 };
   }
 
