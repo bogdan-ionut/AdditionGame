@@ -1,73 +1,15 @@
-const DEFAULT_API_BASE = null;
-
-const normalizeBase = (value) => {
-  if (!value || typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
-};
-
-let cachedApiBase;
-let hasCachedBase = false;
-
-export function getApiBase() {
-  if (!hasCachedBase) {
-    const envBase =
-      normalizeBase(import.meta?.env?.VITE_MATH_AI_API_URL) ||
-      normalizeBase(import.meta?.env?.VITE_AI_PROXY_URL);
-    cachedApiBase = envBase || DEFAULT_API_BASE;
-    hasCachedBase = true;
-  }
-  return cachedApiBase;
-}
-
-export function isAiProxyConfigured() {
-  const base = getApiBase();
-  return Boolean(base && typeof base === 'string');
-}
-
-export function getGeminiKeyUrl() {
-  const base = getApiBase();
-  return base ? `${base}/v1/ai/key` : null;
-}
-
-export function getGeminiHealthUrl() {
-  const base = getApiBase();
-  return base ? `${base}/v1/ai/status` : null;
-}
-
-export function getAiRuntimeUrl() {
-  const base = getApiBase();
-  return base ? `${base}/v1/ai/runtime` : null;
-}
-
-export function getPlanningUrl() {
-  const base = getApiBase();
-  return base ? `${base}/v1/ai/plan` : null;
-}
-
-export function getInterestPacksUrl() {
-  const base = getApiBase();
-  return base ? `${base}/v1/sprites/interests` : null;
-}
-
-export function getSpriteJobStatusUrl(jobId) {
-  const base = getApiBase();
-  if (!base) return null;
-  const root = `${base}/v1/sprites/jobs`;
-  if (!jobId) return root;
-  const encoded = encodeURIComponent(jobId);
-  return `${root}/${encoded}`;
-}
-
-export function getSpriteProcessJobUrl(jobId) {
-  const base = getApiBase();
-  if (!base || !jobId) return null;
-  const encoded = encodeURIComponent(jobId);
-  return `${base}/v1/sprites/jobs/${encoded}/process`;
-}
+import mathGalaxyClient, { MathGalaxyApiError, isMathGalaxyConfigured } from './mathGalaxyClient';
 
 const RETRY_AFTER_DEFAULT_MS = 45000;
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+
+const toHeadersLookup = (headers) => ({
+  get(name) {
+    if (!headers) return null;
+    const value = headers[name.toLowerCase()];
+    return typeof value === 'string' ? value : null;
+  },
+});
 
 const parseRetryAfter = (response, data) => {
   if (!response) return null;
@@ -92,54 +34,46 @@ const parseRetryAfter = (response, data) => {
   return null;
 };
 
-const readJson = async (response) => {
-  if (!response) return { data: null };
-  const text = await response.text();
-  if (!text) return { data: null };
-  try {
-    return { data: JSON.parse(text) };
-  } catch (error) {
-    return { data: null };
-  }
-};
-
 const buildResult = ({ response, data, error }) => {
   if (!response) {
+    const normalizedError =
+      error instanceof Error ? error : error ? new Error(String(error)) : new Error(OFFLINE_MESSAGE);
     return {
       ok: false,
       status: 0,
       data: null,
-      error: error instanceof Error ? error : error ? new Error(String(error)) : null,
+      error: normalizedError,
       retryAfter: null,
     };
   }
+
+  const normalizedError = response.ok
+    ? null
+    : error instanceof Error
+      ? error
+      : new Error(`HTTP ${response.status}`);
 
   return {
     ok: response.ok,
     status: response.status,
     data,
-    error: response.ok ? null : new Error(`HTTP ${response.status}`),
+    error: normalizedError,
     retryAfter: parseRetryAfter(response, data) ?? null,
   };
 };
 
-async function requestJson(url, options = {}) {
-  try {
-    const response = await fetch(url, options);
-    const { data } = await readJson(response);
-    return buildResult({ response, data, error: null });
-  } catch (error) {
-    return buildResult({ response: null, data: null, error });
-  }
-}
-
-const buildNotConfiguredResult = () => ({
+const buildErrorResponse = (error) => ({
   ok: false,
-  status: 503,
-  data: null,
-  error: new Error('AI proxy endpoint is not configured.'),
-  retryAfter: null,
+  status: error?.status ?? 0,
+  headers: toHeadersLookup(error?.headers ?? null),
 });
+
+const normalizeErrorData = (value) => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  return value;
+};
 
 const ensureInterestsPayload = ({ interests = [], mode = 'sync', sync_ms = 6000, tick_limit = 1, model }) => {
   const payload = {
@@ -154,23 +88,80 @@ const ensureInterestsPayload = ({ interests = [], mode = 'sync', sync_ms = 6000,
   return payload;
 };
 
-export async function postInterestsPacks({
-  interests = [],
-  mode = 'sync',
-  sync_ms = 6000,
-  tick_limit = 1,
-  model,
-} = {}) {
-  const payload = ensureInterestsPayload({ interests, mode, sync_ms, tick_limit, model });
-  const url = getInterestPacksUrl();
-  if (!url) {
+const buildNotConfiguredResult = () => ({
+  ok: false,
+  status: 503,
+  data: null,
+  error: new Error(OFFLINE_MESSAGE),
+  retryAfter: null,
+});
+
+export function getApiBase() {
+  return mathGalaxyClient?.baseUrl ?? null;
+}
+
+const buildUrl = (path) => {
+  const base = getApiBase();
+  return base ? `${base}${path}` : null;
+};
+
+export function isAiProxyConfigured() {
+  return isMathGalaxyConfigured;
+}
+
+export function getGeminiKeyUrl() {
+  return buildUrl('/v1/ai/key');
+}
+
+export function getGeminiHealthUrl() {
+  return buildUrl('/v1/ai/status');
+}
+
+export function getAiRuntimeUrl() {
+  return buildUrl('/v1/ai/runtime');
+}
+
+export function getPlanningUrl() {
+  return buildUrl('/v1/ai/plan');
+}
+
+export function getInterestPacksUrl() {
+  return buildUrl('/v1/sprites/interests');
+}
+
+export function getSpriteJobStatusUrl(jobId) {
+  const base = buildUrl('/v1/sprites/jobs');
+  if (!base) return null;
+  if (!jobId) return base;
+  const encoded = encodeURIComponent(jobId);
+  return `${base}/${encoded}`;
+}
+
+export function getSpriteProcessJobUrl(jobId) {
+  if (!jobId) return null;
+  const base = getApiBase();
+  if (!base) return null;
+  const encoded = encodeURIComponent(jobId);
+  return `${base}/v1/sprites/jobs/${encoded}/process`;
+}
+
+export async function postInterestsPacks({ interests = [], mode = 'sync', sync_ms = 6000, tick_limit = 1, model } = {}) {
+  if (!isAiProxyConfigured()) {
     return buildNotConfiguredResult();
   }
-  return requestJson(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+
+  const payload = ensureInterestsPayload({ interests, mode, sync_ms, tick_limit, model });
+  try {
+    const { data, response } = await mathGalaxyClient.postSpriteInterests(payload);
+    return buildResult({ response, data, error: null });
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      const response = buildErrorResponse(error);
+      const data = normalizeErrorData(error.data);
+      return buildResult({ response, data, error });
+    }
+    return buildResult({ response: null, data: null, error });
+  }
 }
 
 export async function getSpriteJobStatus(jobId) {
@@ -183,13 +174,22 @@ export async function getSpriteJobStatus(jobId) {
       retryAfter: null,
     };
   }
-  const url = getSpriteJobStatusUrl(jobId);
-  if (!url) {
+
+  if (!isAiProxyConfigured()) {
     return buildNotConfiguredResult();
   }
-  return requestJson(url, {
-    method: 'GET',
-  });
+
+  try {
+    const { data, response } = await mathGalaxyClient.getSpriteJob(jobId);
+    return buildResult({ response, data, error: null });
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      const response = buildErrorResponse(error);
+      const data = normalizeErrorData(error.data);
+      return buildResult({ response, data, error });
+    }
+    return buildResult({ response: null, data: null, error });
+  }
 }
 
 export async function postProcessJob({ jobId, limit = 1, model } = {}) {
@@ -202,23 +202,35 @@ export async function postProcessJob({ jobId, limit = 1, model } = {}) {
       retryAfter: null,
     };
   }
+
+  if (!isAiProxyConfigured()) {
+    return buildNotConfiguredResult();
+  }
+
   const payload = { limit };
   if (model) {
     payload.model = model;
   }
-  const processUrl = getSpriteProcessJobUrl(jobId);
-  if (!processUrl) {
-    return buildNotConfiguredResult();
+
+  try {
+    const { data, response } = await mathGalaxyClient.postSpriteProcessJob(jobId, payload);
+    const result = buildResult({ response, data, error: null });
+    if (!result.retryAfter && !result.ok && result.status === 429) {
+      result.retryAfter = RETRY_AFTER_DEFAULT_MS;
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      const response = buildErrorResponse(error);
+      const data = normalizeErrorData(error.data);
+      const result = buildResult({ response, data, error });
+      if (!result.retryAfter && result.status === 429) {
+        result.retryAfter = RETRY_AFTER_DEFAULT_MS;
+      }
+      return result;
+    }
+    return buildResult({ response: null, data: null, error });
   }
-  const result = await requestJson(processUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!result.retryAfter && !result.ok && result.status === 429) {
-    result.retryAfter = RETRY_AFTER_DEFAULT_MS;
-  }
-  return result;
 }
 
 export { RETRY_AFTER_DEFAULT_MS };

@@ -1,27 +1,13 @@
 import {
-  getGeminiKeyUrl,
-  getGeminiHealthUrl,
-  getPlanningUrl,
   postInterestsPacks,
   getSpriteJobStatus,
   postProcessJob,
   isAiProxyConfigured,
 } from './aiEndpoints';
+import mathGalaxyClient, { MathGalaxyApiError } from './mathGalaxyClient';
 import { deriveMotifsFromInterests } from '../lib/aiPersonalization';
 
-const handleErrorResponse = async (response, fallbackMessage) => {
-  let detail = '';
-  try {
-    const data = await response.json();
-    if (data?.error) {
-      detail = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
-    }
-  } catch (error) {
-    // ignore json parse errors
-  }
-  const message = detail ? `${fallbackMessage}: ${detail}` : `${fallbackMessage} (HTTP ${response.status})`;
-  throw new Error(message);
-};
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
 
 export async function saveGeminiKey(key) {
   const trimmed = key?.trim?.();
@@ -29,38 +15,33 @@ export async function saveGeminiKey(key) {
     throw new Error('API key is required.');
   }
 
-  const url = getGeminiKeyUrl();
-  if (!url) {
-    throw new Error('AI proxy endpoint is not configured.');
+  if (!isAiProxyConfigured()) {
+    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ apiKey: trimmed, key: trimmed, api_key: trimmed }),
-  });
-
-  if (!response.ok) {
-    await handleErrorResponse(response, 'Unable to save Gemini key');
+  try {
+    return await mathGalaxyClient.saveAiKey({ apiKey: trimmed, key: trimmed, api_key: trimmed });
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      throw error;
+    }
+    throw new MathGalaxyApiError(error instanceof Error ? error.message : OFFLINE_MESSAGE, { cause: error });
   }
-
-  return response.json();
-}
-
-async function fetchHealth(url) {
-  const response = await fetch(url, { method: 'GET' });
-  if (!response.ok) {
-    await handleErrorResponse(response, 'Gemini health check failed');
-  }
-  return response.json();
 }
 
 export async function testGeminiKey() {
-  const url = getGeminiHealthUrl();
-  if (!url) {
-    throw new Error('AI proxy endpoint is not configured.');
+  if (!isAiProxyConfigured()) {
+    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
-  return fetchHealth(url);
+
+  try {
+    return await mathGalaxyClient.aiStatus();
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      throw error;
+    }
+    throw new MathGalaxyApiError(error instanceof Error ? error.message : OFFLINE_MESSAGE, { cause: error });
+  }
 }
 
 const stripCodeFence = (text = '') => {
@@ -176,25 +157,21 @@ export async function requestGeminiPlan(payload, model) {
     body.model = model;
   }
 
-  const url = getPlanningUrl();
-  if (!url) {
-    throw new Error('AI proxy endpoint is not configured.');
+  if (!isAiProxyConfigured()) {
+    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    await handleErrorResponse(response, 'Gemini planner request failed');
+  try {
+    const data = await mathGalaxyClient.aiPlan(body);
+    const normalized = normalizePlan(data, body.model);
+    if (normalized) return normalized;
+    return data;
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      throw error;
+    }
+    throw new MathGalaxyApiError(error instanceof Error ? error.message : OFFLINE_MESSAGE, { cause: error });
   }
-
-  const data = await response.json();
-  const normalized = normalizePlan(data, body.model);
-  if (normalized) return normalized;
-  return data;
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

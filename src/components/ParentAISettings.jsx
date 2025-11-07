@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { loadAiConfig, saveAiConfig, getAiRuntime } from '../lib/ai/runtime';
 import { saveGeminiKey, testGeminiKey } from '../services/aiPlanner';
+import { MathGalaxyApiError } from '../services/mathGalaxyClient';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
 const AUDIO_MODEL_OPTIONS = ['gemini-2.5-pro-preview-tts', 'gemini-2.5-flash-preview-tts'];
+
+const API_OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
 
 const initialRuntime = {
   aiEnabled: false,
@@ -93,7 +96,11 @@ export default function ParentAISettings({ onClose, onSaved }) {
         setTestStatus({ state: 'success', ok, message });
         await syncRuntime(notify);
       } catch (error) {
-        setTestStatus({ state: 'error', ok: false, message: error.message || 'Unable to verify key.' });
+        const message =
+          error instanceof MathGalaxyApiError || error instanceof TypeError
+            ? API_OFFLINE_MESSAGE
+            : error?.message || API_OFFLINE_MESSAGE;
+        setTestStatus({ state: 'error', ok: false, message });
         await syncRuntime(notify);
       }
     },
@@ -115,7 +122,11 @@ export default function ParentAISettings({ onClose, onSaved }) {
       setKeyInput('');
       await runHealthCheck(true);
     } catch (error) {
-      setKeyStatus({ state: 'error', message: error.message || 'We could not save the API key. Please try again.' });
+      const message =
+        error instanceof MathGalaxyApiError || error instanceof TypeError
+          ? API_OFFLINE_MESSAGE
+          : error?.message || 'We could not save the API key. Please try again.';
+      setKeyStatus({ state: 'error', message });
     }
   }, [keyInput, runHealthCheck, syncRuntime]);
 
