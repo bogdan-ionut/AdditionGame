@@ -55,6 +55,19 @@ export default function ParentAISettings({ onClose, onSaved }) {
     async (notify = false) => {
       const next = await getAiRuntime();
       setRuntime(next);
+      setPlanningModel((prev) => {
+        const trimmed = typeof prev === 'string' ? prev.trim() : '';
+        return trimmed ? prev : next.planningModel || '';
+      });
+      setSpriteModel((prev) => {
+        const trimmed = typeof prev === 'string' ? prev.trim() : '';
+        return trimmed ? prev : next.spriteModel || 'gemini-2.5-flash-image';
+      });
+      setAudioModel((prev) => {
+        const trimmed = typeof prev === 'string' ? prev.trim() : '';
+        return trimmed ? prev : next.audioModel || '';
+      });
+      setAiAllowed(next.aiAllowed !== false);
       if (notify) {
         onSaved?.(next);
       }

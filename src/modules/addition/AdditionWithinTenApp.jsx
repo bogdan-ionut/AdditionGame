@@ -39,14 +39,36 @@ const createDefaultMotifJobState = () => ({
   cacheKey: null,
 });
 
+const resolveUiSpriteStatus = (item) => {
+  if (!item || typeof item !== 'object') return null;
+  if (typeof item.status === 'string') return item.status;
+  if (typeof item.state === 'string') return item.state;
+  if (item.done === true) return 'done';
+  if (item.pending === true) return 'pending';
+  return null;
+};
+
+const resolveUiSpriteUrl = (item) => {
+  if (!item || typeof item !== 'object') return null;
+  if (typeof item.url === 'string') return item.url;
+  if (typeof item.sprite_url === 'string') return item.sprite_url;
+  if (typeof item.href === 'string') return item.href;
+  if (Array.isArray(item.urls) && item.urls.length) {
+    const first = item.urls.find((value) => typeof value === 'string' && value.trim());
+    if (first) return first;
+  }
+  if (item.asset && typeof item.asset === 'string') return item.asset;
+  return null;
+};
+
 const sanitizeSpriteItemsForUi = (items = []) => {
   if (!Array.isArray(items)) return [];
   return items
     .filter((item) => item && typeof item === 'object')
     .map((item) => ({
       interest: typeof item.interest === 'string' ? item.interest : null,
-      status: item.status || null,
-      url: typeof item.url === 'string' ? item.url : null,
+      status: resolveUiSpriteStatus(item),
+      url: resolveUiSpriteUrl(item),
     }));
 };
 
@@ -58,18 +80,40 @@ const collectSpriteUrlsForUi = (items = []) => {
 };
 
 const parseSpriteJobStatusForUi = (payload = {}) => {
-  const items = sanitizeSpriteItemsForUi(payload.items);
-  const done = Number.isFinite(payload.done)
-    ? Number(payload.done)
+  const job = payload && typeof payload.job === 'object' ? payload.job : null;
+  const rawItems = Array.isArray(payload.items) && payload.items.length
+    ? payload.items
+    : Array.isArray(job?.items)
+      ? job.items
+      : Array.isArray(payload.job_items)
+        ? payload.job_items
+        : [];
+  const items = sanitizeSpriteItemsForUi(rawItems);
+  const doneCandidate =
+    payload.done ??
+    payload.completed ??
+    job?.done ??
+    job?.completed ??
+    job?.stats?.done ??
+    job?.stats?.completed;
+  const pendingCandidate =
+    payload.pending ??
+    job?.pending ??
+    job?.stats?.pending ??
+    job?.remaining;
+  const done = Number.isFinite(doneCandidate)
+    ? Number(doneCandidate)
     : items.filter((item) => item.status === 'done').length;
-  const pending = Number.isFinite(payload.pending)
-    ? Number(payload.pending)
-    : items.filter((item) => item.status !== 'done').length;
+  const pending = Number.isFinite(pendingCandidate)
+    ? Number(pendingCandidate)
+    : Math.max(0, items.length - (Number.isFinite(done) ? done : 0));
   const jobId = typeof payload.job_id === 'string'
     ? payload.job_id
     : typeof payload.jobId === 'string'
       ? payload.jobId
-      : null;
+      : typeof job?.id === 'string'
+        ? job.id
+        : null;
   return {
     jobId,
     done: Number.isFinite(done) ? done : 0,
@@ -1908,7 +1952,18 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
             }
 
             const parsed = parseSpriteJobStatusForUi(status.data || {});
-            readySet = new Set([...readySet, ...collectSpriteUrlsForUi(parsed.items)]);
+            const spriteUrls = new Set(collectSpriteUrlsForUi(parsed.items));
+            const directSprites = [
+              ...(Array.isArray(status.data?.sprites) ? status.data.sprites : []),
+              ...(Array.isArray(status.data?.urls) ? status.data.urls : []),
+              ...(Array.isArray(status.data?.sprite_urls) ? status.data.sprite_urls : []),
+            ];
+            directSprites.forEach((url) => {
+              if (typeof url === 'string' && url.trim()) {
+                spriteUrls.add(url.trim());
+              }
+            });
+            readySet = new Set([...readySet, ...spriteUrls]);
             currentPending = Math.max(0, parsed.pending);
             currentDone = Math.max(parsed.done, readySet.size);
 
@@ -2065,6 +2120,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
                   source: normalized[0]?.source,
                   microStory: normalized[0]?.microStory || '',
                   itemCount: normalized.length,
+                  metadata: remotePlan.metadata || remotePlan.meta || remotePlan._meta || null,
                 },
               },
             };
@@ -2101,6 +2157,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
             source: fallbackPlan.source,
             microStory: fallbackPlan.story || '',
             itemCount: fallbackPlan.items.length,
+            metadata: fallbackPlan.metadata || null,
           },
         },
       };
