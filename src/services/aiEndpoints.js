@@ -1,40 +1,50 @@
 const DEFAULT_API_BASE = 'https://ionutbogdan.ro/api';
 
+const normalizeBase = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+};
+
 export function getApiBase() {
-  const base = import.meta?.env?.VITE_AI_PROXY_URL;
-  if (!base) return DEFAULT_API_BASE;
-  return base.endsWith('/') ? base.slice(0, -1) : base;
+  const envBase =
+    normalizeBase(import.meta?.env?.VITE_MATH_AI_API_URL) ||
+    normalizeBase(import.meta?.env?.VITE_AI_PROXY_URL);
+  return envBase || DEFAULT_API_BASE;
 }
 
 export function getGeminiKeyUrl() {
-  return `${getApiBase()}/ai/key`;
+  return `${getApiBase()}/v1/ai/key`;
 }
 
 export function getGeminiHealthUrl() {
-  return `${getApiBase()}/ai/status`;
+  return `${getApiBase()}/v1/ai/status`;
 }
 
-export function getLegacyGeminiHealthUrl() {
-  return `${getApiBase()}/health/gemini_post.php`;
+export function getAiRuntimeUrl() {
+  return `${getApiBase()}/v1/ai/runtime`;
 }
 
 export function getPlanningUrl() {
-  return `${getApiBase()}/gemini/plan`;
+  return `${getApiBase()}/v1/ai/plan`;
 }
 
 export function getInterestPacksUrl() {
-  return `${getApiBase()}/interests/packs`;
+  return `${getApiBase()}/v1/sprites/interests`;
 }
 
 export function getSpriteJobStatusUrl(jobId) {
-  const base = `${getApiBase()}/sprites/job_status`;
+  const base = `${getApiBase()}/v1/sprites/jobs`;
   if (!jobId) return base;
   const encoded = encodeURIComponent(jobId);
-  return `${base}?job_id=${encoded}`;
+  return `${base}/${encoded}`;
 }
 
-export function getSpriteProcessJobUrl() {
-  return `${getApiBase()}/sprites/process_job`;
+export function getSpriteProcessJobUrl(jobId) {
+  if (!jobId) return null;
+  const encoded = encodeURIComponent(jobId);
+  return `${getApiBase()}/v1/sprites/jobs/${encoded}/process`;
 }
 
 const RETRY_AFTER_DEFAULT_MS = 45000;
@@ -48,8 +58,13 @@ const parseRetryAfter = (response, data) => {
       return numeric * 1000;
     }
   }
-  if (data && typeof data === 'object' && data.retry_after != null) {
-    const retrySeconds = Number.parseFloat(data.retry_after);
+  if (data && typeof data === 'object') {
+    const retrySeconds =
+      data.retry_after_ms != null
+        ? Number.parseFloat(data.retry_after_ms) / 1000
+        : data.retry_after != null
+          ? Number.parseFloat(data.retry_after)
+          : null;
     if (Number.isFinite(retrySeconds) && retrySeconds > 0) {
       return retrySeconds * 1000;
     }
@@ -151,11 +166,21 @@ export async function postProcessJob({ jobId, limit = 1, model } = {}) {
       retryAfter: null,
     };
   }
-  const payload = { job_id: jobId, limit };
+  const payload = { limit };
   if (model) {
     payload.model = model;
   }
-  const result = await requestJson(getSpriteProcessJobUrl(), {
+  const processUrl = getSpriteProcessJobUrl(jobId);
+  if (!processUrl) {
+    return {
+      ok: false,
+      status: 400,
+      data: null,
+      error: new Error('job_id is required'),
+      retryAfter: null,
+    };
+  }
+  const result = await requestJson(processUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

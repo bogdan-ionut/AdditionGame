@@ -1,4 +1,4 @@
-import { getGeminiHealthUrl, getLegacyGeminiHealthUrl } from '../../services/aiEndpoints';
+import { getGeminiHealthUrl, getAiRuntimeUrl } from '../../services/aiEndpoints';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
 
@@ -79,6 +79,46 @@ type HealthResult = {
   error: string | null;
 };
 
+const readString = (value: unknown): string | null => {
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+  return null;
+};
+
+const readBoolean = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
+  }
+  return null;
+};
+
+const readStringFrom = (
+  source: Record<string, unknown> | null | undefined,
+  keys: string[],
+): string | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const candidate = readString((source as Record<string, unknown>)[key]);
+    if (candidate) return candidate;
+  }
+  return null;
+};
+
+const readBooleanFrom = (
+  source: Record<string, unknown> | null | undefined,
+  keys: string[],
+): boolean | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const candidate = readBoolean((source as Record<string, unknown>)[key]);
+    if (candidate !== null) return candidate;
+  }
+  return null;
+};
+
 const fetchHealthPayload = async (url: string): Promise<HealthResult> => {
   try {
     const response = await fetch(url, { method: 'GET' });
@@ -114,8 +154,9 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
 
   let serverHasKey = false;
   let lastError: string | null = null;
+  let runtimePayload: Record<string, unknown> | null = null;
 
-  const healthUrls = [getGeminiHealthUrl(), getLegacyGeminiHealthUrl()];
+  const healthUrls = [getAiRuntimeUrl(), getGeminiHealthUrl()].filter(Boolean);
   for (const url of healthUrls) {
     if (!url) continue;
     const result = await fetchHealthPayload(url);
@@ -125,7 +166,16 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     }
 
     const payload = result.payload || {};
-    serverHasKey = Boolean(payload.have_key ?? payload.haveKey ?? payload.server_has_key);
+    runtimePayload = { ...(runtimePayload || {}), ...payload };
+    const config = (payload.config ?? payload.settings) as Record<string, unknown> | undefined;
+    serverHasKey = Boolean(
+      payload.have_key ??
+        payload.haveKey ??
+        payload.server_has_key ??
+        payload.key_configured ??
+        readBooleanFrom(config, ['have_key', 'has_key', 'key_present']) ??
+        serverHasKey,
+    );
     const reportedError = (payload.error || payload.message || payload.reason) as string | undefined;
     if (reportedError && reportedError.trim()) {
       lastError = reportedError.trim();
@@ -138,15 +188,44 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     }
   }
 
-  const aiAllowed = cfg.aiAllowed !== false;
-  const aiEnabled = Boolean(serverHasKey && cfg.planningModel && cfg.spriteModel && aiAllowed);
+  const payloadConfig = (runtimePayload?.config ?? runtimePayload?.settings) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const reportedPlanning =
+    readStringFrom(runtimePayload, ['planning_model', 'planningModel']) ??
+    readStringFrom(payloadConfig, ['planning_model', 'planningModel']) ??
+    null;
+  const reportedSprite =
+    readStringFrom(runtimePayload, ['sprite_model', 'spriteModel']) ??
+    readStringFrom(payloadConfig, ['sprite_model', 'spriteModel']) ??
+    null;
+  const reportedAudio =
+    readStringFrom(runtimePayload, ['audio_model', 'audioModel']) ??
+    readStringFrom(payloadConfig, ['audio_model', 'audioModel']) ??
+    null;
+
+  const resolvedPlanningModel = cfg.planningModel ?? reportedPlanning ?? null;
+  const resolvedSpriteModel = cfg.spriteModel ?? reportedSprite ?? null;
+  const resolvedAudioModel = cfg.audioModel ?? reportedAudio ?? null;
+
+  const remoteAllowed =
+    readBooleanFrom(runtimePayload, ['ai_allowed', 'aiAllowed']) ??
+    readBooleanFrom(payloadConfig, ['ai_allowed', 'aiAllowed']);
+  const aiAllowed = (remoteAllowed !== false) && cfg.aiAllowed !== false;
+  const remoteAiEnabled =
+    readBooleanFrom(runtimePayload, ['ai_enabled', 'aiEnabled']) ??
+    readBooleanFrom(payloadConfig, ['ai_enabled', 'aiEnabled']);
+  const aiEnabled = remoteAiEnabled != null
+    ? Boolean(remoteAiEnabled && aiAllowed)
+    : Boolean(serverHasKey && resolvedPlanningModel && resolvedSpriteModel && aiAllowed);
 
   return {
     aiEnabled,
     serverHasKey,
-    planningModel: cfg.planningModel,
-    spriteModel: cfg.spriteModel,
-    audioModel: cfg.audioModel,
+    planningModel: resolvedPlanningModel,
+    spriteModel: resolvedSpriteModel,
+    audioModel: resolvedAudioModel,
     aiAllowed,
     lastError,
   };

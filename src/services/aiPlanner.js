@@ -1,7 +1,6 @@
 import {
   getGeminiKeyUrl,
   getGeminiHealthUrl,
-  getLegacyGeminiHealthUrl,
   getPlanningUrl,
   postInterestsPacks,
   getSpriteJobStatus,
@@ -32,7 +31,7 @@ export async function saveGeminiKey(key) {
   const response = await fetch(getGeminiKeyUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ apiKey: trimmed }),
+    body: JSON.stringify({ apiKey: trimmed, key: trimmed, api_key: trimmed }),
   });
 
   if (!response.ok) {
@@ -51,15 +50,7 @@ async function fetchHealth(url) {
 }
 
 export async function testGeminiKey() {
-  try {
-    return await fetchHealth(getGeminiHealthUrl());
-  } catch (primaryError) {
-    try {
-      return await fetchHealth(getLegacyGeminiHealthUrl());
-    } catch (legacyError) {
-      throw primaryError instanceof Error ? primaryError : legacyError;
-    }
-  }
+  return fetchHealth(getGeminiHealthUrl());
 }
 
 const stripCodeFence = (text = '') => {
@@ -115,15 +106,35 @@ const extractTextFragments = (payload) => {
 const normalizePlan = (data, model) => {
   if (!data) return null;
 
-  const usedModel = data?._meta?.used_model || model || null;
+  const usedModel = data?._meta?.used_model || data?.used_model || model || null;
 
   const coercePlan = (planCandidate) => {
     if (!planCandidate) return null;
-    if (Array.isArray(planCandidate.items)) {
+    const items = Array.isArray(planCandidate.items)
+      ? planCandidate.items
+      : Array.isArray(planCandidate.queue)
+        ? planCandidate.queue
+        : null;
+    if (items && items.length) {
+      const metadata =
+        planCandidate.metadata ||
+        planCandidate.meta ||
+        planCandidate._meta ||
+        data?._meta ||
+        null;
       return {
         ...planCandidate,
+        items,
         planId: planCandidate.planId || planCandidate.plan_id || planCandidate.id || null,
         source: planCandidate.source || usedModel || planCandidate.model || null,
+        microStory:
+          planCandidate.microStory ||
+          planCandidate.story ||
+          planCandidate.micro_story ||
+          data?.micro_story ||
+          data?.story ||
+          '',
+        metadata,
       };
     }
     return null;
@@ -131,6 +142,11 @@ const normalizePlan = (data, model) => {
 
   const directPlan = coercePlan(data.plan || data);
   if (directPlan) return directPlan;
+
+  if (Array.isArray(data.queue) && data.queue.length) {
+    const queuePlan = coercePlan({ ...data, items: data.queue });
+    if (queuePlan) return queuePlan;
+  }
 
   const fragments = extractTextFragments(data);
   for (const fragment of fragments) {
@@ -182,35 +198,81 @@ const sanitizeInterests = (interests = []) => {
     });
 };
 
+const resolveSpriteStatus = (item) => {
+  if (!item || typeof item !== 'object') return null;
+  if (typeof item.status === 'string') return item.status;
+  if (typeof item.state === 'string') return item.state;
+  if (item.done === true) return 'done';
+  if (item.pending === true) return 'pending';
+  return null;
+};
+
+const resolveSpriteUrl = (item) => {
+  if (!item || typeof item !== 'object') return null;
+  if (typeof item.url === 'string') return item.url;
+  if (typeof item.sprite_url === 'string') return item.sprite_url;
+  if (typeof item.href === 'string') return item.href;
+  if (Array.isArray(item.urls) && item.urls.length) {
+    const found = item.urls.find((value) => typeof value === 'string' && value.trim());
+    if (found) return found;
+  }
+  if (item.asset && typeof item.asset === 'string') return item.asset;
+  return null;
+};
+
 const sanitizeSpriteItems = (items = []) => {
   if (!Array.isArray(items)) return [];
   return items
     .filter((item) => item && typeof item === 'object')
     .map((item) => ({
       interest: typeof item.interest === 'string' ? item.interest : null,
-      status: item.status || null,
-      url: typeof item.url === 'string' ? item.url : null,
+      status: resolveSpriteStatus(item),
+      url: resolveSpriteUrl(item),
     }));
 };
 
 const parseSpriteJobStatus = (payload = {}) => {
-  const items = sanitizeSpriteItems(payload.items);
-  const done = Number.isFinite(payload.done)
-    ? Number(payload.done)
+  const job = payload && typeof payload.job === 'object' ? payload.job : null;
+  const rawItems = Array.isArray(payload.items) && payload.items.length
+    ? payload.items
+    : Array.isArray(job?.items)
+      ? job.items
+      : Array.isArray(payload.job_items)
+        ? payload.job_items
+        : [];
+  const items = sanitizeSpriteItems(rawItems);
+  const doneCandidate =
+    payload.done ??
+    payload.completed ??
+    job?.done ??
+    job?.completed ??
+    job?.stats?.done ??
+    job?.stats?.completed;
+  const pendingCandidate =
+    payload.pending ??
+    job?.pending ??
+    job?.stats?.pending ??
+    job?.remaining;
+  const done = Number.isFinite(doneCandidate)
+    ? Number(doneCandidate)
     : items.filter((item) => item.status === 'done').length;
-  const pending = Number.isFinite(payload.pending)
-    ? Number(payload.pending)
-    : items.filter((item) => item.status !== 'done').length;
+  const pending = Number.isFinite(pendingCandidate)
+    ? Number(pendingCandidate)
+    : Math.max(0, items.length - (Number.isFinite(done) ? done : 0));
   const jobId = typeof payload.job_id === 'string'
     ? payload.job_id
     : typeof payload.jobId === 'string'
       ? payload.jobId
-      : null;
+      : typeof job?.id === 'string'
+        ? job.id
+        : null;
+  const status = typeof job?.status === 'string' ? job.status : payload.status || null;
   return {
     jobId,
     done: Number.isFinite(done) ? done : 0,
     pending: Number.isFinite(pending) ? pending : 0,
     items,
+    status,
   };
 };
 
@@ -378,11 +440,17 @@ export async function requestInterestMotifs(
   const syncStatus = parseSpriteJobStatus(syncData);
   const readySet = new Set();
   mergeUrls(readySet, Array.isArray(syncData.urls) ? syncData.urls : []);
+  mergeUrls(readySet, Array.isArray(syncData.sprites) ? syncData.sprites : []);
+  mergeUrls(readySet, Array.isArray(syncData.sprite_urls) ? syncData.sprite_urls : []);
+  if (Array.isArray(syncData.job?.sprites)) {
+    mergeUrls(readySet, syncData.job.sprites);
+  }
   mergeUrls(readySet, collectSpriteUrls(syncStatus.items));
 
   let jobId = syncStatus.jobId;
   if (!jobId && typeof syncData.jobId === 'string') jobId = syncData.jobId;
   if (!jobId && typeof syncData.job_id === 'string') jobId = syncData.job_id;
+  if (!jobId && typeof syncData.job?.id === 'string') jobId = syncData.job.id;
 
   let pending = clampPositive(syncStatus.pending, Number.isFinite(syncData.pending) ? Number(syncData.pending) : 0);
   let done = clampPositive(syncStatus.done, Number.isFinite(syncData.done) ? Number(syncData.done) : readySet.size);
@@ -427,6 +495,8 @@ export async function requestInterestMotifs(
       rateLimitedUntil = Date.now() + processResult.retryAfter;
     }
     mergeUrls(readySet, Array.isArray(processResult.data?.new_urls) ? processResult.data.new_urls : []);
+    mergeUrls(readySet, Array.isArray(processResult.data?.urls) ? processResult.data.urls : []);
+    mergeUrls(readySet, Array.isArray(processResult.data?.sprites) ? processResult.data.sprites : []);
 
     await sleep(pollDelay);
     const statusResult = await getSpriteJobStatus(jobId);
@@ -442,6 +512,7 @@ export async function requestInterestMotifs(
     lastStatus = parsed;
     pending = clampPositive(parsed.pending, pending);
     done = clampPositive(parsed.done, done);
+    mergeUrls(readySet, Array.isArray(statusResult.data?.sprites) ? statusResult.data.sprites : []);
     mergeUrls(readySet, collectSpriteUrls(parsed.items));
 
     if (statusResult.retryAfter) {
@@ -480,7 +551,16 @@ export async function requestInterestMotifs(
 export async function getServerKeyStatus() {
   try {
     const health = await testGeminiKey();
-    return Boolean(health?.have_key ?? health?.haveKey ?? health?.server_has_key);
+    const config = health?.config || health?.settings;
+    return Boolean(
+      health?.have_key ??
+        health?.haveKey ??
+        health?.server_has_key ??
+        health?.key_configured ??
+        config?.have_key ??
+        config?.has_key ??
+        config?.key_present,
+    );
   } catch (error) {
     console.warn('Unable to read Gemini key status', error);
     return false;
