@@ -1,4 +1,4 @@
-import { getGeminiHealthUrl, getAiRuntimeUrl } from '../../services/aiEndpoints';
+import { getGeminiHealthUrl, getAiRuntimeUrl, isAiProxyConfigured } from '../../services/aiEndpoints';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
 
@@ -149,6 +149,18 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       audioModel: cfg.audioModel,
       aiAllowed: cfg.aiAllowed,
       lastError: null,
+    };
+  }
+
+  if (!isAiProxyConfigured()) {
+    return {
+      aiEnabled: false,
+      serverHasKey: false,
+      planningModel: cfg.planningModel,
+      spriteModel: cfg.spriteModel,
+      audioModel: cfg.audioModel,
+      aiAllowed: cfg.aiAllowed,
+      lastError: 'AI proxy endpoint is not configured.',
     };
   }
 

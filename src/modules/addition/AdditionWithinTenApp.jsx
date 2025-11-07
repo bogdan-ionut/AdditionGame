@@ -2806,23 +2806,25 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       if (card.aiPlanItem?.source) meta.aiPlanSource = card.aiPlanItem.source;
       if (typeof card.deckId === 'string') meta.deckId = card.deckId;
 
-      mathGalaxyApi
-        .recordAdditionAttempt({
-          userId: userIdForApi,
-          a: card.a,
-          b: card.b,
-          answer: answerForApi,
-          correct,
-          elapsedMs: timeSpent,
-          seconds: Number((timeSpent / 1000).toFixed(3)),
-          game: 'addition-within-10',
-          meta,
-        })
-        .catch((error) => {
-          if (import.meta.env.DEV) {
-            console.warn('[MathGalaxyAPI] Failed to record attempt', error);
-          }
-        });
+      if (isMathGalaxyConfigured && mathGalaxyApi) {
+        mathGalaxyApi
+          .recordAdditionAttempt({
+            userId: userIdForApi,
+            a: card.a,
+            b: card.b,
+            answer: answerForApi,
+            correct,
+            elapsedMs: timeSpent,
+            seconds: Number((timeSpent / 1000).toFixed(3)),
+            game: 'addition-within-10',
+            meta,
+          })
+          .catch((error) => {
+            if (import.meta.env.DEV) {
+              console.warn('[MathGalaxyAPI] Failed to record attempt', error);
+            }
+          });
+      }
     }
   };
 

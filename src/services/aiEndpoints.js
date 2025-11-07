@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = 'https://ionutbogdan.ro/api';
+const DEFAULT_API_BASE = null;
 
 const normalizeBase = (value) => {
   if (!value || typeof value !== 'string') return null;
@@ -7,44 +7,64 @@ const normalizeBase = (value) => {
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 };
 
+let cachedApiBase;
+let hasCachedBase = false;
+
 export function getApiBase() {
-  const envBase =
-    normalizeBase(import.meta?.env?.VITE_MATH_AI_API_URL) ||
-    normalizeBase(import.meta?.env?.VITE_AI_PROXY_URL);
-  return envBase || DEFAULT_API_BASE;
+  if (!hasCachedBase) {
+    const envBase =
+      normalizeBase(import.meta?.env?.VITE_MATH_AI_API_URL) ||
+      normalizeBase(import.meta?.env?.VITE_AI_PROXY_URL);
+    cachedApiBase = envBase || DEFAULT_API_BASE;
+    hasCachedBase = true;
+  }
+  return cachedApiBase;
+}
+
+export function isAiProxyConfigured() {
+  const base = getApiBase();
+  return Boolean(base && typeof base === 'string');
 }
 
 export function getGeminiKeyUrl() {
-  return `${getApiBase()}/v1/ai/key`;
+  const base = getApiBase();
+  return base ? `${base}/v1/ai/key` : null;
 }
 
 export function getGeminiHealthUrl() {
-  return `${getApiBase()}/v1/ai/status`;
+  const base = getApiBase();
+  return base ? `${base}/v1/ai/status` : null;
 }
 
 export function getAiRuntimeUrl() {
-  return `${getApiBase()}/v1/ai/runtime`;
+  const base = getApiBase();
+  return base ? `${base}/v1/ai/runtime` : null;
 }
 
 export function getPlanningUrl() {
-  return `${getApiBase()}/v1/ai/plan`;
+  const base = getApiBase();
+  return base ? `${base}/v1/ai/plan` : null;
 }
 
 export function getInterestPacksUrl() {
-  return `${getApiBase()}/v1/sprites/interests`;
+  const base = getApiBase();
+  return base ? `${base}/v1/sprites/interests` : null;
 }
 
 export function getSpriteJobStatusUrl(jobId) {
-  const base = `${getApiBase()}/v1/sprites/jobs`;
-  if (!jobId) return base;
+  const base = getApiBase();
+  if (!base) return null;
+  const root = `${base}/v1/sprites/jobs`;
+  if (!jobId) return root;
   const encoded = encodeURIComponent(jobId);
-  return `${base}/${encoded}`;
+  return `${root}/${encoded}`;
 }
 
 export function getSpriteProcessJobUrl(jobId) {
-  if (!jobId) return null;
+  const base = getApiBase();
+  if (!base || !jobId) return null;
   const encoded = encodeURIComponent(jobId);
-  return `${getApiBase()}/v1/sprites/jobs/${encoded}/process`;
+  return `${base}/v1/sprites/jobs/${encoded}/process`;
 }
 
 const RETRY_AFTER_DEFAULT_MS = 45000;
@@ -113,6 +133,14 @@ async function requestJson(url, options = {}) {
   }
 }
 
+const buildNotConfiguredResult = () => ({
+  ok: false,
+  status: 503,
+  data: null,
+  error: new Error('AI proxy endpoint is not configured.'),
+  retryAfter: null,
+});
+
 const ensureInterestsPayload = ({ interests = [], mode = 'sync', sync_ms = 6000, tick_limit = 1, model }) => {
   const payload = {
     interests: Array.isArray(interests) ? interests : [],
@@ -134,7 +162,11 @@ export async function postInterestsPacks({
   model,
 } = {}) {
   const payload = ensureInterestsPayload({ interests, mode, sync_ms, tick_limit, model });
-  return requestJson(getInterestPacksUrl(), {
+  const url = getInterestPacksUrl();
+  if (!url) {
+    return buildNotConfiguredResult();
+  }
+  return requestJson(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -151,7 +183,11 @@ export async function getSpriteJobStatus(jobId) {
       retryAfter: null,
     };
   }
-  return requestJson(getSpriteJobStatusUrl(jobId), {
+  const url = getSpriteJobStatusUrl(jobId);
+  if (!url) {
+    return buildNotConfiguredResult();
+  }
+  return requestJson(url, {
     method: 'GET',
   });
 }
@@ -172,13 +208,7 @@ export async function postProcessJob({ jobId, limit = 1, model } = {}) {
   }
   const processUrl = getSpriteProcessJobUrl(jobId);
   if (!processUrl) {
-    return {
-      ok: false,
-      status: 400,
-      data: null,
-      error: new Error('job_id is required'),
-      retryAfter: null,
-    };
+    return buildNotConfiguredResult();
   }
   const result = await requestJson(processUrl, {
     method: 'POST',
