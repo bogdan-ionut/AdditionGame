@@ -251,7 +251,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     readStringFrom(payloadConfig, ['runtime_label', 'runtimeLabel', 'runtime']) ??
     null;
 
-  const defaultTtsModel =
+  const resolvedDefaultTtsModel =
     readStringFrom(runtimePayload, [
       'default_tts_model',
       'defaultTtsModel',
@@ -264,8 +264,6 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       'tts_default_model',
       'ttsDefaultModel',
     ]) ??
-    readStringFrom(runtimePayload, ['runtime_label', 'runtimeLabel']) ??
-    readStringFrom(payloadConfig, ['runtime_label', 'runtimeLabel']) ??
     resolvedAudioModel;
 
   const allowedTtsModels = (() => {
@@ -292,7 +290,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     audioModel: resolvedAudioModel,
     aiAllowed,
     lastError,
-    defaultTtsModel,
+    defaultTtsModel: resolvedDefaultTtsModel,
     allowedTtsModels,
     runtimeLabel,
   };
