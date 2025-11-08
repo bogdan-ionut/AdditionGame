@@ -1,27 +1,27 @@
 // math-galaxy-api.browser.js
+import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from '../lib/env';
+
+const MISSING_BASE_MESSAGE =
+  '[MathGalaxyAPI] baseUrl is empty. Open AI Settings and set the Cloud API Base URL.';
+
 export class MathGalaxyAPI {
   constructor(cfg = {}) {
-    let viteEnv = '';
-    try {
-      viteEnv = import.meta?.env?.VITE_MATH_API_URL ?? '';
-    } catch (error) {
-      // ignore environments without import.meta (Node, legacy bundlers)
-      viteEnv = '';
-    }
-    const nodeEnv =
-      typeof globalThis !== 'undefined' && globalThis.process?.env
-        ? globalThis.process.env.MATH_API_URL ?? ''
-        : '';
-    let storedBase = '';
-    try {
-      storedBase = typeof localStorage !== 'undefined' ? localStorage.getItem('MG_API_URL') || '' : '';
-    } catch (error) {
-      storedBase = '';
-    }
-    this.baseUrl = (cfg.baseUrl || viteEnv || storedBase || nodeEnv || '').replace(/\/+$/, '');
+    const runtimeBase = (() => {
+      try {
+        return resolveApiBaseUrl();
+      } catch (error) {
+        return '';
+      }
+    })();
+    const provided = typeof cfg.baseUrl === 'string' ? stripTrailingSlash(cfg.baseUrl) : '';
+    const fallback = stripTrailingSlash(runtimeBase || '');
+    this.baseUrl = stripTrailingSlash(provided || fallback || '');
 
     if (!this.baseUrl) {
-      throw new Error('MathGalaxyAPI requires a baseUrl. Set VITE_MATH_API_URL or pass { baseUrl }.');
+      console.warn(
+        '[MathGalaxyAPI] Missing VITE_MATH_API_URL. Using local stub — AI features will stay offline until configured.',
+      );
+      throw new Error(MISSING_BASE_MESSAGE);
     }
 
     this.cfg = {
@@ -70,7 +70,7 @@ export class MathGalaxyAPI {
       if (beacon && typeof navigator !== "undefined" && "sendBeacon" in navigator){
         try{
           const blob = new Blob([JSON.stringify(body)], {type:"application/json"});
-          if (navigator.sendBeacon(`${this.baseUrl}/v1/sessions/attempt`, blob)) return {ok:true, transport:"beacon"};
+          if (navigator.sendBeacon(joinApi(this.baseUrl, '/v1/sessions/attempt'), blob)) return {ok:true, transport:"beacon"};
         }catch(error){
           // ignore beacon transport errors and fall back to fetch
         }
@@ -110,7 +110,7 @@ export class MathGalaxyAPI {
     return this._fetchJson("POST", p, { ...extra, headers:{ "Content-Type":"application/json", ...(extra.headers||{}) }, body:JSON.stringify(body) });
   }
   async _fetchJson(method, path, init={}){
-    const url = `${this.baseUrl}${path}`;
+    const url = joinApi(this.baseUrl, path);
     let tries = (this.cfg.retries ?? 1) + 1;
     let err;
     while(tries--){

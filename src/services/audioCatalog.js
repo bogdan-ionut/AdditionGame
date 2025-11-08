@@ -1,7 +1,7 @@
 import mathGalaxyClient, { MathGalaxyApiError } from './mathGalaxyClient';
 import { isAiProxyConfigured } from './aiEndpoints';
 
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const normalizeError = (error) => {
   if (error instanceof MathGalaxyApiError) {

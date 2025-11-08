@@ -7,6 +7,7 @@ import { MathGalaxyApiError, getConfiguredBaseUrl } from '../services/mathGalaxy
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
 import { createObjectUrlFromBase64, extractAudioFromResponse } from '../lib/audio/utils';
+import { resolveApiBaseUrl } from '../lib/env';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -26,7 +27,7 @@ const SFX_CATEGORY_SYNONYMS = {
   progress: ['progress', 'streak', 'level-up', 'checkpoint'],
 };
 
-const API_OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+const API_OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const readBooleanish = (value) => {
   if (typeof value === 'boolean') return value;
@@ -142,16 +143,6 @@ const describeLanguageOption = (code) => {
   return code;
 };
 
-const readStoredApiOverride = () => {
-  if (typeof window === 'undefined') return '';
-  try {
-    return window.localStorage.getItem('MG_API_URL') || '';
-  } catch (error) {
-    console.warn('Unable to read MG_API_URL override from localStorage', error);
-    return '';
-  }
-};
-
 export default function ParentAISettings({ onClose, onSaved }) {
   const [keyInput, setKeyInput] = useState('');
   const [planningModel, setPlanningModel] = useState('');
@@ -170,43 +161,44 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const [audioCatalog, setAudioCatalog] = useState({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
   const [previewStatus, setPreviewStatus] = useState({ state: 'idle', message: null });
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
-  const [baseUrlInput, setBaseUrlInput] = useState(() => readStoredApiOverride());
-  const [baseStatus, setBaseStatus] = useState({ state: 'idle', message: null });
+  const [apiBase, setApiBase] = useState(() => resolveApiBaseUrl());
+  const [saved, setSaved] = useState(false);
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
   const effectiveBaseUrl = useMemo(() => getConfiguredBaseUrl() || '', []);
 
-  const handleResetBaseInput = useCallback(() => {
-    setBaseUrlInput(readStoredApiOverride() || effectiveBaseUrl || '');
-    setBaseStatus({ state: 'idle', message: null });
-  }, [effectiveBaseUrl]);
-
-  const handleSaveBaseUrl = useCallback(() => {
+  const saveApiBase = useCallback(() => {
     if (typeof window === 'undefined') {
-      setBaseStatus({ state: 'error', message: 'Window context unavailable.' });
+      return;
+    }
+    const value = (apiBase || '').trim();
+    try {
+      if (value) {
+        window.localStorage.setItem('mg:apiBaseUrl', value);
+      } else {
+        window.localStorage.removeItem('mg:apiBaseUrl');
+      }
+      setSaved(true);
+    } catch (error) {
+      console.warn('Unable to persist Cloud API base override.', error);
+    }
+    window.location.reload();
+  }, [apiBase]);
+
+  const resetApiBase = useCallback(() => {
+    if (typeof window === 'undefined') {
       return;
     }
     try {
-      setBaseStatus({ state: 'loading', message: null });
-      const trimmed = baseUrlInput.trim();
-      if (trimmed) {
-        window.localStorage.setItem('MG_API_URL', trimmed);
-        setBaseStatus({ state: 'success', message: 'Override saved. Reloading…' });
-      } else {
-        window.localStorage.removeItem('MG_API_URL');
-        setBaseStatus({ state: 'success', message: 'Override cleared. Reloading…' });
-      }
-      setTimeout(() => {
-        window.location.reload();
-      }, 400);
+      window.localStorage.removeItem('mg:apiBaseUrl');
     } catch (error) {
-      setBaseStatus({
-        state: 'error',
-        message: error instanceof Error ? error.message : 'Unable to update API base URL override.',
-      });
+      console.warn('Unable to clear Cloud API base override.', error);
     }
-  }, [baseUrlInput]);
+    setApiBase('');
+    setSaved(true);
+    window.location.reload();
+  }, []);
 
   const describeVoice = useCallback((voice) => {
     if (!voice) return '';
@@ -746,167 +738,160 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const aiToggleLabel = useMemo(() => (aiAllowed ? 'AI features will run when enabled.' : 'AI features are paused until you re-enable them.'), [aiAllowed]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
-              <StatusChip active={runtime.aiEnabled} />
-            </div>
-            <div className="text-xs text-gray-500 space-y-1">
-              <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
-              <p>AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)</p>
-              {runtime.lastError && (
-                <p className="text-red-600 font-medium flex items-center gap-2">
-                  <AlertCircle size={14} /> {runtime.lastError}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-3xl rounded-2xl border border-white/40 bg-white shadow-2xl max-h-[85vh] overflow-y-auto">
+        <div className="sticky top-0 z-10 border-b bg-white/90 p-4 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
+                <StatusChip active={runtime.aiEnabled} />
+              </div>
+              <div className="space-y-1 text-xs text-gray-500">
+                <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
+                <p>
+                  AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
                 </p>
-              )}
+                {runtime.lastError && (
+                  <p className="flex items-center gap-2 font-medium text-red-600">
+                    <AlertCircle size={14} /> {runtime.lastError}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-800 p-1 rounded-full hover:bg-gray-100"
-            aria-label="Close AI settings"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          <label className="block text-sm font-semibold text-gray-700" htmlFor="api-base-url">
-            API base URL override
-          </label>
-          <input
-            id="api-base-url"
-            type="url"
-            value={baseUrlInput}
-            onChange={(event) => setBaseUrlInput(event.target.value)}
-            placeholder={effectiveBaseUrl || 'https://math-api.example.com'}
-            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            autoComplete="off"
-          />
-          <p className="text-xs text-gray-500">
-            Effective base URL: <span className="font-semibold">{effectiveBaseUrl || 'Not configured'}</span>. Leave blank to use the environment default.
-          </p>
-          <div className="flex flex-wrap gap-3">
             <button
-              onClick={handleSaveBaseUrl}
-              className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
-                baseStatus.state === 'loading' ? 'bg-gray-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700'
-              }`}
-              disabled={baseStatus.state === 'loading'}
+              onClick={onClose}
+              className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+              aria-label="Close AI settings"
             >
-              {baseStatus.state === 'loading' ? (
-                <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Saving…</span>
-              ) : (
-                'Save override & reload'
-              )}
-            </button>
-            <button
-              onClick={handleResetBaseInput}
-              className="px-4 py-2 rounded-xl font-semibold border-2 border-gray-200 text-gray-600 hover:bg-gray-50"
-              type="button"
-            >
-              Reset field
+              <X size={20} />
             </button>
           </div>
-          {baseStatus.state !== 'idle' && baseStatus.message && (
-            <div
-              className={`text-xs rounded-2xl border px-3 py-2 ${
-                baseStatus.state === 'error'
-                  ? 'text-red-600 bg-red-50 border-red-200'
-                  : 'text-indigo-600 bg-indigo-50 border-indigo-200'
-              }`}
-            >
-              {baseStatus.message}
-            </div>
-          )}
         </div>
 
-        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex gap-3">
-          <Lock className="text-indigo-500" size={24} />
-          <div className="text-sm text-indigo-800 space-y-1">
-            <p className="font-semibold">Why we need this</p>
-            <p>
-              We use your key only on the server (the browser never sees it). Planning runs on text models, while sprite batches use Gemini image models. Pick any Gemini model name or select one from the list.
+        <div className="space-y-5 p-4">
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-gray-700" htmlFor="cloud-api-base">
+              Cloud API Base URL
+            </label>
+            <input
+              id="cloud-api-base"
+              type="url"
+              value={apiBase}
+              onChange={(event) => {
+                setApiBase(event.target.value);
+                setSaved(false);
+              }}
+              placeholder="https://math-api-811756754621.us-central1.run.app"
+              className="w-full rounded-2xl border-2 border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              autoComplete="off"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={saveApiBase}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700"
+              >
+                Save override & reload
+              </button>
+              <button
+                type="button"
+                onClick={resetApiBase}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Reset field
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Current base: <span className="font-semibold">{effectiveBaseUrl || 'Not configured'}</span>.
             </p>
+            {saved && (
+              <p className="text-xs font-medium text-emerald-600">Saved! Reloading…</p>
+            )}
           </div>
-        </div>
+          <div className="flex gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+            <Lock className="text-indigo-500" size={24} />
+            <div className="space-y-1 text-sm text-indigo-800">
+              <p className="font-semibold">Why we need this</p>
+              <p>
+                We use your key only on the server (the browser never sees it). Planning runs on text models, while sprite batches use Gemini image models. Pick any Gemini model name or select one from the list.
+              </p>
+            </div>
+          </div>
 
-        <div className="space-y-3">
-          <label className="block text-sm font-semibold text-gray-700" htmlFor="gemini-key">
-            Google Gemini API key
-          </label>
-          <input
-            id="gemini-key"
-            type="password"
-            value={keyInput}
-            onChange={(event) => setKeyInput(event.target.value)}
-            placeholder="AIzaSy..."
-            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            autoComplete="off"
-          />
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleSaveKey}
-              disabled={keyStatus.state === 'loading'}
-              className={`px-5 py-3 rounded-xl font-semibold text-white shadow ${
-                keyStatus.state === 'loading' ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-              }`}
-            >
-              {keyStatus.state === 'loading' ? (
-                <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={18} /> Saving…</span>
-              ) : (
-                'Save API key'
-              )}
-            </button>
-            <button
-              onClick={() => runHealthCheck(true)}
-              disabled={testStatus.state === 'loading'}
-              className={`px-5 py-3 rounded-xl font-semibold border-2 shadow-sm ${
-                testStatus.state === 'loading'
-                  ? 'border-gray-300 text-gray-500 cursor-wait'
-                  : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
-              }`}
-            >
-              {testStatus.state === 'loading' ? (
-                <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={18} /> Testing…</span>
-              ) : (
-                'Test key'
-              )}
-            </button>
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-gray-700" htmlFor="gemini-key">
+              Google Gemini API key
+            </label>
+            <input
+              id="gemini-key"
+              type="password"
+              value={keyInput}
+              onChange={(event) => setKeyInput(event.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              autoComplete="off"
+            />
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleSaveKey}
+                disabled={keyStatus.state === 'loading'}
+                className={`px-5 py-3 rounded-xl font-semibold text-white shadow ${
+                  keyStatus.state === 'loading' ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
+              >
+                {keyStatus.state === 'loading' ? (
+                  <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={18} /> Saving…</span>
+                ) : (
+                  'Save API key'
+                )}
+              </button>
+              <button
+                onClick={() => runHealthCheck(true)}
+                disabled={testStatus.state === 'loading'}
+                className={`px-5 py-3 rounded-xl font-semibold border-2 shadow-sm ${
+                  testStatus.state === 'loading'
+                    ? 'border-gray-300 text-gray-500 cursor-wait'
+                    : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                }`}
+              >
+                {testStatus.state === 'loading' ? (
+                  <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={18} /> Testing…</span>
+                ) : (
+                  'Test key'
+                )}
+              </button>
+            </div>
+            {keyStatus.state === 'success' && keyStatus.message && (
+              <div className="flex items-start gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-2xl p-4">
+                <ShieldCheck className="text-green-500" size={18} />
+                <span>{keyStatus.message}</span>
+              </div>
+            )}
+            {keyWarning && (
+              <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <AlertTriangle className="text-amber-500" size={18} />
+                <span>{keyWarning}</span>
+              </div>
+            )}
+            {keyStatus.state === 'error' && keyStatus.message && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-2xl p-3">
+                {keyStatus.message}
+              </div>
+            )}
+            {testStatus.state !== 'idle' && testStatus.message && (
+              <div
+                className={`flex items-center gap-2 text-sm rounded-2xl border px-3 py-2 ${
+                  testStatus.ok
+                    ? 'text-green-600 bg-green-50 border-green-200'
+                    : 'text-red-600 bg-red-50 border-red-200'
+                }`}
+              >
+                {testStatus.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                <span>{testStatus.message}</span>
+              </div>
+            )}
           </div>
-          {keyStatus.state === 'success' && keyStatus.message && (
-            <div className="flex items-start gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-2xl p-4">
-              <ShieldCheck className="text-green-500" size={18} />
-              <span>{keyStatus.message}</span>
-            </div>
-          )}
-          {keyWarning && (
-            <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl p-4">
-              <AlertTriangle className="text-amber-500" size={18} />
-              <span>{keyWarning}</span>
-            </div>
-          )}
-          {keyStatus.state === 'error' && keyStatus.message && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-2xl p-3">
-              {keyStatus.message}
-            </div>
-          )}
-          {testStatus.state !== 'idle' && testStatus.message && (
-            <div
-              className={`flex items-center gap-2 text-sm rounded-2xl border px-3 py-2 ${
-                testStatus.ok
-                  ? 'text-green-600 bg-green-50 border-green-200'
-                  : 'text-red-600 bg-red-50 border-red-200'
-              }`}
-            >
-              {testStatus.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-              <span>{testStatus.message}</span>
-            </div>
-          )}
-        </div>
 
         <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-4">
           <div>
@@ -1360,6 +1345,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
           <option value={option} key={option} />
         ))}
       </datalist>
+      </div>
     </div>
   );
 }

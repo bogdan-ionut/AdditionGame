@@ -6,7 +6,7 @@ import {
   requireApiUrl,
 } from './math-galaxy-api';
 
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const envValue = typeof BASE_URL === 'string' ? BASE_URL.trim() : '';
 const nodeEnv = typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;

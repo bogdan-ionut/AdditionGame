@@ -161,7 +161,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
   let note: string | null = null;
   const aggregatedPayload: Record<string, unknown> = {};
 
-  const offlineMessage = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+  const offlineMessage = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
   const fetchers: { name: 'runtime' | 'status'; fn: () => Promise<unknown> }[] = [
     { name: 'runtime', fn: async () => mathGalaxyClient.aiRuntime() },
