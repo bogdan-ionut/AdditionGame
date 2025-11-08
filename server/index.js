@@ -53,6 +53,134 @@ let savedGeminiKey = null;
 const recordedAttempts = [];
 const spriteJobs = new Map();
 
+const sanitizeInterestList = (interests = []) => {
+  if (!Array.isArray(interests)) return [];
+  return interests
+    .map((interest) => (typeof interest === 'string' ? interest.trim() : ''))
+    .filter(Boolean);
+};
+
+const buildSpriteUrl = (jobId, interest, index) => {
+  const safeInterest = (interest || `Sprite ${index + 1}`).trim() || `Sprite ${index + 1}`;
+  const label = encodeURIComponent(safeInterest.replace(/\s+/g, ' ')).replace(/%20/g, '+');
+  return `https://placehold.co/256x256/png?text=${label}+${jobId.slice(-4)}`;
+};
+
+const createSpriteJob = ({ interests = [], model = null }) => {
+  const sanitizedInterests = sanitizeInterestList(interests);
+  const createdAt = Date.now();
+  const resolvedModel = typeof model === 'string' && model.trim() ? model.trim() : GEMINI_MODELS.sprite;
+  const items = sanitizedInterests.map((interest, index) => ({
+    id: `${createdAt}-${index}`,
+    interest,
+    status: 'pending',
+    url: null,
+    updatedAt: createdAt,
+  }));
+
+  return {
+    status: items.length ? 'pending' : 'done',
+    createdAt,
+    updatedAt: createdAt,
+    interests: sanitizedInterests,
+    model: resolvedModel,
+    items,
+    pending: items.filter((item) => item.status !== 'done').length,
+    done: items.filter((item) => item.status === 'done').length,
+  };
+};
+
+const serializeSpriteJob = (jobId, job) => {
+  const jobModel = job.model || GEMINI_MODELS.sprite;
+  const sprites = job.items.filter((item) => item.status === 'done' && item.url).map((item) => item.url);
+  return {
+    id: jobId,
+    status: job.status,
+    model: jobModel,
+    created_at: new Date(job.createdAt).toISOString(),
+    updated_at: new Date(job.updatedAt).toISOString(),
+    pending: job.pending,
+    done: job.done,
+    remaining: job.pending,
+    stats: {
+      pending: job.pending,
+      done: job.done,
+    },
+    interests: job.interests,
+    items: job.items.map((item) => ({
+      id: item.id,
+      interest: item.interest,
+      status: item.status,
+      url: item.url,
+      sprite_url: item.url,
+      updated_at: new Date(item.updatedAt).toISOString(),
+    })),
+    sprites,
+    sprite_urls: sprites,
+    urls: sprites,
+  };
+};
+
+const completeNextSpriteItems = (job, jobId, limit = 1) => {
+  if (!job || !job.items?.length || limit <= 0) {
+    return [];
+  }
+
+  const now = Date.now();
+  let remaining = limit;
+  const processed = [];
+
+  for (let index = 0; index < job.items.length && remaining > 0; index += 1) {
+    const item = job.items[index];
+    if (item.status === 'done') {
+      continue;
+    }
+    item.status = 'done';
+    item.url = buildSpriteUrl(jobId, item.interest, index);
+    item.updatedAt = now;
+    processed.push(item);
+    remaining -= 1;
+  }
+
+  if (processed.length) {
+    job.updatedAt = now;
+  }
+
+  job.pending = job.items.filter((item) => item.status !== 'done').length;
+  job.done = job.items.length - job.pending;
+  job.status = job.pending > 0 ? 'processing' : 'done';
+
+  return processed;
+};
+
+const ensureSpriteJobProgress = (jobId, job) => {
+  if (!job) return [];
+  const age = Date.now() - job.createdAt;
+  if (job.pending > 0 && age > 2000) {
+    return completeNextSpriteItems(job, jobId, job.pending);
+  }
+  return [];
+};
+
+const buildSpriteJobResponse = (jobId, job, extra = {}) => {
+  const serialized = serializeSpriteJob(jobId, job);
+  return {
+    ok: true,
+    status: serialized.status,
+    job_id: jobId,
+    jobId,
+    pending: serialized.pending,
+    done: serialized.done,
+    retry_after_ms: serialized.pending > 0 ? 2000 : null,
+    job: serialized,
+    items: serialized.items,
+    sprites: serialized.sprites,
+    sprite_urls: serialized.sprite_urls,
+    urls: serialized.urls,
+    ...extra,
+  };
+};
+
 const ensurePlanItems = () => [
   {
     id: 'warmup-addition',
@@ -229,17 +357,19 @@ app.post('/v1/ai/tts/synthesize', (req, res) => {
 });
 
 app.post('/v1/interests/packs', (req, res) => {
+  const { interests = [], model = null } = req.body ?? {};
   const jobId = `sprite-${Date.now()}`;
-  spriteJobs.set(jobId, {
-    status: 'pending',
-    createdAt: Date.now(),
-  });
-  res.json({
-    ok: true,
-    status: 'pending',
-    job_id: jobId,
-    retry_after_ms: 2000,
-  });
+  const job = createSpriteJob({ interests, model });
+  spriteJobs.set(jobId, job);
+
+  const motifs = job.interests.map((interest) => interest.toLowerCase().replace(/\s+/g, '-'));
+  res.json(
+    buildSpriteJobResponse(jobId, job, {
+      motifs,
+      mode: typeof req.body?.mode === 'string' ? req.body.mode : 'sync',
+      model: job.model,
+    }),
+  );
 });
 
 app.get('/v1/sprites/job_status', (req, res) => {
@@ -253,25 +383,17 @@ app.get('/v1/sprites/job_status', (req, res) => {
     res.status(404).json({ ok: false, error: 'Job not found' });
     return;
   }
-  const age = Date.now() - job.createdAt;
-  const done = age > 2000;
-  if (done) {
-    job.status = 'done';
-  }
-  res.json({
-    ok: true,
-    status: job.status,
-    job_id: jobId,
-    result: done
-      ? {
-          url: 'https://placehold.co/256x256/png?text=Math+Sprite',
-        }
-      : null,
-  });
+  ensureSpriteJobProgress(jobId, job);
+  res.json(buildSpriteJobResponse(jobId, job));
 });
 
 app.post('/v1/sprites/process_job', (req, res) => {
-  const jobId = typeof req.body?.job_id === 'string' ? req.body.job_id : typeof req.body?.jobId === 'string' ? req.body.jobId : null;
+  const jobId =
+    typeof req.body?.job_id === 'string'
+      ? req.body.job_id
+      : typeof req.body?.jobId === 'string'
+        ? req.body.jobId
+        : null;
   if (!jobId) {
     res.status(400).json({ ok: false, error: 'job_id is required' });
     return;
@@ -281,8 +403,15 @@ app.post('/v1/sprites/process_job', (req, res) => {
     res.status(404).json({ ok: false, error: 'Job not found' });
     return;
   }
-  job.status = 'processing';
-  res.json({ ok: true, status: job.status, job_id: jobId });
+  const requestedLimit = Number.parseInt(req.body?.limit ?? req.body?.tick_limit ?? req.body?.count ?? '1', 10);
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : 1;
+  const processed = completeNextSpriteItems(job, jobId, limit);
+  res.json(
+    buildSpriteJobResponse(jobId, job, {
+      processed: processed.length,
+      new_urls: processed.map((item) => item.url).filter(Boolean),
+    }),
+  );
 });
 
 app.post('/v1/sessions/attempt', (req, res) => {
