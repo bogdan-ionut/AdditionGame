@@ -1,8 +1,14 @@
-import { MathGalaxyAPI, MathGalaxyApiError, type MathGalaxyJsonResult } from './math-galaxy-api';
+import {
+  MathGalaxyAPI,
+  MathGalaxyApiError,
+  type MathGalaxyJsonResult,
+  BASE_URL,
+  requireApiUrl,
+} from './math-galaxy-api';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
 
-const envValue = (import.meta?.env?.VITE_MATH_API_URL ?? '').trim();
+const envValue = typeof BASE_URL === 'string' ? BASE_URL.trim() : '';
 const nodeEnv = typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
 const isDev = Boolean(import.meta?.env?.DEV ?? (nodeEnv && nodeEnv !== 'production'));
 
@@ -27,7 +33,7 @@ const detectGithubPagesHost = (): boolean => {
 type MathGalaxyStub = {
   baseUrl: null;
   flushQueue: () => Promise<FlushQueueResult>;
-  aiRuntime: () => Promise<never>;
+  aiRuntime: (payload?: Record<string, unknown>) => Promise<never>;
   aiStatus: () => Promise<never>;
   aiPlan: (payload: Record<string, unknown>) => Promise<never>;
   aiTtsModels: () => Promise<never>;
@@ -93,7 +99,8 @@ if (!resolvedBaseUrl && isDev) {
 }
 
 const forcedLocal = parseBooleanish(import.meta?.env?.VITE_MATH_API_FORCE_LOCAL ?? null);
-const shouldForceLocalStub = forcedLocal ?? detectGithubPagesHost();
+const hostPrefersStub = detectGithubPagesHost();
+const shouldForceLocalStub = forcedLocal ?? (hostPrefersStub && !resolvedBaseUrl);
 
 const useStubClient = shouldForceLocalStub || !resolvedBaseUrl;
 
@@ -101,6 +108,9 @@ let mathGalaxyApi: MathGalaxyAPI | MathGalaxyStub;
 let mathGalaxyConfigured = false;
 
 if (useStubClient) {
+  if (!resolvedBaseUrl) {
+    requireApiUrl();
+  }
   if (!resolvedBaseUrl) {
     console.warn(
       '[MathGalaxyAPI] Missing VITE_MATH_API_URL. Using local stub – AI features will stay offline until configured.',
@@ -141,5 +151,12 @@ export function flushMathGalaxyQueue(): Promise<FlushQueueResult> {
 
 export const isMathGalaxyConfigured = mathGalaxyConfigured;
 
+export function getConfiguredBaseUrl(): string | null {
+  if (!resolvedBaseUrl) {
+    return null;
+  }
+  return resolvedBaseUrl;
+}
+
 export default mathGalaxyApi;
-export { MathGalaxyApiError } from './math-galaxy-api';
+export { MathGalaxyApiError, BASE_URL, requireApiUrl } from './math-galaxy-api';

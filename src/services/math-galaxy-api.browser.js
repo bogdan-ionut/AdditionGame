@@ -12,7 +12,13 @@ export class MathGalaxyAPI {
       typeof globalThis !== 'undefined' && globalThis.process?.env
         ? globalThis.process.env.MATH_API_URL ?? ''
         : '';
-    this.baseUrl = (cfg.baseUrl || viteEnv || nodeEnv || '').replace(/\/+$/, '');
+    let storedBase = '';
+    try {
+      storedBase = typeof localStorage !== 'undefined' ? localStorage.getItem('MG_API_URL') || '' : '';
+    } catch (error) {
+      storedBase = '';
+    }
+    this.baseUrl = (cfg.baseUrl || viteEnv || storedBase || nodeEnv || '').replace(/\/+$/, '');
 
     if (!this.baseUrl) {
       throw new Error('MathGalaxyAPI requires a baseUrl. Set VITE_MATH_API_URL or pass { baseUrl }.');
@@ -29,6 +35,15 @@ export class MathGalaxyAPI {
   }
   status(){ return this._get("/v1/status"); }
   health(){ return this._get("/health"); }
+  aiStatus(){ return this._get("/v1/ai/status"); }
+  aiRuntime(payload){
+    if (payload && Object.keys(payload).length){
+      return this._post("/v1/ai/runtime", payload);
+    }
+    return this._get("/v1/ai/runtime");
+  }
+  aiPlan(payload){ return this._post("/v1/ai/plan", payload); }
+  saveAiKey(payload){ return this._post("/v1/ai/key", payload); }
   getUserStats(userId, days=30){ return this._get(`/v1/sessions/user/${encodeURIComponent(userId)}/stats?days=${days}`); }
 
   async recordAdditionAttempt(p){

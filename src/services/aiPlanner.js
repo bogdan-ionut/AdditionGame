@@ -63,10 +63,15 @@ export async function saveGeminiKey(key, model) {
     throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
 
-  const payload = { apiKey: trimmed, key: trimmed, api_key: trimmed };
   const normalizedModel = typeof model === 'string' ? model.trim() : '';
+  const payload = {
+    key: trimmed,
+    apiKey: trimmed,
+    api_key: trimmed,
+  };
   if (normalizedModel) {
     payload.model = normalizedModel;
+    payload.planner = normalizedModel;
   }
 
   try {
@@ -79,32 +84,37 @@ export async function saveGeminiKey(key, model) {
 
     const note =
       readStringFrom(data, ['note', 'warning', 'warn', 'warningMessage', 'warning_message']) ?? null;
-    const successMessage = readStringFrom(data, ['message', 'statusText', 'status_text']);
+    const successMessage =
+      readStringFrom(data, ['message', 'statusText', 'status_text']) ||
+      (verified ? 'API key saved securely.' : null);
     const errorMessage =
       readStringFrom(data, ['error', 'reason', 'detail', 'details']) ?? (verified ? null : successMessage);
 
-    if (verified) {
-      const result = {
-        ...data,
-        verified: true,
-        note,
-      };
-      if ('error' in result && typeof result.error === 'string') {
-        result.error = null;
+    const normalizedResult = {
+      ...data,
+      verified: Boolean(verified),
+      serverHasKey:
+        readBooleanFrom(data, ['server_has_key', 'serverHasKey', 'have_key', 'haveKey']) ?? Boolean(verified),
+      note: note ?? null,
+      message: successMessage ?? null,
+    };
+
+    if (normalizedResult.verified) {
+      if (normalizedResult.error && typeof normalizedResult.error === 'string') {
+        normalizedResult.error = null;
       }
-      if (note == null && !Object.prototype.hasOwnProperty.call(result, 'note')) {
-        result.note = null;
+      if (!Object.prototype.hasOwnProperty.call(normalizedResult, 'note')) {
+        normalizedResult.note = note ?? null;
       }
-      return result;
+      return normalizedResult;
     }
 
-    const failurePayload = {
-      ...data,
-      verified: false,
-      note,
-    };
     const failureMessage = errorMessage || 'Gemini key verification failed.';
-    failurePayload.error = failureMessage;
+    const failurePayload = {
+      ...normalizedResult,
+      verified: false,
+      error: failureMessage,
+    };
     throw new MathGalaxyApiError(failureMessage, { data: failurePayload });
   } catch (error) {
     if (error instanceof MathGalaxyApiError) {
@@ -120,7 +130,37 @@ export async function testGeminiKey() {
   }
 
   try {
-    return await mathGalaxyClient.aiStatus();
+    const response = await mathGalaxyClient.aiStatus();
+    const data = response && typeof response === 'object' ? response : {};
+    const serverHasKey =
+      readBooleanFrom(data, [
+        'server_has_key',
+        'serverHasKey',
+        'have_key',
+        'haveKey',
+        'key_present',
+        'keyPresent',
+        'verified',
+      ]) ?? false;
+    const note =
+      readStringFrom(data, ['note', 'warning', 'warn', 'warningMessage', 'warning_message']) ?? null;
+    const model =
+      readStringFrom(data, ['model', 'planning_model', 'planningModel']) ||
+      readStringFrom(data?.models, ['planner', 'planning', 'primary', 'name']) ||
+      null;
+    const ok = readBooleanFrom(data, ['ok', 'success', 'status']) ?? serverHasKey;
+    const message =
+      readStringFrom(data, ['message', 'statusText', 'status_text']) ||
+      (serverHasKey ? 'Gemini key detected on server.' : 'Gemini key missing on server.');
+
+    return {
+      ...data,
+      ok,
+      serverHasKey,
+      note,
+      model,
+      message,
+    };
   } catch (error) {
     if (error instanceof MathGalaxyApiError) {
       throw error;
@@ -179,10 +219,68 @@ const extractTextFragments = (payload) => {
   return fragments;
 };
 
-const normalizePlan = (data, model) => {
+const normalizePlan = (data, plannerModel) => {
   if (!data) return null;
 
-  const usedModel = data?._meta?.used_model || data?.used_model || model || null;
+  const plannerFromResponse =
+    readStringFrom(data, ['model', 'planner', 'planning_model', 'planningModel']) ||
+    readStringFrom(data?.models, ['planner', 'planning', 'primary', 'name']) ||
+    readStringFrom((data?.plan || data)?.models, ['planner', 'planning', 'primary', 'name']);
+
+  const usedModel =
+    data?._meta?.used_model ||
+    data?.used_model ||
+    plannerFromResponse ||
+    plannerModel ||
+    null;
+
+  const extractNarrativeText = (source) => {
+    if (!source || typeof source !== 'object') return null;
+    const direct =
+      readStringFrom(source, ['microStory', 'micro_story', 'story', 'narrative', 'summary']) ||
+      null;
+    if (direct) return direct;
+    if (Array.isArray(source.narratives)) {
+      for (const entry of source.narratives) {
+        if (!entry) continue;
+        if (typeof entry === 'string' && entry.trim()) {
+          return entry.trim();
+        }
+        if (typeof entry === 'object') {
+          const candidate =
+            readStringFrom(entry, ['text', 'story', 'summary', 'content']) ||
+            extractTextFragments(entry)[0] ||
+            null;
+          if (candidate) return candidate;
+        }
+      }
+    }
+    return null;
+  };
+
+  const flattenLessonProblems = (lessons = []) => {
+    if (!Array.isArray(lessons)) return [];
+    const flattened = [];
+    lessons.forEach((lesson, lessonIndex) => {
+      if (!lesson || typeof lesson !== 'object') return;
+      const problems = Array.isArray(lesson.problems) && lesson.problems.length
+        ? lesson.problems
+        : Array.isArray(lesson.items)
+          ? lesson.items
+          : [];
+      problems.forEach((problem, problemIndex) => {
+        if (!problem || typeof problem !== 'object') return;
+        flattened.push({
+          ...problem,
+          lessonIndex,
+          lessonId: lesson.id ?? lesson.slug ?? lesson.key ?? `lesson-${lessonIndex}`,
+          lessonTitle: lesson.title ?? lesson.name ?? lesson.label ?? null,
+          _lessonOrder: problemIndex,
+        });
+      });
+    });
+    return flattened;
+  };
 
   const coercePlan = (planCandidate) => {
     if (!planCandidate) return null;
@@ -201,7 +299,13 @@ const normalizePlan = (data, model) => {
       return {
         ...planCandidate,
         items,
-        planId: planCandidate.planId || planCandidate.plan_id || planCandidate.id || null,
+        planId:
+          planCandidate.planId ||
+          planCandidate.plan_id ||
+          planCandidate.id ||
+          data?.plan_id ||
+          data?.id ||
+          null,
         source: planCandidate.source || usedModel || planCandidate.model || null,
         microStory:
           planCandidate.microStory ||
@@ -209,6 +313,8 @@ const normalizePlan = (data, model) => {
           planCandidate.micro_story ||
           data?.micro_story ||
           data?.story ||
+          extractNarrativeText(planCandidate) ||
+          extractNarrativeText(data) ||
           '',
         metadata,
       };
@@ -216,18 +322,46 @@ const normalizePlan = (data, model) => {
     return null;
   };
 
-  const directPlan = coercePlan(data.plan || data);
+  const prepareCandidate = (source) => {
+    if (!source || typeof source !== 'object') return null;
+    const candidate = { ...source };
+    if (!candidate.metadata && candidate.meta) {
+      candidate.metadata = candidate.meta;
+    }
+    if (!candidate.metadata && Array.isArray(source.lessons)) {
+      candidate.metadata = { lessons: source.lessons };
+    }
+    if (!candidate.items && Array.isArray(source.lessons)) {
+      const flattened = flattenLessonProblems(source.lessons);
+      if (flattened.length) {
+        candidate.items = flattened;
+      }
+    }
+    if (!candidate.source && candidate.models && typeof candidate.models === 'object') {
+      const planner = readStringFrom(candidate.models, ['planner', 'planning', 'primary', 'model']);
+      if (planner) {
+        candidate.source = planner;
+      }
+    }
+    const narrative = extractNarrativeText(candidate);
+    if (narrative && !candidate.microStory) {
+      candidate.microStory = narrative;
+    }
+    return candidate;
+  };
+
+  const directPlan = coercePlan(prepareCandidate(data.plan || data) || data.plan || data);
   if (directPlan) return directPlan;
 
   if (Array.isArray(data.queue) && data.queue.length) {
-    const queuePlan = coercePlan({ ...data, items: data.queue });
+    const queuePlan = coercePlan(prepareCandidate({ ...data, items: data.queue }));
     if (queuePlan) return queuePlan;
   }
 
   const fragments = extractTextFragments(data);
   for (const fragment of fragments) {
     const parsed = tryParseJson(stripCodeFence(fragment));
-    const normalized = coercePlan(parsed?.plan || parsed);
+    const normalized = coercePlan(prepareCandidate(parsed?.plan || parsed));
     if (normalized) {
       return normalized;
     }
@@ -236,10 +370,22 @@ const normalizePlan = (data, model) => {
   return null;
 };
 
-export async function requestGeminiPlan(payload, model) {
+export async function requestGeminiPlan(payload, options = {}) {
   const body = { ...(payload || {}) };
-  if (model) {
-    body.model = model;
+  const normalizedOptions =
+    typeof options === 'string' ? { plannerModel: options } : { ...(options || {}) };
+
+  const { plannerModel, spriteModel, audioModel } = normalizedOptions;
+
+  if (plannerModel && !body.model) {
+    body.model = plannerModel;
+  }
+  if (plannerModel || spriteModel || audioModel) {
+    const models = { ...(body.models || {}) };
+    if (plannerModel) models.planner = plannerModel;
+    if (spriteModel) models.sprite = spriteModel;
+    if (audioModel) models.tts = audioModel;
+    body.models = models;
   }
 
   if (!isAiProxyConfigured()) {
@@ -248,9 +394,41 @@ export async function requestGeminiPlan(payload, model) {
 
   try {
     const data = await mathGalaxyClient.aiPlan(body);
-    const normalized = normalizePlan(data, body.model);
+    const normalized = normalizePlan(data, plannerModel || body.model);
     if (normalized) return normalized;
     return data;
+  } catch (error) {
+    if (error instanceof MathGalaxyApiError) {
+      throw error;
+    }
+    throw new MathGalaxyApiError(error instanceof Error ? error.message : OFFLINE_MESSAGE, { cause: error });
+  }
+}
+
+const extractFirstFragment = (payload) => {
+  if (!payload) return null;
+  if (typeof payload === 'string' && payload.trim()) {
+    return payload.trim();
+  }
+  const fragments = extractTextFragments(payload);
+  return fragments.length ? fragments[0] : null;
+};
+
+export async function requestRuntimeContent(payload = {}) {
+  if (!isAiProxyConfigured()) {
+    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
+  }
+
+  try {
+    const data = await mathGalaxyClient.aiRuntime(payload);
+    const text =
+      extractFirstFragment(data?.choices) ||
+      extractFirstFragment(data?.choice) ||
+      extractFirstFragment(data?.result) ||
+      extractFirstFragment(data?.output) ||
+      extractFirstFragment(data?.message) ||
+      extractFirstFragment(data);
+    return { text, raw: data };
   } catch (error) {
     if (error instanceof MathGalaxyApiError) {
       throw error;

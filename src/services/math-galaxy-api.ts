@@ -28,6 +28,31 @@ type PostOpts = { beacon?: boolean };
 
 const LSQ_KEY = "mgq_v1";
 
+function readStoredApiUrl(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const value = window.localStorage?.getItem("MG_API_URL");
+    return typeof value === "string" ? value.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+const envBaseUrl = ((import.meta as any)?.env?.VITE_MATH_API_URL ?? "").trim();
+const storedBaseUrl = readStoredApiUrl();
+const nodeBaseUrl = typeof process !== "undefined" ? (process.env?.MATH_API_URL ?? "").trim() : "";
+
+export const BASE_URL = envBaseUrl || storedBaseUrl || nodeBaseUrl || "";
+
+export function requireApiUrl(): string {
+  if (!BASE_URL) {
+    console.error(
+      "[MathGalaxyAPI] baseUrl is empty. Pass { baseUrl } or set VITE_MATH_API_URL.",
+    );
+  }
+  return BASE_URL;
+}
+
 export type HeaderMap = Record<string, string>;
 
 export type MathGalaxyJsonResult<T = unknown> = {
@@ -56,12 +81,7 @@ export class MathGalaxyApiError extends Error {
 }
 
 function detectBaseUrl(): string {
-  // Vite / Webpack env, altfel gol
-  // (setează VITE_MATH_API_URL în .env.*)
-  const vite = (import.meta as any)?.env?.VITE_MATH_API_URL;
-  // @ts-ignore
-  const node = typeof process !== "undefined" ? process?.env?.MATH_API_URL : undefined;
-  return (vite || node || "").trim();
+  return BASE_URL;
 }
 
 function defaultDevice(): string {
@@ -99,8 +119,11 @@ export class MathGalaxyAPI {
   readonly cfg: Required<Omit<ApiConfig, "baseUrl">>;
 
   constructor(cfg: ApiConfig = {}) {
-    const base = (cfg.baseUrl || detectBaseUrl()).replace(/\/+$/, "");
+    const provided = typeof cfg.baseUrl === "string" ? cfg.baseUrl.trim() : "";
+    const fallback = detectBaseUrl();
+    const base = (provided || fallback || "").replace(/\/+$/, "");
     if (!base) {
+      requireApiUrl();
       throw new MathGalaxyApiError(
         "MathGalaxyAPI requires a baseUrl. Pass { baseUrl } or set VITE_MATH_API_URL.",
       );
@@ -133,7 +156,10 @@ export class MathGalaxyAPI {
     return data;
   }
 
-  async aiRuntime<T = any>() {
+  async aiRuntime<T = any>(payload?: Record<string, unknown>) {
+    if (payload && Object.keys(payload).length > 0) {
+      return this.post<T>("/v1/ai/runtime", payload);
+    }
     const { data } = await this.getWithMeta<T>("/v1/ai/runtime");
     return data;
   }
@@ -169,7 +195,7 @@ export class MathGalaxyAPI {
   }
 
   async aiPlan<T = any>(payload: Record<string, unknown>) {
-    return this.post<T>("/v1/ai/planning", payload);
+    return this.post<T>("/v1/ai/plan", payload);
   }
 
   async postSpriteInterests<T = any>(payload: Record<string, unknown>, init: RequestInit = {}) {
