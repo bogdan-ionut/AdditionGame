@@ -12,8 +12,17 @@ function App() {
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
 
   useEffect(() => {
-    if (!isMathGalaxyConfigured) return;
+    if (!isMathGalaxyConfigured()) return;
     flushMathGalaxyQueue().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const shouldReopen = window.sessionStorage.getItem('mg.aiSettings.reopen');
+    if (shouldReopen === 'true') {
+      setAiSettingsOpen(true);
+      window.sessionStorage.removeItem('mg.aiSettings.reopen');
+    }
   }, []);
 
   useEffect(() => {

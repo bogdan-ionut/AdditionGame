@@ -66,6 +66,20 @@ type PlayTextOptions = {
   volume?: number;
 };
 
+type AudioClipResource = { url: string; revoke: () => void };
+
+type WebSpeechPayload = {
+  text: string;
+  language?: string | null;
+  speakingRate?: number;
+  pitch?: number;
+  volume?: number;
+};
+
+type ClipSource =
+  | ({ kind: 'audio' } & AudioClipResource)
+  | { kind: 'webspeech'; payload: WebSpeechPayload };
+
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
@@ -132,8 +146,9 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
   const [catalogStatus, setCatalogStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const narrationRef = useRef<HTMLAudioElement | null>(null);
-  const clipCache = useRef<Map<string, { url: string; revoke: () => void }>>(new Map());
+  const clipCache = useRef<Map<string, AudioClipResource>>(new Map());
   const sfxPlayersRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const [narrationNotice, setNarrationNotice] = useState<string | null>(null);
 
   const effectiveModel = useMemo(() => {
     const cfgModel = settings.narrationModel || null;
@@ -172,6 +187,13 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
 
   useEffect(() => () => stopNarration(), [stopNarration]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (!narrationNotice) return undefined;
+    const timeout = window.setTimeout(() => setNarrationNotice(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [narrationNotice]);
+
   const clearNarrationClip = useCallback((key: string) => {
     const cache = clipCache.current;
     if (!cache.has(key)) return;
@@ -190,7 +212,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
 
   const fetchCatalog = useCallback(
     async (force = false) => {
-      if (!isMathGalaxyConfigured) {
+      if (!isMathGalaxyConfigured()) {
         setCatalogStatus('error');
         setCatalogError(OFFLINE_MESSAGE);
         return;
@@ -339,16 +361,18 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
   );
 
   const fetchClip = useCallback(
-    async (text: string, overrides: Partial<PlayTextOptions>): Promise<{ url: string; revoke: () => void } | null> => {
+    async (text: string, overrides: Partial<PlayTextOptions>): Promise<ClipSource | null> => {
       if (!text || !text.trim()) return null;
       const model = overrides.model || ensureModel();
       if (!model) return null;
-      if (!isMathGalaxyConfigured || (!runtime?.serverHasKey && !runtime?.aiEnabled)) {
+      if (!isMathGalaxyConfigured() || (!runtime?.serverHasKey && !runtime?.aiEnabled)) {
         throw new MathGalaxyApiError(OFFLINE_MESSAGE);
       }
       const key = makeCacheKey(text, overrides);
       const existing = clipCache.current.get(key);
-      if (existing) return existing;
+      if (existing) {
+        return { kind: 'audio', url: existing.url, revoke: existing.revoke };
+      }
 
       const voiceId = overrides.voiceId || settings.narrationVoiceId || null;
       const speakingRate = overrides.speakingRate || settings.speakingRate;
@@ -368,22 +392,62 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
         payload.voiceId = voiceId;
       }
 
-      const response = await synthesizeSpeech(payload);
-      if (!response || !response.buffer) {
-        throw new Error('TTS response missing audio payload.');
-      }
+      try {
+        const response = await synthesizeSpeech(payload);
+        if (!response || !response.buffer) {
+          throw new Error('TTS response missing audio payload.');
+        }
 
-      const playable = response.base64
-        ? createObjectUrlFromBase64(response.base64, response.mimeType)
-        : createObjectUrlFromBuffer(response.buffer, response.mimeType);
-      clipCache.current.set(key, playable);
-      return playable;
+        const playable = response.base64
+          ? createObjectUrlFromBase64(response.base64, response.mimeType)
+          : createObjectUrlFromBuffer(response.buffer, response.mimeType);
+        const clip: ClipSource = { kind: 'audio', url: playable.objectUrl, revoke: playable.revoke };
+        clipCache.current.set(key, { url: clip.url, revoke: clip.revoke });
+        return clip;
+      } catch (error) {
+        const fallbackPayload: WebSpeechPayload = {
+          text,
+          language,
+          speakingRate,
+          pitch,
+          volume: overrides.volume ?? settings.narrationVolume,
+        };
+        if (error instanceof MathGalaxyApiError && (error.status === 500 || error.status === 501)) {
+          console.error('[MathGalaxyAPI] /v1/ai/tts/say failed', {
+            status: error.status,
+            data: error.data || null,
+          });
+          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
+          return { kind: 'webspeech', payload: fallbackPayload };
+        }
+        if (error instanceof TypeError) {
+          console.warn('[MathGalaxyAPI] /v1/ai/tts/say network error, falling back to Web Speech.', error);
+          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
+          return { kind: 'webspeech', payload: fallbackPayload };
+        }
+        if (error instanceof MathGalaxyApiError && error.status === 0) {
+          console.warn('[MathGalaxyAPI] /v1/ai/tts/say returned no data, using Web Speech fallback.', error);
+          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
+          return { kind: 'webspeech', payload: fallbackPayload };
+        }
+        throw error;
+      }
     },
-    [ensureModel, makeCacheKey, runtime?.aiEnabled, runtime?.serverHasKey, settings.narrationLanguage, settings.narrationVoiceId, settings.pitch, settings.speakingRate],
+    [
+      ensureModel,
+      makeCacheKey,
+      runtime?.aiEnabled,
+      runtime?.serverHasKey,
+      settings.narrationLanguage,
+      settings.narrationVoiceId,
+      settings.pitch,
+      settings.speakingRate,
+      settings.narrationVolume,
+    ],
   );
 
   const playClip = useCallback(
-    async (clip: { url: string; revoke: () => void }, volume?: number) => {
+    async (clip: AudioClipResource, volume?: number) => {
       stopNarration();
       const audio = new Audio(clip.url);
       audio.volume = normalizeVolume(volume ?? settings.narrationVolume, settings.narrationVolume);
@@ -413,19 +477,69 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     [settings.narrationVolume, stopNarration],
   );
 
+  const speakWithWebSpeech = useCallback(
+    async (payload: WebSpeechPayload) => {
+      if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') {
+        throw new Error('Web Speech API not available');
+      }
+      if (!payload.text || !payload.text.trim()) {
+        return;
+      }
+      const synthesis = window.speechSynthesis;
+      try {
+        synthesis.cancel();
+      } catch (error) {
+        console.warn('[audio] Unable to cancel existing speech synthesis', error);
+      }
+      const utterance = new SpeechSynthesisUtterance(payload.text);
+      utterance.lang = payload.language || settings.narrationLanguage || 'ro-RO';
+      const rate = payload.speakingRate ?? settings.speakingRate ?? 1;
+      utterance.rate = Math.min(2, Math.max(0.1, rate));
+      const pitch = payload.pitch ?? settings.pitch ?? 1;
+      utterance.pitch = Math.min(2, Math.max(0, pitch));
+      utterance.volume = normalizeVolume(payload.volume ?? settings.narrationVolume, settings.narrationVolume);
+      await new Promise<void>((resolve, reject) => {
+        utterance.onend = () => resolve();
+        utterance.onerror = (event) => reject(event.error || event);
+        synthesis.speak(utterance);
+      });
+    },
+    [settings.narrationLanguage, settings.narrationVolume, settings.pitch, settings.speakingRate],
+  );
+
   const speakText = useCallback(
     async (options: PlayTextOptions) => {
       if (!settings.narrationEnabled) return;
-      const clip = await fetchClip(options.text, options);
-      if (!clip) return;
       try {
-        await playClip(clip, options.volume);
+        const clip = await fetchClip(options.text, options);
+        if (!clip) return;
+        if (clip.kind === 'webspeech') {
+          try {
+            await speakWithWebSpeech({
+              text: options.text,
+              language: clip.payload.language,
+              speakingRate: clip.payload.speakingRate,
+              pitch: clip.payload.pitch,
+              volume: clip.payload.volume ?? options.volume,
+            });
+          } catch (fallbackError) {
+            console.warn('[audio] Web Speech API playback failed', fallbackError);
+            setNarrationNotice('Vocea dispozitivului nu este disponibilă pe acest browser.');
+          }
+          return;
+        }
+        try {
+          await playClip(clip, options.volume);
+        } catch (error) {
+          console.warn('[audio] Unable to play narration clip', error);
+          clearNarrationClip(makeCacheKey(options.text, options));
+        }
       } catch (error) {
-        console.warn('[audio] Unable to play narration clip', error);
+        console.warn('[audio] Unable to prepare narration clip', error);
         clearNarrationClip(makeCacheKey(options.text, options));
       }
     },
-    [clearNarrationClip, fetchClip, makeCacheKey, playClip, settings.narrationEnabled],
+    [clearNarrationClip, fetchClip, makeCacheKey, playClip, settings.narrationEnabled, speakWithWebSpeech],
   );
 
   const speakProblem = useCallback(
@@ -528,7 +642,10 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
         }
         if (!audio) return;
         const gain = clip.gain != null && Number.isFinite(clip.gain) ? Number(clip.gain) : 1;
-        audio.volume = normalizeVolume(settings.sfxVolume * gain, settings.sfxVolume);
+        const baseVolume = settings.sfxLowStimMode
+          ? Math.min(settings.sfxVolume, 0.2)
+          : settings.sfxVolume;
+        audio.volume = normalizeVolume(baseVolume * gain, baseVolume);
         await audio.play();
         sfxPlayersRef.current.set(category, audio);
       } catch (error) {
@@ -554,5 +671,6 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     catalogError,
     getVoicePreset,
     effectiveModel,
+    narrationNotice,
   };
 }

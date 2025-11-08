@@ -3,6 +3,7 @@ import {
   MathGalaxyApiError,
   type MathGalaxyJsonResult,
   BASE_URL,
+  type MathGalaxyHealth,
   type SpritePrompt,
 } from './math-galaxy-api';
 import { resolveApiBaseUrl } from '../lib/api/baseUrl';
@@ -33,6 +34,7 @@ const detectGithubPagesHost = (): boolean => {
 
 type MathGalaxyStub = {
   baseUrl: null;
+  health: MathGalaxyHealth;
   flushQueue: () => Promise<FlushQueueResult>;
   aiRuntime: (payload?: Record<string, unknown>) => Promise<never>;
   aiStatus: () => Promise<never>;
@@ -52,6 +54,8 @@ type MathGalaxyStub = {
     jobId: string,
     payload?: Record<string, unknown>,
   ) => Promise<MathGalaxyJsonResult<null>>;
+  setBaseUrl: (url: string) => Promise<MathGalaxyHealth>;
+  refreshHealth: () => Promise<MathGalaxyHealth>;
 };
 
 const createOfflineError = () => new MathGalaxyApiError(OFFLINE_MESSAGE, { status: 503 });
@@ -62,8 +66,18 @@ const createStubResponse = (status: number) =>
     headers: { 'Content-Type': 'application/json' },
   });
 
+const OFFLINE_HEALTH: MathGalaxyHealth = {
+  ok: false,
+  has_key: false,
+  cors_ok: false,
+  tts_ok: false,
+  sprites_ok: false,
+  lastCheckedAt: null,
+};
+
 const createStubClient = (): MathGalaxyStub => ({
   baseUrl: null,
+  health: OFFLINE_HEALTH,
   flushQueue: async () => ({ sent: 0, remaining: 0 }),
   aiRuntime: async () => {
     throw createOfflineError();
@@ -95,6 +109,8 @@ const createStubClient = (): MathGalaxyStub => ({
   postSpriteInterests: async () => ({ data: null, response: createStubResponse(503) }),
   getSpriteJob: async () => ({ data: null, response: createStubResponse(503) }),
   postSpriteProcessJob: async () => ({ data: null, response: createStubResponse(503) }),
+  setBaseUrl: async () => OFFLINE_HEALTH,
+  refreshHealth: async () => OFFLINE_HEALTH,
 });
 
 const runtimeBase = resolveApiBaseUrl();
@@ -108,6 +124,9 @@ const useStubClient = shouldForceLocalStub || !resolvedBaseUrl;
 
 let mathGalaxyApi: MathGalaxyAPI | MathGalaxyStub;
 let mathGalaxyConfigured = false;
+
+const isRealClient = (client: MathGalaxyAPI | MathGalaxyStub): client is MathGalaxyAPI =>
+  client instanceof MathGalaxyAPI;
 
 if (useStubClient) {
   if (!resolvedBaseUrl) {
@@ -124,11 +143,12 @@ if (useStubClient) {
 } else {
   const normalizedBaseUrl = resolvedBaseUrl.replace(/\/+$/, '');
   try {
-    mathGalaxyApi = new MathGalaxyAPI({
+    const client = new MathGalaxyAPI({
       baseUrl: normalizedBaseUrl,
       defaultGame: 'addition-within-10',
     });
-    mathGalaxyConfigured = Boolean((mathGalaxyApi as MathGalaxyAPI)?.baseUrl);
+    mathGalaxyApi = client;
+    mathGalaxyConfigured = Boolean(client.baseUrl);
   } catch (error) {
     console.error('[MathGalaxyAPI] Failed to initialize remote client. Falling back to stub.', error);
     mathGalaxyApi = createStubClient();
@@ -148,7 +168,55 @@ export function flushMathGalaxyQueue(): Promise<FlushQueueResult> {
   return mathGalaxyApi.flushQueue();
 }
 
-export const isMathGalaxyConfigured = mathGalaxyConfigured;
+export function getMathGalaxyHealth(): MathGalaxyHealth {
+  if (isRealClient(mathGalaxyApi)) {
+    return mathGalaxyApi.health;
+  }
+  return OFFLINE_HEALTH;
+}
+
+export async function setMathGalaxyBaseUrl(url: string): Promise<MathGalaxyHealth> {
+  const normalized = typeof url === 'string' ? url.trim().replace(/\/+$/, '') : '';
+  resolvedBaseUrl = normalized;
+
+  if (!normalized) {
+    mathGalaxyApi = createStubClient();
+    mathGalaxyConfigured = false;
+    return OFFLINE_HEALTH;
+  }
+
+  if (isRealClient(mathGalaxyApi)) {
+    mathGalaxyConfigured = true;
+    return mathGalaxyApi.setBaseUrl(normalized);
+  }
+
+  try {
+    const client = new MathGalaxyAPI({ baseUrl: normalized, defaultGame: 'addition-within-10' });
+    mathGalaxyApi = client;
+    mathGalaxyConfigured = Boolean(client.baseUrl);
+    return client.refreshHealth();
+  } catch (error) {
+    console.error('[MathGalaxyAPI] Unable to configure base URL. Falling back to stub.', error);
+    mathGalaxyApi = createStubClient();
+    mathGalaxyConfigured = false;
+    throw error;
+  }
+}
+
+export async function refreshMathGalaxyHealth(): Promise<MathGalaxyHealth> {
+  if (isRealClient(mathGalaxyApi)) {
+    return mathGalaxyApi.refreshHealth();
+  }
+  return OFFLINE_HEALTH;
+}
+
+export function isMathGalaxyConfigured(): boolean {
+  if (!mathGalaxyConfigured) {
+    return false;
+  }
+  const health = getMathGalaxyHealth();
+  return Boolean(health.ok && health.has_key && health.cors_ok);
+}
 
 export function getConfiguredBaseUrl(): string | null {
   if (!resolvedBaseUrl) {

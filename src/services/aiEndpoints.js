@@ -138,7 +138,7 @@ const buildUrl = (path) => {
 };
 
 export function isAiProxyConfigured() {
-  return isMathGalaxyConfigured;
+  return isMathGalaxyConfigured();
 }
 
 export function getGeminiKeyUrl() {
