@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { loadAiConfig, saveAiConfig, getAiRuntime } from '../lib/ai/runtime';
 import { saveGeminiKey, testGeminiKey } from '../services/aiPlanner';
+import { isAiProxyConfigured } from '../services/aiEndpoints';
 import { MathGalaxyApiError } from '../services/mathGalaxyClient';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
@@ -104,6 +105,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
+  const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
 
   const describeVoice = useCallback((voice) => {
     if (!voice) return '';
@@ -157,6 +159,27 @@ export default function ParentAISettings({ onClose, onSaved }) {
   }, [cleanupPreviewSfx, cleanupPreviewVoice]);
 
   const loadAudioCatalog = useCallback(async () => {
+    if (!aiProxyConfigured) {
+      setAudioCatalog({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
+      setCatalogStatus({ state: 'error', message: API_OFFLINE_MESSAGE });
+      return;
+    }
+
+    if (runtime.lastError) {
+      setAudioCatalog({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
+      setCatalogStatus({ state: 'error', message: runtime.lastError || API_OFFLINE_MESSAGE });
+      return;
+    }
+
+    if (!runtime.serverHasKey) {
+      setAudioCatalog({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
+      setCatalogStatus({
+        state: 'idle',
+        message: 'Adaugă cheia Gemini pentru a încărca modelele audio.',
+      });
+      return;
+    }
+
     setCatalogStatus({ state: 'loading', message: 'Se încarcă vocile și sunetele…' });
     try {
       const [modelsResult, voicesResult, sfxResult] = await Promise.all([
@@ -245,7 +268,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
           : error?.message || 'Nu am putut încărca catalogul audio.';
       setCatalogStatus({ state: 'error', message });
     }
-  }, [audioSettings.sfxLowStimMode]);
+  }, [aiProxyConfigured, audioSettings.sfxLowStimMode, runtime.lastError, runtime.serverHasKey]);
 
   useEffect(() => {
     loadAudioCatalog();
