@@ -9,7 +9,51 @@ import { deriveMotifsFromInterests } from '../lib/aiPersonalization';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
 
-export async function saveGeminiKey(key) {
+const readBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) {
+      if (value === 1) return true;
+      if (value === 0) return false;
+    }
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (['true', '1', 'yes', 'y', 'ok', 'success', 'verified'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'fail', 'failed', 'error'].includes(normalized)) return false;
+  }
+  return null;
+};
+
+const readBooleanFrom = (source, keys) => {
+  if (!source || typeof source !== 'object') return null;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const candidate = readBoolean(source[key]);
+      if (candidate !== null) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+};
+
+const readStringFrom = (source, keys) => {
+  if (!source || typeof source !== 'object') return null;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const value = source[key];
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) return trimmed;
+      }
+    }
+  }
+  return null;
+};
+
+export async function saveGeminiKey(key, model) {
   const trimmed = key?.trim?.();
   if (!trimmed) {
     throw new Error('API key is required.');
@@ -19,8 +63,49 @@ export async function saveGeminiKey(key) {
     throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
 
+  const payload = { apiKey: trimmed, key: trimmed, api_key: trimmed };
+  const normalizedModel = typeof model === 'string' ? model.trim() : '';
+  if (normalizedModel) {
+    payload.model = normalizedModel;
+  }
+
   try {
-    return await mathGalaxyClient.saveAiKey({ apiKey: trimmed, key: trimmed, api_key: trimmed });
+    const response = await mathGalaxyClient.saveAiKey(payload);
+    const data = response && typeof response === 'object' ? response : {};
+    const verified =
+      readBooleanFrom(data, ['verified', 'isVerified', 'is_verified']) ??
+      readBooleanFrom(data, ['have_key', 'haveKey', 'server_has_key', 'serverHasKey', 'key_present', 'keyPresent']) ??
+      readBooleanFrom(data, ['ok', 'success', 'status']);
+
+    const note =
+      readStringFrom(data, ['note', 'warning', 'warn', 'warningMessage', 'warning_message']) ?? null;
+    const successMessage = readStringFrom(data, ['message', 'statusText', 'status_text']);
+    const errorMessage =
+      readStringFrom(data, ['error', 'reason', 'detail', 'details']) ?? (verified ? null : successMessage);
+
+    if (verified) {
+      const result = {
+        ...data,
+        verified: true,
+        note,
+      };
+      if ('error' in result && typeof result.error === 'string') {
+        result.error = null;
+      }
+      if (note == null && !Object.prototype.hasOwnProperty.call(result, 'note')) {
+        result.note = null;
+      }
+      return result;
+    }
+
+    const failurePayload = {
+      ...data,
+      verified: false,
+      note,
+    };
+    const failureMessage = errorMessage || 'Gemini key verification failed.';
+    failurePayload.error = failureMessage;
+    throw new MathGalaxyApiError(failureMessage, { data: failurePayload });
   } catch (error) {
     if (error instanceof MathGalaxyApiError) {
       throw error;

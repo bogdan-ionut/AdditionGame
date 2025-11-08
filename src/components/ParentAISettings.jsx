@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { loadAiConfig, saveAiConfig, getAiRuntime } from '../lib/ai/runtime';
 import { saveGeminiKey, testGeminiKey } from '../services/aiPlanner';
 import { isAiProxyConfigured } from '../services/aiEndpoints';
@@ -39,6 +39,7 @@ const initialRuntime = {
   defaultTtsModel: null,
   allowedTtsModels: [],
   runtimeLabel: null,
+  note: null,
 };
 
 const StatusChip = ({ active }) => (
@@ -94,6 +95,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const [aiAllowed, setAiAllowed] = useState(true);
   const [runtime, setRuntime] = useState(initialRuntime);
   const [keyStatus, setKeyStatus] = useState({ state: 'idle', message: null });
+  const [keyWarning, setKeyWarning] = useState(null);
   const [testStatus, setTestStatus] = useState({ state: 'idle', message: null, ok: null });
   const [modelStatus, setModelStatus] = useState({ state: 'idle', message: null });
   const [fieldErrors, setFieldErrors] = useState({ planningModel: null, spriteModel: null });
@@ -515,6 +517,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
     async (notify = false) => {
       const next = await getAiRuntime();
       setRuntime(next);
+      setKeyWarning(next.note || null);
       setPlanningModel((prev) => {
         const trimmed = typeof prev === 'string' ? prev.trim() : '';
         return trimmed ? prev : next.planningModel || '';
@@ -583,6 +586,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
         || (response?.ok ? 'API key saved securely.' : null)
         || 'API key saved securely.';
       setKeyStatus({ state: 'success', message });
+      setKeyWarning(response?.note || null);
       setKeyInput('');
       await runHealthCheck(true);
     } catch (error) {
@@ -591,6 +595,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
           ? API_OFFLINE_MESSAGE
           : error?.message || 'We could not save the API key. Please try again.';
       setKeyStatus({ state: 'error', message });
+      setKeyWarning(null);
     }
   }, [keyInput, runHealthCheck]);
 
@@ -712,6 +717,12 @@ export default function ParentAISettings({ onClose, onSaved }) {
             <div className="flex items-start gap-2 text-sm text-green-600 bg-green-50 border border-green-200 rounded-2xl p-4">
               <ShieldCheck className="text-green-500" size={18} />
               <span>{keyStatus.message}</span>
+            </div>
+          )}
+          {keyWarning && (
+            <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+              <AlertTriangle className="text-amber-500" size={18} />
+              <span>{keyWarning}</span>
             </div>
           )}
           {keyStatus.state === 'error' && keyStatus.message && (
