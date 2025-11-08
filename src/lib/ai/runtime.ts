@@ -1,4 +1,8 @@
-import mathGalaxyClient, { MathGalaxyApiError, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
+import mathGalaxyClient, {
+  MathGalaxyApiError,
+  BASE_URL,
+  getConfiguredBaseUrl,
+} from '../../services/mathGalaxyClient';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
 
@@ -133,7 +137,13 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     };
   }
 
-  if (!isMathGalaxyConfigured) {
+  const configuredBase =
+    (typeof BASE_URL === 'string' ? BASE_URL : '') ||
+    getConfiguredBaseUrl() ||
+    '';
+  const normalizedBase = typeof configuredBase === 'string' ? configuredBase.trim() : '';
+
+  if (!normalizedBase) {
     return {
       aiEnabled: false,
       serverHasKey: false,
@@ -141,7 +151,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       spriteModel: cfg.spriteModel,
       audioModel: cfg.audioModel,
       aiAllowed: cfg.aiAllowed,
-      lastError: 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.',
+      lastError: 'Configure Math Galaxy API URL in AI Settings to enable AI features.',
       note: null,
     };
   }
@@ -153,14 +163,16 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
 
   const offlineMessage = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
 
-  const fetchers = [
-    async () => mathGalaxyClient.aiRuntime(),
-    async () => mathGalaxyClient.aiStatus(),
+  const fetchers: { name: 'runtime' | 'status'; fn: () => Promise<unknown> }[] = [
+    { name: 'runtime', fn: async () => mathGalaxyClient.aiRuntime() },
+    { name: 'status', fn: async () => mathGalaxyClient.aiStatus() },
   ];
 
-  for (const fetcher of fetchers) {
+  let statusFailed = false;
+
+  for (const { name, fn } of fetchers) {
     try {
-      const payload = await fetcher();
+      const payload = await fn();
       if (payload && typeof payload === 'object') {
         Object.assign(aggregatedPayload, payload as Record<string, unknown>);
       }
@@ -171,8 +183,17 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
           : error instanceof Error
             ? error.message
             : offlineMessage;
-      lastError = lastError || message;
+      if (name === 'status') {
+        statusFailed = true;
+        lastError = message;
+      } else {
+        lastError = lastError || message;
+      }
     }
+  }
+
+  if (statusFailed && !lastError) {
+    lastError = offlineMessage;
   }
 
   const runtimePayload = Object.keys(aggregatedPayload).length ? aggregatedPayload : null;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, AlertCircle } from 'lucide-react';
 import ParentAISettings from '../../components/ParentAISettings';
 import NextUpCard from '../../components/NextUpCard';
 import {
@@ -9,14 +9,15 @@ import {
   deriveMotifsFromInterests,
   TARGET_SUCCESS_BAND,
   normalizeMotifTokens,
+  predictSuccess,
 } from '../../lib/aiPersonalization';
 import { buildThemePacksForInterests, resolveMotifTheme } from '../../lib/interestThemes';
-import { requestGeminiPlan, requestInterestMotifs } from '../../services/aiPlanner';
+import { requestGeminiPlan, requestInterestMotifs, requestRuntimeContent } from '../../services/aiPlanner';
 import { postProcessJob, getSpriteJobStatus } from '../../services/aiEndpoints';
 import { getAiRuntime } from '../../lib/ai/runtime';
 import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
-import mathGalaxyApi, { flushMathGalaxyQueue, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
+import mathGalaxyApi, { flushMathGalaxyQueue, isMathGalaxyConfigured, BASE_URL } from '../../services/mathGalaxyClient';
 import { useNarrationEngine } from '../../lib/audio/useNarrationEngine';
 
 const DEFAULT_LEARNING_PATH_META = {
@@ -96,6 +97,114 @@ const sanitizeSpriteItemsForUi = (items = []) => {
       status: resolveUiSpriteStatus(item),
       url: resolveUiSpriteUrl(item),
     }));
+};
+
+const sanitizeInterestList = (values = []) => {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  return values
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter(Boolean)
+    .filter((value) => {
+      const lower = value.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    })
+    .slice(0, 12);
+};
+
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const extractOperandsFromPlanItem = (item) => {
+  if (!item || typeof item !== 'object') {
+    return { a: null, b: null };
+  }
+  const direct = Array.isArray(item.operands) && item.operands.length >= 2
+    ? item.operands
+    : Array.isArray(item.problem?.operands) && item.problem.operands.length >= 2
+      ? item.problem.operands
+      : null;
+  if (direct) {
+    const a = toNumber(direct[0]);
+    const b = toNumber(direct[1]);
+    return { a, b };
+  }
+  const aCandidates = [
+    item.a,
+    item.left,
+    item.lhs,
+    item.first,
+    item.x,
+    item?.problem?.a,
+    item?.problem?.left,
+  ];
+  const bCandidates = [
+    item.b,
+    item.right,
+    item.rhs,
+    item.second,
+    item.y,
+    item?.problem?.b,
+    item?.problem?.right,
+  ];
+  const a = aCandidates.map(toNumber).find((value) => value != null) ?? null;
+  const b = bCandidates.map(toNumber).find((value) => value != null) ?? null;
+  return { a, b };
+};
+
+const buildMasterySnapshot = (mastery = {}) => {
+  const snapshot = {};
+  let total = 0;
+  let count = 0;
+  Object.entries(mastery || {}).forEach(([key, node]) => {
+    const predicted = predictSuccess(node);
+    if (typeof predicted === 'number' && Number.isFinite(predicted)) {
+      const clamped = Math.max(0, Math.min(1, Number(predicted.toFixed(3))));
+      snapshot[key] = clamped;
+      total += clamped;
+      count += 1;
+    }
+  });
+  if (count > 0) {
+    snapshot.add_within_10 = Number((total / count).toFixed(3));
+  }
+  return snapshot;
+};
+
+const resolveLearnerGrade = (student = {}) => {
+  if (student && typeof student.grade === 'string') {
+    const trimmed = student.grade.trim();
+    if (trimmed) return trimmed;
+  }
+  const age = typeof student?.age === 'number' ? student.age : Number(student?.age);
+  if (!Number.isFinite(age)) return 'preK';
+  if (age < 5) return 'preK';
+  if (age < 6) return 'K';
+  if (age < 7) return 'grade-1';
+  if (age < 8) return 'grade-2';
+  if (age < 9) return 'grade-3';
+  return 'grade-4';
+};
+
+const resolveNarrationLocale = (code) => {
+  if (!code || typeof code !== 'string') return 'en-US';
+  const normalized = code.replace(/_/g, '-').trim();
+  if (!normalized) return 'en-US';
+  const lower = normalized.toLowerCase();
+  if (lower === 'ro') return 'ro-RO';
+  if (lower === 'en') return 'en-US';
+  if (lower.length === 2) {
+    return `${lower}-${lower.toUpperCase()}`;
+  }
+  return normalized;
 };
 
 const collectSpriteUrlsForUi = (items = []) => {
@@ -2108,35 +2217,123 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       .map((entry) => `sum=${entry.sum}`);
 
     const motifHints = normalizeMotifTokens(collectMotifHintsForProfile(ai.learnerProfile));
-    const payload = {
-      plan_for: ai.learnerProfile.learnerId || (current.studentInfo?.name || 'learner'),
-      target_success: ai.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint,
-      weak_families: weakFamilies,
-      interest_motifs: motifHints,
-      need_items: 10,
-      learner_name: current.studentInfo?.name || 'Learner',
+    const interestList = sanitizeInterestList(ai.learnerProfile.interests || []);
+    const masterySnapshot = buildMasterySnapshot(ai.mastery || {});
+    const successTarget = ai.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint;
+    const runtimeTtsModel = aiRuntime.audioModel || aiRuntime.defaultTtsModel || '';
+    const planRequest = {
+      userId: ai.learnerProfile.learnerId || (current.studentInfo?.name || 'learner'),
+      grade: resolveLearnerGrade(current.studentInfo),
+      interests: interestList,
+      mastery: masterySnapshot,
+      target: {
+        successRate: successTarget,
+        minutes: 10,
+      },
+      context: {
+        weakFamilies,
+        motifs: motifHints,
+        needItems: 10,
+        learnerName: current.studentInfo?.name || 'Learner',
+      },
     };
+    const modelsPayload = {};
+    if (aiRuntime.planningModel) modelsPayload.planner = aiRuntime.planningModel;
+    if (aiRuntime.spriteModel) modelsPayload.sprite = aiRuntime.spriteModel;
+    if (runtimeTtsModel) modelsPayload.tts = runtimeTtsModel;
+    if (Object.keys(modelsPayload).length) {
+      planRequest.models = modelsPayload;
+    }
+    if (!Object.keys(planRequest.mastery || {}).length) {
+      delete planRequest.mastery;
+    }
 
     if (aiRuntime.aiEnabled && aiRuntime.planningModel) {
       try {
-        const remotePlan = await requestGeminiPlan(payload, aiRuntime.planningModel);
+        const remotePlan = await requestGeminiPlan(planRequest, {
+          plannerModel: aiRuntime.planningModel,
+          spriteModel: aiRuntime.spriteModel || undefined,
+          audioModel: runtimeTtsModel || undefined,
+        });
         if (remotePlan && Array.isArray(remotePlan.items) && remotePlan.items.length) {
           const planSource = remotePlan.source || remotePlan.items[0]?.source || aiRuntime.planningModel;
           resolvedSource = planSource;
-          const normalized = remotePlan.items.map((item, index) => ({
-            id: item.itemId || `${remotePlan.planId || 'gemini'}-${Date.now()}-${index}`,
-            a: item.a ?? item.operands?.[0] ?? 0,
-            b: item.b ?? item.operands?.[1] ?? 0,
-            answer: item.answer ?? ((item.a ?? item.operands?.[0] ?? 0) + (item.b ?? item.operands?.[1] ?? 0)),
-            display: item.display || `${item.a ?? item.operands?.[0] ?? 0} + ${item.b ?? item.operands?.[1] ?? 0}`,
-            predictedSuccess: item.predictedSuccess ?? item.difficulty ?? payload.target_success,
-            difficulty: item.difficulty ?? item.predictedSuccess ?? payload.target_success,
-            hints: item.hints ?? [],
-            praise: item.praise || '',
-            microStory: remotePlan.microStory || remotePlan.story || '',
-            source: planSource,
-            planId: remotePlan.planId || `gemini-${Date.now()}`,
-          }));
+          let planStory = remotePlan.microStory || remotePlan.story || '';
+          if (!planStory) {
+            try {
+              const runtimePayload = {
+                kind: 'narration',
+                locale: resolveNarrationLocale(audioSettings.narrationLanguage),
+                seed: Date.now() % 1_000_000,
+                context: {
+                  userId: planRequest.userId,
+                  grade: planRequest.grade,
+                  interests: planRequest.interests,
+                  motifs: motifHints,
+                  weakFamilies,
+                  target: planRequest.target,
+                  planId: remotePlan.planId || null,
+                  items: remotePlan.items.slice(0, 10).map((item, index) => {
+                    const { a, b } = extractOperandsFromPlanItem(item);
+                    return {
+                      index,
+                      a,
+                      b,
+                      display:
+                        item.display ||
+                        item.prompt ||
+                        item.expression ||
+                        (a != null && b != null ? `${a} + ${b}` : `Problem ${index + 1}`),
+                    };
+                  }),
+                },
+              };
+              const runtimeResult = await requestRuntimeContent(runtimePayload);
+              if (runtimeResult?.text) {
+                planStory = runtimeResult.text;
+              }
+            } catch (runtimeError) {
+              console.warn('Runtime narration request failed', runtimeError);
+            }
+          }
+          const planIdBase = remotePlan.planId || `gemini-${Date.now()}`;
+          const normalized = remotePlan.items.map((item, index) => {
+            const { a, b } = extractOperandsFromPlanItem(item);
+            const fallbackTarget = planRequest.target.successRate;
+            const predicted =
+              toNumber(item.predictedSuccess) ??
+              toNumber(item.successRate) ??
+              toNumber(item.difficulty) ??
+              fallbackTarget;
+            const hintsArray = Array.isArray(item.hints)
+              ? item.hints
+              : Array.isArray(item.scaffolds)
+                ? item.scaffolds
+                : [];
+            const answerValue =
+              toNumber(item.answer) ??
+              toNumber(item.result) ??
+              (a != null && b != null ? a + b : null);
+            const planId = item.planId || item.plan_id || planIdBase;
+            return {
+              id: item.itemId || item.id || `${planId}-${index}`,
+              a: a ?? 0,
+              b: b ?? 0,
+              answer: answerValue ?? ((a ?? 0) + (b ?? 0)),
+              display:
+                item.display ||
+                item.prompt ||
+                item.expression ||
+                (a != null && b != null ? `${a} + ${b}` : `Problem ${index + 1}`),
+              predictedSuccess: typeof predicted === 'number' ? predicted : fallbackTarget,
+              difficulty: typeof predicted === 'number' ? predicted : fallbackTarget,
+              hints: hintsArray.filter((hint) => typeof hint === 'string' && hint.trim()),
+              praise: typeof item.praise === 'string' ? item.praise : '',
+              microStory: planStory || remotePlan.microStory || remotePlan.story || '',
+              source: planSource,
+              planId,
+            };
+          });
 
           setGameState((prev) => {
             const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
@@ -2196,7 +2393,17 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
 
     setAiPlanStatus({ loading: false, error: null, source: resolvedSource || 'local planner' });
     return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
-  }, [aiRuntime.aiEnabled, aiRuntime.planningModel, collectMotifHintsForProfile, setAiPlanStatus, setGameState]);
+  }, [
+    aiRuntime.aiEnabled,
+    aiRuntime.planningModel,
+    aiRuntime.spriteModel,
+    aiRuntime.audioModel,
+    aiRuntime.defaultTtsModel,
+    audioSettings.narrationLanguage,
+    collectMotifHintsForProfile,
+    setAiPlanStatus,
+    setGameState,
+  ]);
 
   const handleAddInterest = useCallback(() => {
     const trimmed = interestDraft.trim();
@@ -3216,6 +3423,14 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     : 0;
   const checkpointCleared = Object.values(checkpointState.cardsData || {}).filter(entry => entry.correct > 0).length;
 
+  const normalizedBaseUrl = typeof BASE_URL === 'string' ? BASE_URL.trim() : '';
+  const apiOfflineMessage = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+  const statusFailed = aiRuntime.lastError === apiOfflineMessage;
+  const showApiWarning = !normalizedBaseUrl || statusFailed;
+  const apiWarningMessage = !normalizedBaseUrl
+    ? 'Cloud AI features need an API base URL. Open AI Settings to configure it or set VITE_MATH_API_URL.'
+    : apiOfflineMessage;
+
   if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
     return <Register onRegister={handleRegister} onImport={importGameState} />;
   }
@@ -3298,6 +3513,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     <>
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex flex-col items-center justify-center">
       <div className="w-full max-w-4xl mb-6">
+        {showApiWarning && (
+          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <AlertCircle className="mt-0.5 text-red-500" size={16} />
+            <span>{apiWarningMessage}</span>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <button
             onClick={() => {

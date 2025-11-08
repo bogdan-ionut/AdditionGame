@@ -1,4 +1,21 @@
-import mathGalaxyClient, { MathGalaxyApiError, isMathGalaxyConfigured } from './mathGalaxyClient';
+import mathGalaxyClient, {
+  MathGalaxyApiError,
+  isMathGalaxyConfigured,
+  requireApiUrl,
+} from './mathGalaxyClient';
+
+const rawApiBase = (() => {
+  const base = requireApiUrl();
+  return base ? base.replace(/\/+$/, '') : '';
+})();
+
+export const AiEndpoints = {
+  status: rawApiBase ? `${rawApiBase}/v1/ai/status` : '',
+  saveKey: rawApiBase ? `${rawApiBase}/v1/ai/key` : '',
+  plan: rawApiBase ? `${rawApiBase}/v1/ai/plan` : '',
+  runtime: rawApiBase ? `${rawApiBase}/v1/ai/runtime` : '',
+  sprites: rawApiBase ? `${rawApiBase}/v1/ai/sprites` : '',
+};
 
 const RETRY_AFTER_DEFAULT_MS = 45000;
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
@@ -97,6 +114,9 @@ const buildNotConfiguredResult = () => ({
 });
 
 export function getApiBase() {
+  if (rawApiBase) {
+    return rawApiBase;
+  }
   return mathGalaxyClient?.baseUrl ?? null;
 }
 
@@ -110,19 +130,19 @@ export function isAiProxyConfigured() {
 }
 
 export function getGeminiKeyUrl() {
-  return buildUrl('/v1/ai/key');
+  return AiEndpoints.saveKey || buildUrl('/v1/ai/key');
 }
 
 export function getGeminiHealthUrl() {
-  return buildUrl('/v1/ai/status');
+  return AiEndpoints.status || buildUrl('/v1/ai/status');
 }
 
 export function getAiRuntimeUrl() {
-  return buildUrl('/v1/ai/runtime');
+  return AiEndpoints.runtime || buildUrl('/v1/ai/runtime');
 }
 
 export function getPlanningUrl() {
-  return buildUrl('/v1/ai/planning');
+  return AiEndpoints.plan || buildUrl('/v1/ai/plan');
 }
 
 export function getInterestPacksUrl() {

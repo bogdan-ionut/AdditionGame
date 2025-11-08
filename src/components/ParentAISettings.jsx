@@ -3,7 +3,7 @@ import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, AlertTriangle, Loader2
 import { loadAiConfig, saveAiConfig, getAiRuntime } from '../lib/ai/runtime';
 import { saveGeminiKey, testGeminiKey } from '../services/aiPlanner';
 import { isAiProxyConfigured } from '../services/aiEndpoints';
-import { MathGalaxyApiError } from '../services/mathGalaxyClient';
+import { MathGalaxyApiError, getConfiguredBaseUrl } from '../services/mathGalaxyClient';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
 import { createObjectUrlFromBase64, extractAudioFromResponse } from '../lib/audio/utils';
@@ -55,6 +55,8 @@ const readString = (value) => {
 
 const determineKeyPresence = (payload) => {
   if (!payload || typeof payload !== 'object') return false;
+  if (typeof payload.serverHasKey === 'boolean') return payload.serverHasKey;
+  if (typeof payload.server_has_key === 'boolean') return payload.server_has_key;
   const keys = [
     'have_key',
     'haveKey',
@@ -140,6 +142,16 @@ const describeLanguageOption = (code) => {
   return code;
 };
 
+const readStoredApiOverride = () => {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem('MG_API_URL') || '';
+  } catch (error) {
+    console.warn('Unable to read MG_API_URL override from localStorage', error);
+    return '';
+  }
+};
+
 export default function ParentAISettings({ onClose, onSaved }) {
   const [keyInput, setKeyInput] = useState('');
   const [planningModel, setPlanningModel] = useState('');
@@ -158,9 +170,43 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const [audioCatalog, setAudioCatalog] = useState({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
   const [previewStatus, setPreviewStatus] = useState({ state: 'idle', message: null });
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
+  const [baseUrlInput, setBaseUrlInput] = useState(() => readStoredApiOverride());
+  const [baseStatus, setBaseStatus] = useState({ state: 'idle', message: null });
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
+  const effectiveBaseUrl = useMemo(() => getConfiguredBaseUrl() || '', []);
+
+  const handleResetBaseInput = useCallback(() => {
+    setBaseUrlInput(readStoredApiOverride() || effectiveBaseUrl || '');
+    setBaseStatus({ state: 'idle', message: null });
+  }, [effectiveBaseUrl]);
+
+  const handleSaveBaseUrl = useCallback(() => {
+    if (typeof window === 'undefined') {
+      setBaseStatus({ state: 'error', message: 'Window context unavailable.' });
+      return;
+    }
+    try {
+      setBaseStatus({ state: 'loading', message: null });
+      const trimmed = baseUrlInput.trim();
+      if (trimmed) {
+        window.localStorage.setItem('MG_API_URL', trimmed);
+        setBaseStatus({ state: 'success', message: 'Override saved. Reloading…' });
+      } else {
+        window.localStorage.removeItem('MG_API_URL');
+        setBaseStatus({ state: 'success', message: 'Override cleared. Reloading…' });
+      }
+      setTimeout(() => {
+        window.location.reload();
+      }, 400);
+    } catch (error) {
+      setBaseStatus({
+        state: 'error',
+        message: error instanceof Error ? error.message : 'Unable to update API base URL override.',
+      });
+    }
+  }, [baseUrlInput]);
 
   const describeVoice = useCallback((voice) => {
     if (!voice) return '';
@@ -610,15 +656,20 @@ export default function ParentAISettings({ onClose, onSaved }) {
       try {
         const response = await testGeminiKey();
         const hasKey = determineKeyPresence(response);
-        const successMessage =
-          readString(response?.message)
-            || readString(response?.note)
-            || 'Gemini key detected on server.';
-        const failureMessage =
-          readString(response?.error)
-            || readString(response?.message)
-            || 'Gemini key missing on server.';
-        setTestStatus({ state: 'success', ok: hasKey, message: hasKey ? successMessage : failureMessage });
+        const infoParts = [];
+        infoParts.push(`Server key: ${hasKey ? 'Yes' : 'No'}`);
+        if (response?.model) {
+          infoParts.push(`Model: ${response.model}`);
+        }
+        if (response?.message) {
+          infoParts.push(response.message);
+        }
+        setTestStatus({
+          state: 'success',
+          ok: hasKey,
+          message: infoParts.filter(Boolean).join(' • '),
+        });
+        setKeyWarning(response?.note || null);
         await syncRuntime(notify);
       } catch (error) {
         const message =
@@ -626,6 +677,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
             ? API_OFFLINE_MESSAGE
             : error?.message || API_OFFLINE_MESSAGE;
         setTestStatus({ state: 'error', ok: false, message });
+        setKeyWarning(null);
         await syncRuntime(notify);
       }
     },
@@ -639,7 +691,10 @@ export default function ParentAISettings({ onClose, onSaved }) {
     }
     setKeyStatus({ state: 'loading', message: null });
     try {
-      const response = await saveGeminiKey(keyInput.trim());
+      const response = await saveGeminiKey(
+        keyInput.trim(),
+        planningModel.trim() || runtime.planningModel || '',
+      );
       const message = response?.message
         || (response?.ok ? 'API key saved securely.' : null)
         || 'API key saved securely.';
@@ -716,6 +771,57 @@ export default function ParentAISettings({ onClose, onSaved }) {
           >
             <X size={20} />
           </button>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block text-sm font-semibold text-gray-700" htmlFor="api-base-url">
+            API base URL override
+          </label>
+          <input
+            id="api-base-url"
+            type="url"
+            value={baseUrlInput}
+            onChange={(event) => setBaseUrlInput(event.target.value)}
+            placeholder={effectiveBaseUrl || 'https://math-api.example.com'}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            autoComplete="off"
+          />
+          <p className="text-xs text-gray-500">
+            Effective base URL: <span className="font-semibold">{effectiveBaseUrl || 'Not configured'}</span>. Leave blank to use the environment default.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleSaveBaseUrl}
+              className={`px-4 py-2 rounded-xl font-semibold text-white shadow ${
+                baseStatus.state === 'loading' ? 'bg-gray-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+              disabled={baseStatus.state === 'loading'}
+            >
+              {baseStatus.state === 'loading' ? (
+                <span className="flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Saving…</span>
+              ) : (
+                'Save override & reload'
+              )}
+            </button>
+            <button
+              onClick={handleResetBaseInput}
+              className="px-4 py-2 rounded-xl font-semibold border-2 border-gray-200 text-gray-600 hover:bg-gray-50"
+              type="button"
+            >
+              Reset field
+            </button>
+          </div>
+          {baseStatus.state !== 'idle' && baseStatus.message && (
+            <div
+              className={`text-xs rounded-2xl border px-3 py-2 ${
+                baseStatus.state === 'error'
+                  ? 'text-red-600 bg-red-50 border-red-200'
+                  : 'text-indigo-600 bg-indigo-50 border-indigo-200'
+              }`}
+            >
+              {baseStatus.message}
+            </div>
+          )}
         </div>
 
         <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex gap-3">
