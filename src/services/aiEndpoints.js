@@ -19,7 +19,6 @@ export const AiEndpoints = {
   saveKey: rawApiBase ? joinApi(rawApiBase, '/v1/ai/key') : '',
   plan: rawApiBase ? joinApi(rawApiBase, '/v1/ai/plan') : '',
   runtime: rawApiBase ? joinApi(rawApiBase, '/v1/ai/runtime') : '',
-  sprites: rawApiBase ? joinApi(rawApiBase, '/v1/ai/sprites') : '',
 };
 
 const RETRY_AFTER_DEFAULT_MS = 45000;
@@ -119,10 +118,14 @@ const buildNotConfiguredResult = () => ({
 });
 
 export function getApiBase() {
-  if (rawApiBase) {
-    return rawApiBase;
+  const override = stripTrailingSlash(resolveApiBaseUrl() || '');
+  if (override) {
+    return override;
   }
-  return mathGalaxyClient?.baseUrl ?? null;
+  if (mathGalaxyClient?.baseUrl) {
+    return stripTrailingSlash(mathGalaxyClient.baseUrl);
+  }
+  return rawApiBase || null;
 }
 
 const buildUrl = (path) => {
