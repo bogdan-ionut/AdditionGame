@@ -1,53 +1,117 @@
-const OVERRIDE_KEYS = ['ai.baseUrl', 'mg:apiBaseUrl'];
+const STORAGE_KEY = 'math.api.baseUrl';
 
-function readLocalStorage(keys: string[]): string | null {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
-  for (const key of keys) {
-    try {
-      const value = window.localStorage.getItem(key);
-      if (value && value.trim()) {
-        return value.trim();
-      }
-    } catch {
-      // ignore storage errors
-    }
+const HTTPS_PATTERN = /^https:\/\//i;
+const LOCALHOST_PATTERN = /^http:\/\/localhost(?::\d+)?(\/|$)/i;
+
+let loggedBaseUrl: string | null = null;
+
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function normalize(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
   }
-  return null;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return stripTrailingSlash(trimmed);
 }
 
-function normalize(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const trimmed = url.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/\/+$/, '');
+function readLocalStorage(): string | null {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return normalize(value);
+  } catch (error) {
+    console.warn('[MathGalaxyAPI] Failed to read API base override from localStorage.', error);
+    return null;
+  }
 }
 
-export function getApiBaseUrl(): string | null {
-  const override = normalize(readLocalStorage(OVERRIDE_KEYS));
+function readEnv(): string | null {
+  const env = (import.meta as any)?.env?.VITE_MATH_API_URL as string | undefined;
+  return normalize(env);
+}
+
+function rememberLoggedBase(url: string) {
+  if (loggedBaseUrl === url) {
+    return;
+  }
+  loggedBaseUrl = url;
+  console.info(`[MathGalaxyAPI] Using base: ${url}`);
+}
+
+export function resolveApiBaseUrl(): string | null {
+  const override = readLocalStorage();
   if (override) {
+    rememberLoggedBase(override);
     return override;
   }
 
-  const envUrl = normalize((import.meta as any)?.env?.VITE_MATH_API_URL as string | undefined);
-  if (envUrl) {
-    return envUrl;
+  const env = readEnv();
+  if (env) {
+    rememberLoggedBase(env);
+    return env;
   }
 
   return null;
 }
 
-export function setApiBaseUrl(value: string | null) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  const normalized = normalize(value);
-  for (const key of OVERRIDE_KEYS) {
-    try {
-      if (normalized) {
-        window.localStorage.setItem(key, normalized);
-      } else {
-        window.localStorage.removeItem(key);
-      }
-    } catch {
-      // ignore storage persistence errors
-    }
+export function clearApiBaseUrl() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn('[MathGalaxyAPI] Failed to clear API base override from localStorage.', error);
+    throw error;
   }
 }
+
+export function setApiBaseUrl(url: string) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    throw new Error('Cannot configure API base URL outside the browser environment.');
+  }
+
+  const normalized = normalize(url);
+  if (!normalized) {
+    clearApiBaseUrl();
+    window.location.reload();
+    return;
+  }
+
+  if (!HTTPS_PATTERN.test(normalized) && !LOCALHOST_PATTERN.test(normalized)) {
+    throw new Error('Cloud API base must start with https:// or http://localhost:.');
+  }
+
+  try {
+    // Validate URL structure
+    new URL(normalized);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error && error.message
+        ? error.message
+        : 'Cloud API Base URL is invalid.',
+    );
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, normalized);
+  } catch (error) {
+    console.warn('[MathGalaxyAPI] Failed to persist API base override to localStorage.', error);
+    throw error;
+  }
+
+  window.location.reload();
+}
+
+export function getStoredApiBaseUrl(): string | null {
+  return readLocalStorage();
+}
+

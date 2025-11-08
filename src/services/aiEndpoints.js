@@ -6,12 +6,16 @@ import mathGalaxyClient, {
 import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from '../lib/env';
 
 const rawApiBase = (() => {
-  const runtimeBase = stripTrailingSlash(resolveApiBaseUrl() || '');
+  const runtimeBase = resolveApiBaseUrl();
   if (runtimeBase) {
-    return runtimeBase;
+    return stripTrailingSlash(runtimeBase);
   }
-  const base = requireApiUrl();
-  return base ? stripTrailingSlash(base) : '';
+  try {
+    const base = requireApiUrl();
+    return base ? stripTrailingSlash(base) : '';
+  } catch (error) {
+    return '';
+  }
 })();
 
 export const AiEndpoints = {
@@ -118,9 +122,9 @@ const buildNotConfiguredResult = () => ({
 });
 
 export function getApiBase() {
-  const override = stripTrailingSlash(resolveApiBaseUrl() || '');
+  const override = resolveApiBaseUrl();
   if (override) {
-    return override;
+    return stripTrailingSlash(override);
   }
   if (mathGalaxyClient?.baseUrl) {
     return stripTrailingSlash(mathGalaxyClient.baseUrl);

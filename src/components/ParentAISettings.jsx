@@ -6,9 +6,9 @@ import { isAiProxyConfigured } from '../services/aiEndpoints';
 import { MathGalaxyApiError, getConfiguredBaseUrl } from '../services/mathGalaxyClient';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
-import { createObjectUrlFromBase64, extractAudioFromResponse } from '../lib/audio/utils';
+import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from '../lib/audio/utils';
 import { MathGalaxyAPI } from '../services/math-galaxy-api';
-import { getApiBaseUrl, setApiBaseUrl } from '../lib/api/baseUrl';
+import { getStoredApiBaseUrl, resolveApiBaseUrl, setApiBaseUrl } from '../lib/api/baseUrl';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -107,12 +107,13 @@ export default function ParentAISettings({ onClose }) {
   const [audioCatalog, setAudioCatalog] = useState({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
   const [previewStatus, setPreviewStatus] = useState({ state: 'idle', message: null });
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
-  const [apiBase, setApiBase] = useState(() => getApiBaseUrl() || '');
+  const [apiBase, setApiBase] = useState(() => getStoredApiBaseUrl() || '');
   const [apiBaseStatus, setApiBaseStatus] = useState({ state: 'idle', message: null });
-  const [effectiveBaseUrl, setEffectiveBaseUrl] = useState(() => getConfiguredBaseUrl() || getApiBaseUrl() || '');
+  const [currentBaseUrl] = useState(() => resolveApiBaseUrl() || getConfiguredBaseUrl() || '');
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
+  const ttsAvailable = Boolean(currentBaseUrl && runtime.serverHasKey);
 
   const saveApiBase = useCallback(() => {
     const value = (apiBase || '').trim();
@@ -121,57 +122,36 @@ export default function ParentAISettings({ onClose }) {
       return;
     }
 
-    let normalized;
     try {
-      const parsed = new URL(value);
-      if (!/^https?:$/.test(parsed.protocol)) {
-        throw new Error('Cloud API base must start with http:// or https://');
-      }
-      normalized = value.replace(/\/+$/, '');
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'Unable to read Cloud API Base URL. Please check the format.';
-      setApiBaseStatus({ state: 'error', message });
-      return;
-    }
-
-    try {
-      setApiBaseUrl(normalized);
-      setApiBase(normalized);
+      setApiBaseUrl(value);
       setApiBaseStatus({ state: 'success', message: 'Saved! Reloading…' });
     } catch (error) {
       console.warn('Unable to persist Cloud API base override.', error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'We could not persist the Cloud API Base URL. Check storage permissions.';
       setApiBaseStatus({
         state: 'error',
-        message: 'We could not persist the Cloud API Base URL. Check storage permissions.',
+        message,
       });
       return;
-    }
-
-    if (typeof window !== 'undefined') {
-      setTimeout(() => {
-        window.location.reload();
-      }, 250);
     }
   }, [apiBase]);
 
   const resetApiBase = useCallback(() => {
     try {
-      setApiBaseUrl(null);
+      setApiBaseUrl('');
       setApiBase('');
       setApiBaseStatus({ state: 'success', message: 'Override cleared. Reloading…' });
     } catch (error) {
       console.warn('Unable to clear Cloud API base override.', error);
-      setApiBaseStatus({ state: 'error', message: 'Unable to clear Cloud API Base URL. Try again.' });
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to clear Cloud API Base URL. Try again.';
+      setApiBaseStatus({ state: 'error', message });
       return;
-    }
-
-    if (typeof window !== 'undefined') {
-      setTimeout(() => {
-        window.location.reload();
-      }, 250);
     }
   }, []);
 
@@ -239,6 +219,12 @@ export default function ParentAISettings({ onClose }) {
       return;
     }
 
+    if (!currentBaseUrl) {
+      setAudioCatalog({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
+      setCatalogStatus({ state: 'error', message: API_OFFLINE_MESSAGE });
+      return;
+    }
+
     if (!runtime.serverHasKey) {
       setAudioCatalog({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
       setCatalogStatus({
@@ -250,10 +236,12 @@ export default function ParentAISettings({ onClose }) {
 
     setCatalogStatus({ state: 'loading', message: 'Se încarcă vocile și sunetele…' });
     try {
+      const voiceLanguage = audioSettings.narrationLanguage || 'ro-RO';
+      const sfxPackRequest = audioSettings.sfxLowStimMode ? 'low-stim' : 'auto';
       const [modelsOutcome, voicesOutcome, sfxOutcome] = await Promise.allSettled([
         fetchTtsModels(),
-        fetchTtsVoices({ mode: audioSettings.sfxLowStimMode ? 'low-stim' : undefined }),
-        fetchAudioSfx({ mode: audioSettings.sfxLowStimMode ? 'low-stim' : undefined }),
+        fetchTtsVoices({ lang: voiceLanguage }),
+        fetchAudioSfx({ pack: sfxPackRequest }),
       ]);
 
       const modelsResult = modelsOutcome.status === 'fulfilled' ? modelsOutcome.value : null;
@@ -297,21 +285,36 @@ export default function ParentAISettings({ onClose }) {
             Object.entries(rawCategories).forEach(([key, value]) => {
               if (!Array.isArray(value)) return;
               categories[key] = value
-                .map((clip) => ({
-                  id: typeof clip.id === 'string' ? clip.id : `${pack.id}-${key}-${Math.random().toString(36).slice(2)}`,
-                  label: clip.label || clip.name || null,
-                  url: typeof clip.url === 'string' ? clip.url : null,
-                  base64: typeof clip.base64 === 'string' ? clip.base64 : typeof clip.data === 'string' ? clip.data : null,
-                  mimeType:
-                    typeof clip.mimeType === 'string'
-                      ? clip.mimeType
-                      : typeof clip.mime_type === 'string'
-                        ? clip.mime_type
-                        : null,
-                  gain: Number.isFinite(clip.gain) ? Number(clip.gain) : null,
-                  tags: Array.isArray(clip.tags) ? clip.tags : [],
-                }))
-                .filter((clip) => clip.url || clip.base64);
+                .map((clip, index) => {
+                  const fallbackId = `${pack.id}-${key}-${index}`;
+                  const clipId =
+                    typeof clip.id === 'string'
+                      ? clip.id
+                      : typeof clip.name === 'string'
+                        ? clip.name
+                        : fallbackId;
+                  return {
+                    id: clipId,
+                    name: typeof clip.name === 'string' ? clip.name : null,
+                    label: clip.label || clip.name || clipId,
+                    url: typeof clip.url === 'string' ? clip.url : null,
+                    base64:
+                      typeof clip.base64 === 'string'
+                        ? clip.base64
+                        : typeof clip.data === 'string'
+                          ? clip.data
+                          : null,
+                    mimeType:
+                      typeof clip.mimeType === 'string'
+                        ? clip.mimeType
+                        : typeof clip.mime_type === 'string'
+                          ? clip.mime_type
+                          : null,
+                    gain: Number.isFinite(clip.gain) ? Number(clip.gain) : null,
+                    tags: Array.isArray(clip.tags) ? clip.tags : [],
+                  };
+                })
+                .filter((clip) => typeof clip.id === 'string' && clip.id.trim());
             });
           }
           return {
@@ -363,7 +366,7 @@ export default function ParentAISettings({ onClose }) {
           : error?.message || 'Nu am putut încărca catalogul audio.';
       setCatalogStatus({ state: 'error', message });
     }
-  }, [aiProxyConfigured, audioSettings.sfxLowStimMode, runtime.lastError, runtime.serverHasKey]);
+  }, [aiProxyConfigured, audioSettings.narrationLanguage, audioSettings.sfxLowStimMode, currentBaseUrl, runtime.lastError, runtime.serverHasKey]);
 
   useEffect(() => {
     loadAudioCatalog();
@@ -438,6 +441,13 @@ export default function ParentAISettings({ onClose }) {
     cleanupPreviewVoice();
     setPreviewStatus({ state: 'loading', message: 'Generăm un exemplu vocal…' });
     try {
+      if (!ttsAvailable) {
+        setPreviewStatus({
+          state: 'error',
+          message: 'Configurează baza Cloud AI și cheia Gemini pentru previzualizare.',
+        });
+        return;
+      }
       const selectedVoiceId = audioSettings.narrationVoiceId || audioCatalog.voices.find((voice) => voice.default)?.id || (audioCatalog.voices[0]?.id ?? '');
       if (!selectedVoiceId) {
         setPreviewStatus({ state: 'error', message: 'Selectează o voce pentru previzualizare.' });
@@ -484,11 +494,10 @@ export default function ParentAISettings({ onClose }) {
         pitch: audioSettings.pitch,
         language: audioSettings.narrationLanguage,
       });
-      const clip = extractAudioFromResponse(response);
-      if (!clip) {
+      if (!response || !response.buffer) {
         throw new Error('Răspunsul TTS nu conține audio.');
       }
-      const playable = createObjectUrlFromBase64(clip.base64, clip.mimeType);
+      const playable = createObjectUrlFromBuffer(response.buffer, response.mimeType);
       const audio = new Audio(playable.objectUrl);
       audio.volume = Math.min(1, Math.max(0, audioSettings.narrationVolume));
       const cleanup = () => {
@@ -510,7 +519,7 @@ export default function ParentAISettings({ onClose }) {
           : error?.message || 'Nu am putut reda vocea.';
       setPreviewStatus({ state: 'error', message });
     }
-  }, [audioCatalog.models, audioCatalog.voices, audioModel, audioSettings.narrationLanguage, audioSettings.narrationModel, audioSettings.narrationVoiceId, audioSettings.narrationVolume, audioSettings.pitch, audioSettings.speakingRate, cleanupPreviewVoice, runtime.audioModel, runtime.defaultTtsModel]);
+  }, [audioCatalog.models, audioCatalog.voices, audioModel, audioSettings.narrationLanguage, audioSettings.narrationModel, audioSettings.narrationVoiceId, audioSettings.narrationVolume, audioSettings.pitch, audioSettings.speakingRate, cleanupPreviewVoice, runtime.audioModel, runtime.defaultTtsModel, ttsAvailable]);
 
   const resolveSfxClip = useCallback(
     (category) => {
@@ -520,13 +529,17 @@ export default function ParentAISettings({ onClose }) {
       if (!pack) return null;
       const direct = Array.isArray(pack.categories?.[category]) ? pack.categories[category] : [];
       if (direct.length) {
-        return direct[Math.floor(Math.random() * direct.length)] || null;
+        const clip = direct[Math.floor(Math.random() * direct.length)] || null;
+        return clip ? { clip, packId: pack.id } : null;
       }
       const synonyms = SFX_CATEGORY_SYNONYMS[category] || [];
       for (const synonym of synonyms) {
         const clips = Array.isArray(pack.categories?.[synonym]) ? pack.categories[synonym] : [];
         if (clips.length) {
-          return clips[Math.floor(Math.random() * clips.length)] || null;
+          const clip = clips[Math.floor(Math.random() * clips.length)] || null;
+          if (clip) {
+            return { clip, packId: pack.id };
+          }
         }
       }
       return null;
@@ -539,22 +552,46 @@ export default function ParentAISettings({ onClose }) {
       cleanupPreviewSfx();
       setSfxPreviewStatus({ state: 'loading', message: 'Redăm sunetul selectat…' });
       try {
-        const clip = resolveSfxClip(category);
-        if (!clip) {
+        const resolved = resolveSfxClip(category);
+        if (!resolved) {
           setSfxPreviewStatus({ state: 'error', message: 'Nu există sunete pentru această categorie.' });
           return;
         }
+        const { clip, packId } = resolved;
         let audio = null;
         let revoke = null;
-        if (clip.url) {
-          audio = new Audio(clip.url);
-        } else if (clip.base64) {
-          const playable = createObjectUrlFromBase64(clip.base64, clip.mimeType || undefined);
-          audio = new Audio(playable.objectUrl);
-          revoke = playable.revoke;
+        let missingRemote = false;
+        if (clip?.id && packId) {
+          try {
+            const remote = await fetchAudioSfx({ pack: packId, name: clip.id });
+            if (remote && remote.buffer) {
+              const playable = createObjectUrlFromBuffer(remote.buffer, remote.mimeType);
+              audio = new Audio(playable.objectUrl);
+              revoke = playable.revoke;
+            } else if (remote === null) {
+              missingRemote = true;
+            }
+          } catch (remoteError) {
+            console.warn('Unable to fetch remote SFX clip', remoteError);
+          }
         }
         if (!audio) {
-          throw new Error('Clipul SFX nu are date valide.');
+          if (clip?.url) {
+            audio = new Audio(clip.url);
+          } else if (clip?.base64) {
+            const playable = createObjectUrlFromBase64(clip.base64, clip.mimeType || undefined);
+            audio = new Audio(playable.objectUrl);
+            revoke = playable.revoke;
+          }
+        }
+        if (!audio) {
+          setSfxPreviewStatus({
+            state: 'error',
+            message: missingRemote
+              ? 'Nu există sunete pentru această categorie.'
+              : 'Clipul SFX nu are date valide.',
+          });
+          return;
         }
         audio.volume = Math.min(1, Math.max(0, audioSettings.sfxVolume));
         const cleanup = () => {
@@ -638,13 +675,9 @@ export default function ParentAISettings({ onClose }) {
     syncRuntime();
   }, [applyConfig, syncRuntime]);
 
-  useEffect(() => {
-    setEffectiveBaseUrl(getConfiguredBaseUrl() || getApiBaseUrl() || '');
-  }, [apiBaseStatus]);
-
   const runHealthCheck = useCallback(
     async () => {
-      const candidateBase = (apiBase || '').trim() || getConfiguredBaseUrl() || getApiBaseUrl() || '';
+      const candidateBase = (apiBase || '').trim() || currentBaseUrl || getConfiguredBaseUrl() || '';
       if (!candidateBase) {
         setTestStatus({ state: 'error', ok: false, message: 'Set a Cloud API Base URL before testing the connection.' });
         return;
@@ -682,7 +715,7 @@ export default function ParentAISettings({ onClose }) {
         await syncRuntime();
       }
     },
-    [apiBase, syncRuntime],
+    [apiBase, currentBaseUrl, syncRuntime],
   );
 
   const handleSaveKey = useCallback(async () => {
@@ -760,8 +793,8 @@ export default function ParentAISettings({ onClose }) {
       tabIndex={-1}
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="pointer-events-auto absolute left-1/2 top-1/2 w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-white px-5 py-4">
+      <div className="pointer-events-auto absolute left-1/2 top-1/2 flex w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl max-h-[85vh]">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/60 bg-white/95 px-5 py-4 backdrop-blur">
           <div className="space-y-2">
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
@@ -788,7 +821,7 @@ export default function ParentAISettings({ onClose }) {
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4 space-y-5">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700" htmlFor="cloud-api-base">
               Cloud API Base URL
@@ -822,7 +855,7 @@ export default function ParentAISettings({ onClose }) {
               </button>
             </div>
             <p className="text-xs text-gray-500">
-              Current base: <span className="font-semibold">{effectiveBaseUrl || 'Not configured'}</span>.
+              Current base: <span className="font-semibold">{currentBaseUrl || 'Not configured.'}</span>
             </p>
             {apiBaseStatus.state !== 'idle' && apiBaseStatus.message && (
               <p
@@ -1021,7 +1054,12 @@ export default function ParentAISettings({ onClose }) {
                   value={audioSettings.narrationVoiceId || ''}
                   onChange={handleVoiceChange}
                   className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
-                  disabled={!audioSettings.narrationEnabled}
+                  disabled={!audioSettings.narrationEnabled || !ttsAvailable}
+                  title={
+                    !ttsAvailable
+                      ? 'Configurează Cloud AI Base URL și cheia Gemini pentru a selecta vocea.'
+                      : undefined
+                  }
                 >
                   <option value="">Auto (runtime)</option>
                   {audioCatalog.voices.map((voice) => (
@@ -1038,7 +1076,12 @@ export default function ParentAISettings({ onClose }) {
                   value={audioSettings.narrationLanguage || 'ro-RO'}
                   onChange={handleLanguageChange}
                   className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
-                  disabled={!audioSettings.narrationEnabled}
+                  disabled={!audioSettings.narrationEnabled || !ttsAvailable}
+                  title={
+                    !ttsAvailable
+                      ? 'Configurează Cloud AI Base URL și cheia Gemini pentru a schimba limba narațiunii.'
+                      : undefined
+                  }
                 >
                   {voiceLanguageOptions.map((option) => (
                     <option key={option} value={option}>
@@ -1053,12 +1096,19 @@ export default function ParentAISettings({ onClose }) {
                   <button
                     type="button"
                     onClick={handlePreviewVoice}
-                    disabled={!audioSettings.narrationEnabled || previewStatus.state === 'loading'}
+                    disabled={!audioSettings.narrationEnabled || !ttsAvailable || previewStatus.state === 'loading'}
                     className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
                       previewStatus.state === 'loading'
                         ? 'border-gray-300 text-gray-500 cursor-wait'
-                        : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                        : ttsAvailable
+                          ? 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                          : 'border-gray-200 text-gray-500 cursor-not-allowed'
                     }`}
+                    title={
+                      !ttsAvailable
+                        ? 'Configurează Cloud AI Base URL și cheia Gemini pentru a previzualiza vocea.'
+                        : undefined
+                    }
                   >
                     {previewStatus.state === 'loading' ? (
                       <>
@@ -1071,33 +1121,45 @@ export default function ParentAISettings({ onClose }) {
                   <button
                     type="button"
                     onClick={() => setAudioSettings((prev) => ({ ...prev, narrationAutoplay: !prev.narrationAutoplay }))}
+                    disabled={!ttsAvailable}
                     className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-                      audioSettings.narrationAutoplay
-                        ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
-                        : 'border-gray-200 bg-gray-50 text-gray-600'
+                      !ttsAvailable
+                        ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : audioSettings.narrationAutoplay
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                          : 'border-gray-200 bg-gray-50 text-gray-600'
                     }`}
+                    title={!ttsAvailable ? 'TTS este dezactivat. Configurează Cloud AI pentru a folosi autorecitarea.' : undefined}
                   >
                     {audioSettings.narrationAutoplay ? 'Autoredare activă' : 'Autoredare oprită'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setAudioSettings((prev) => ({ ...prev, repeatNumbers: !prev.repeatNumbers }))}
+                    disabled={!ttsAvailable}
                     className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-                      audioSettings.repeatNumbers
-                        ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
-                        : 'border-gray-200 bg-gray-50 text-gray-600'
+                      !ttsAvailable
+                        ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : audioSettings.repeatNumbers
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                          : 'border-gray-200 bg-gray-50 text-gray-600'
                     }`}
+                    title={!ttsAvailable ? 'TTS este dezactivat. Configurează Cloud AI pentru a repeta numerele.' : undefined}
                   >
                     {audioSettings.repeatNumbers ? 'Repetă numerele' : 'Fără repetare numere'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setAudioSettings((prev) => ({ ...prev, feedbackVoiceEnabled: !prev.feedbackVoiceEnabled }))}
+                    disabled={!ttsAvailable}
                     className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
-                      audioSettings.feedbackVoiceEnabled
-                        ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
-                        : 'border-gray-200 bg-gray-50 text-gray-600'
+                      !ttsAvailable
+                        ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : audioSettings.feedbackVoiceEnabled
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                          : 'border-gray-200 bg-gray-50 text-gray-600'
                     }`}
+                    title={!ttsAvailable ? 'TTS este dezactivat. Configurează Cloud AI pentru feedback vocal.' : undefined}
                   >
                     {audioSettings.feedbackVoiceEnabled ? 'Feedback vocal activ' : 'Feedback vocal oprit'}
                   </button>

@@ -142,6 +142,20 @@ export function createObjectUrlFromBase64(base64: string, mimeType = DEFAULT_AUD
   };
 }
 
+export function createObjectUrlFromBuffer(buffer: ArrayBuffer, mimeType = DEFAULT_AUDIO_MIME): {
+  objectUrl: string;
+  revoke(): void;
+} {
+  const blob = new Blob([buffer], { type: mimeType || DEFAULT_AUDIO_MIME });
+  const objectUrl = URL.createObjectURL(blob);
+  return {
+    objectUrl,
+    revoke() {
+      URL.revokeObjectURL(objectUrl);
+    },
+  };
+}
+
 export async function playClipFromBase64(
   base64: string,
   options: { mimeType?: string; volume?: number } = {},

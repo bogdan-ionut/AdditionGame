@@ -3,9 +3,9 @@ import {
   MathGalaxyApiError,
   type MathGalaxyJsonResult,
   BASE_URL,
-  requireApiUrl,
+  type SpritePrompt,
 } from './math-galaxy-api';
-import { getApiBaseUrl } from '../lib/api/baseUrl';
+import { resolveApiBaseUrl } from '../lib/api/baseUrl';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
@@ -41,6 +41,7 @@ type MathGalaxyStub = {
   aiTtsVoices: (payload?: Record<string, unknown>) => Promise<never>;
   aiAudioSfx: (payload?: Record<string, unknown>) => Promise<never>;
   aiTtsSynthesize: (payload: Record<string, unknown>) => Promise<never>;
+  generateSprites: (items: SpritePrompt[]) => Promise<never>;
   saveAiKey: (payload: Record<string, unknown>) => Promise<never>;
   postSpriteInterests: (
     payload: Record<string, unknown>,
@@ -85,6 +86,9 @@ const createStubClient = (): MathGalaxyStub => ({
   aiTtsSynthesize: async () => {
     throw createOfflineError();
   },
+  generateSprites: async () => {
+    throw createOfflineError();
+  },
   saveAiKey: async () => {
     throw createOfflineError();
   },
@@ -93,11 +97,8 @@ const createStubClient = (): MathGalaxyStub => ({
   postSpriteProcessJob: async () => ({ data: null, response: createStubResponse(503) }),
 });
 
-let resolvedBaseUrl = getApiBaseUrl() || envValue;
-
-if (!resolvedBaseUrl && isDev) {
-  resolvedBaseUrl = 'http://localhost:8000';
-}
+const runtimeBase = resolveApiBaseUrl();
+let resolvedBaseUrl = runtimeBase ? runtimeBase.trim() : envValue;
 
 const forcedLocal = parseBooleanish(import.meta?.env?.VITE_MATH_API_FORCE_LOCAL ?? null);
 const hostPrefersStub = detectGithubPagesHost();
@@ -109,9 +110,6 @@ let mathGalaxyApi: MathGalaxyAPI | MathGalaxyStub;
 let mathGalaxyConfigured = false;
 
 if (useStubClient) {
-  if (!resolvedBaseUrl) {
-    requireApiUrl();
-  }
   if (!resolvedBaseUrl) {
     console.warn(
       '[MathGalaxyAPI] Cloud AI base URL not configured. Using local stub until settings are updated.',
@@ -160,4 +158,4 @@ export function getConfiguredBaseUrl(): string | null {
 }
 
 export default mathGalaxyApi;
-export { MathGalaxyApiError, BASE_URL, requireApiUrl } from './math-galaxy-api';
+export { MathGalaxyApiError, BASE_URL, requireApiUrl, request, type SpritePrompt } from './math-galaxy-api';
