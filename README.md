@@ -19,7 +19,16 @@ Create a `.env.local` (or the appropriate Vite environment file) with the new ba
 VITE_MATH_API_URL=https://math-api-811756754621.us-central1.run.app
 ```
 
-The frontend SDK falls back to this value automatically when recording addition attempts.
+The frontend SDK falls back to this value automatically when recording addition attempts. If you host the static site on a
+domain that cannot reach the API because of CORS restrictions (for example GitHub Pages), the frontend now auto-detects that
+scenario and disables remote AI integrations. To force the local-only behaviour (or override it when running on a custom
+domain that does allow CORS) use the optional flag below:
+
+```
+VITE_MATH_API_FORCE_LOCAL=true   # force the stub client
+```
+
+Set the value to `false` to re-enable the remote client even on domains that would otherwise default to the stub.
 
 ## GitHub Pages deployment
 
