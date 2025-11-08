@@ -72,10 +72,13 @@ const MISSING_BASE_ERROR =
 export const BASE_URL = resolveApiBaseUrl();
 
 export function requireApiUrl(): string {
-  if (!BASE_URL) {
-    emitOffline(new Error(MISSING_BASE_ERROR));
+  const resolved = resolveApiBaseUrl();
+  if (!resolved) {
+    const error = new Error(MISSING_BASE_ERROR);
+    emitOffline(error);
+    throw error;
   }
-  return BASE_URL;
+  return stripTrailingSlash(resolved);
 }
 
 export type HeaderMap = Record<string, string>;
@@ -84,6 +87,51 @@ export type MathGalaxyJsonResult<T = unknown> = {
   data: T | null;
   response: Response;
 };
+
+export type SpritePrompt = {
+  id: string;
+  prompt: string;
+  style?: string | null;
+  tags?: string[];
+  metadata?: Record<string, unknown> | null;
+};
+
+export async function request(
+  path: string,
+  init: RequestInit = {},
+  baseOverride?: string | null,
+): Promise<Response> {
+  const base = baseOverride ?? resolveApiBaseUrl();
+  if (!base) {
+    throw new Error('Cloud AI base URL not configured');
+  }
+
+  const url = new URL(path, base).toString();
+  const headers = new Headers(init.headers ?? {});
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      method: init.method ?? 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      headers,
+    });
+
+    if (!response.ok) {
+      console.error(`[MathGalaxyAPI] Request failed (${response.status}) ${url}`);
+    }
+
+    return response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[MathGalaxyAPI] Request error for ${url}: ${message}`);
+    throw error;
+  }
+}
 
 export class MathGalaxyApiError extends Error {
   status?: number;
@@ -105,8 +153,9 @@ export class MathGalaxyApiError extends Error {
   }
 }
 
-function detectBaseUrl(): string {
-  return BASE_URL;
+function detectBaseUrl(): string | null {
+  const base = resolveApiBaseUrl();
+  return base ? stripTrailingSlash(base) : null;
 }
 
 function defaultDevice(): string {
@@ -145,7 +194,7 @@ export class MathGalaxyAPI {
 
   constructor(cfg: ApiConfig = {}) {
     const provided = typeof cfg.baseUrl === "string" ? stripTrailingSlash(cfg.baseUrl) : "";
-    const fallback = stripTrailingSlash(detectBaseUrl() || "");
+    const fallback = detectBaseUrl() || "";
     const base = stripTrailingSlash(provided || fallback || "");
     if (!base) {
       requireApiUrl();
@@ -193,8 +242,14 @@ export class MathGalaxyAPI {
     return this.get<T>("/v1/ai/tts/models");
   }
 
-  async aiTtsVoices<T = any>(params: { mode?: string } = {}) {
+  async aiTtsVoices<T = any>(params: { lang?: string; model?: string; mode?: string } = {}) {
     const search = new URLSearchParams();
+    if (params.lang) {
+      search.set("lang", params.lang);
+    }
+    if (params.model) {
+      search.set("model", params.model);
+    }
     if (params.mode) {
       search.set("mode", params.mode);
     }
@@ -202,10 +257,13 @@ export class MathGalaxyAPI {
     return this.get<T>(path);
   }
 
-  async aiAudioSfx<T = any>(params: { mode?: string } = {}) {
+  async aiAudioSfx<T = any>(params: { pack?: string; name?: string } = {}) {
     const search = new URLSearchParams();
-    if (params.mode) {
-      search.set("mode", params.mode);
+    if (params.pack) {
+      search.set("pack", params.pack);
+    }
+    if (params.name) {
+      search.set("name", params.name);
     }
     const path = search.size ? `/v1/ai/audio/sfx?${search.toString()}` : "/v1/ai/audio/sfx";
     return this.get<T>(path);
@@ -213,6 +271,23 @@ export class MathGalaxyAPI {
 
   async aiTtsSynthesize<T = any>(payload: Record<string, unknown>) {
     return this.post<T>("/v1/ai/tts/synthesize", payload);
+  }
+
+  async generateSprites<T = any>(items: SpritePrompt[], model = "gemini-2.5-flash-image") {
+    if (!Array.isArray(items) || !items.length) {
+      throw new MathGalaxyApiError("Sprite prompts are required to generate sprites.");
+    }
+    const payload = {
+      model,
+      items: items.map((item) => ({
+        id: item.id,
+        prompt: item.prompt,
+        style: item.style ?? null,
+        tags: Array.isArray(item.tags) ? item.tags : undefined,
+        metadata: item.metadata ?? undefined,
+      })),
+    };
+    return this.post<T>("/v1/ai/sprites/generate", payload);
   }
 
   async saveAiKey<T = any>(payload: Record<string, unknown>) {
@@ -357,7 +432,7 @@ export class MathGalaxyAPI {
   }
 
   private async getWithMeta<T = unknown>(path: string, init: RequestInit = {}): Promise<MathGalaxyJsonResult<T>> {
-    const response = await this.request(path, { ...init, method: "GET" });
+    const response = await this.performRequest(path, { ...init, method: "GET" });
     const data = await readResponseBody<T>(response);
     return { data: data as T | null, response };
   }
@@ -377,7 +452,7 @@ export class MathGalaxyAPI {
       headers,
       body: body == null ? undefined : JSON.stringify(body),
     };
-    const response = await this.request(path, prepared);
+    const response = await this.performRequest(path, prepared);
     const data = await readResponseBody<T>(response);
     return { data: data as T | null, response };
   }
@@ -392,8 +467,7 @@ export class MathGalaxyAPI {
     return data as T;
   }
 
-  private async request(path: string, init: RequestInit & { method: string }): Promise<Response> {
-    const url = joinApi(this.baseUrl, path);
+  private async performRequest(path: string, init: RequestInit & { method: string }): Promise<Response> {
     let attempt = 0;
     let lastErr: MathGalaxyApiError | null = null;
 
@@ -405,11 +479,15 @@ export class MathGalaxyAPI {
         if (!headers.has("Accept")) {
           headers.set("Accept", "application/json");
         }
-        const response = await fetch(url, {
-          ...init,
-          headers,
-          signal: controller.signal,
-        });
+        const response = await request(
+          path,
+          {
+            ...init,
+            headers,
+            signal: controller.signal,
+          },
+          this.baseUrl,
+        );
         clearTimeout(timeout);
         if (!response.ok) {
           throw await this.buildHttpError(response);

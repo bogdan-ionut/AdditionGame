@@ -673,6 +673,57 @@ export async function requestInterestMotifs(
     };
   }
 
+  const tryGenerateSpritesQuickly = async () => {
+    if (typeof mathGalaxyClient.generateSprites !== 'function') {
+      return null;
+    }
+    try {
+      const batch = sanitizedInterests.slice(0, 6).map((interest, index) => ({
+        id: `${cacheKey || interest}-${index}`,
+        prompt: interest,
+        tags: ['interest'],
+        metadata: { interest },
+      }));
+      if (!batch.length) {
+        return null;
+      }
+      const response = await mathGalaxyClient.generateSprites(batch);
+      const urls = new Set();
+      const collect = (value) => {
+        if (!value) return;
+        if (typeof value === 'string') {
+          if (value.trim().startsWith('http')) {
+            urls.add(value.trim());
+          }
+          return;
+        }
+        if (Array.isArray(value)) {
+          value.forEach(collect);
+          return;
+        }
+        if (typeof value === 'object') {
+          collect(value.url);
+          collect(value.secure_url);
+          collect(value.image);
+          collect(value.images);
+          collect(value.sprites);
+          collect(value.sprite);
+          if (Array.isArray(value.urls)) {
+            value.urls.forEach(collect);
+          }
+        }
+      };
+      collect(response);
+      if (!urls.size) {
+        return null;
+      }
+      return Array.from(urls);
+    } catch (error) {
+      console.warn('Quick sprite generation failed', error);
+      return null;
+    }
+  };
+
   const startedAt = Date.now();
   const attemptSync = async () => {
     const response = await postInterestsPacks({
@@ -692,6 +743,19 @@ export async function requestInterestMotifs(
   }
 
   if (!syncResponse.ok || !syncResponse.data) {
+    const quickSprites = await tryGenerateSpritesQuickly();
+    if (quickSprites && quickSprites.length) {
+      saveSpriteCacheEntry(cacheKey, { urls: quickSprites, jobId: null, pending: 0, done: quickSprites.length });
+      return {
+        source: 'ai',
+        urls: quickSprites,
+        jobId: null,
+        pending: 0,
+        done: quickSprites.length,
+        cacheKey,
+        motifs: fallbackMotifs,
+      };
+    }
     return { source: 'fallback', motifs: fallbackMotifs, jobId: null, pending: 0, done: 0 };
   }
 

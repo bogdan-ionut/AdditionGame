@@ -1,14 +1,11 @@
 // src/lib/env.ts
-import { getApiBaseUrl as getBaseFromOverrides } from './api/baseUrl';
+import { resolveApiBaseUrl as resolveBase } from './api/baseUrl';
 
 export function stripTrailingSlash(u: string) {
   return u ? u.replace(/\/+$/, '') : '';
 }
 
-export function resolveApiBaseUrl(): string {
-  const resolved = getBaseFromOverrides();
-  return resolved ? stripTrailingSlash(resolved) : '';
-}
+export const resolveApiBaseUrl = () => resolveBase();
 
 export function joinApi(base: string, path: string) {
   const b = stripTrailingSlash(base || '');

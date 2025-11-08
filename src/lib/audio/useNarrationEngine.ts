@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MathGalaxyApiError, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../../services/audioCatalog';
 import { AUDIO_SETTINGS_EVENT, LS_AUDIO_SETTINGS, loadAudioSettings, saveAudioSettings, type AudioSettings } from './preferences';
-import { createObjectUrlFromBase64, extractAudioFromResponse } from './utils';
+import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from './utils';
 import type { AiRuntimeState } from '../ai/runtime';
 
 export type VoicePreset = {
@@ -369,12 +369,13 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       }
 
       const response = await synthesizeSpeech(payload);
-      const clip = extractAudioFromResponse(response);
-      if (!clip) {
+      if (!response || !response.buffer) {
         throw new Error('TTS response missing audio payload.');
       }
 
-      const playable = createObjectUrlFromBase64(clip.base64, clip.mimeType);
+      const playable = response.base64
+        ? createObjectUrlFromBase64(response.base64, response.mimeType)
+        : createObjectUrlFromBuffer(response.buffer, response.mimeType);
       clipCache.current.set(key, playable);
       return playable;
     },

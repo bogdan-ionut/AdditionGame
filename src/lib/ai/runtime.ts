@@ -1,8 +1,8 @@
 import mathGalaxyClient, {
   MathGalaxyApiError,
-  BASE_URL,
   getConfiguredBaseUrl,
 } from '../../services/mathGalaxyClient';
+import { resolveApiBaseUrl } from '../env';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
 
@@ -137,10 +137,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     };
   }
 
-  const configuredBase =
-    (typeof BASE_URL === 'string' ? BASE_URL : '') ||
-    getConfiguredBaseUrl() ||
-    '';
+  const configuredBase = resolveApiBaseUrl() || getConfiguredBaseUrl() || '';
   const normalizedBase = typeof configuredBase === 'string' ? configuredBase.trim() : '';
 
   if (!normalizedBase) {
@@ -279,12 +276,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     readBooleanFrom(runtimePayload, ['ai_allowed', 'aiAllowed']) ??
     readBooleanFrom(payloadConfig, ['ai_allowed', 'aiAllowed']);
   const aiAllowed = (remoteAllowed !== false) && cfg.aiAllowed !== false;
-  const remoteAiEnabled =
-    readBooleanFrom(runtimePayload, ['ai_enabled', 'aiEnabled']) ??
-    readBooleanFrom(payloadConfig, ['ai_enabled', 'aiEnabled']);
-  const aiEnabled = remoteAiEnabled != null
-    ? Boolean(remoteAiEnabled && aiAllowed)
-    : Boolean(serverHasKey && resolvedPlanningModel && resolvedSpriteModel && aiAllowed);
+  const aiEnabled = Boolean(serverHasKey && resolvedPlanningModel && resolvedSpriteModel && aiAllowed);
 
   const runtimeLabel =
     readStringFrom(runtimePayload, ['runtime_label', 'runtimeLabel', 'runtime']) ??
