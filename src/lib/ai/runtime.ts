@@ -71,6 +71,9 @@ export type AiRuntimeState = {
   audioModel: string | null;
   aiAllowed: boolean;
   lastError: string | null;
+  defaultTtsModel?: string | null;
+  allowedTtsModels?: string[];
+  runtimeLabel?: string | null;
 };
 
 const readString = (value: unknown): string | null => {
@@ -227,6 +230,28 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     ? Boolean(remoteAiEnabled && aiAllowed)
     : Boolean(serverHasKey && resolvedPlanningModel && resolvedSpriteModel && aiAllowed);
 
+  const runtimeLabel =
+    readStringFrom(runtimePayload, ['runtime_label', 'runtimeLabel']) ??
+    readStringFrom(payloadConfig, ['runtime_label', 'runtimeLabel']) ??
+    null;
+
+  const defaultTtsModel =
+    readStringFrom(runtimePayload, ['default_tts_model', 'defaultTtsModel']) ??
+    readStringFrom(payloadConfig, ['default_tts_model', 'defaultTtsModel']) ??
+    resolvedAudioModel;
+
+  const allowedTtsModels = (() => {
+    const candidates =
+      (runtimePayload?.allowed_tts_models as unknown) ??
+      (runtimePayload?.allowedTtsModels as unknown) ??
+      (payloadConfig?.allowed_tts_models as unknown) ??
+      (payloadConfig?.allowedTtsModels as unknown);
+    if (Array.isArray(candidates)) {
+      return candidates.filter((value) => typeof value === 'string' && value.trim());
+    }
+    return [] as string[];
+  })();
+
   return {
     aiEnabled,
     serverHasKey,
@@ -235,5 +260,8 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     audioModel: resolvedAudioModel,
     aiAllowed,
     lastError,
+    defaultTtsModel,
+    allowedTtsModels,
+    runtimeLabel,
   };
 }
