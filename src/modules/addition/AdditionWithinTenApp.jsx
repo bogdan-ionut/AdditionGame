@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, AlertCircle } from 'lucide-react';
-import ParentAISettings from '../../components/ParentAISettings';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info } from 'lucide-react';
+import AiOfflineBanner from '../../components/AiOfflineBanner.jsx';
 import NextUpCard from '../../components/NextUpCard';
 import {
   ensurePersonalization,
@@ -1700,7 +1700,7 @@ const ModeSelection = ({
 };
 
 // --- Main App ---
-export default function AdditionWithinTenApp({ learningPath, onExit }) {
+export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSettings, aiOffline = false }) {
   const activeLearningPath = useMemo(
     () => resolveActiveLearningPath(learningPath),
     [learningPath],
@@ -1754,7 +1754,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   const motifPollingRef = useRef(null);
   const [motifRetrySeconds, setMotifRetrySeconds] = useState(null);
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
-  const [showAiSettings, setShowAiSettings] = useState(false);
   const [interestDraft, setInterestDraft] = useState('');
   const [activeTheme, setActiveTheme] = useState(null);
   const [checkpointState, setCheckpointState] = useState({
@@ -1781,6 +1780,14 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   const streakProgressRef = useRef(0);
   const checkpointStatusRef = useRef('idle');
   const spokenModeRef = useRef(null);
+
+  const openSettings = useCallback(() => {
+    if (typeof onOpenAiSettings === 'function') {
+      onOpenAiSettings();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('ai:open-settings'));
+    }
+  }, [onOpenAiSettings]);
 
   useEffect(() => {
     if (!isMathGalaxyConfigured) return;
@@ -2509,13 +2516,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     setAttemptCount(0);
     setGuidedHelp({ active: false, step: 0, complete: false });
   }, [aiRuntime.aiEnabled, aiRuntime.planningModel, ensureAiPlan]);
-
-  const handleAiSettingsSaved = useCallback(async () => {
-    const runtime = await refreshAiRuntime();
-    if (runtime.aiEnabled) {
-      ensureAiPlan(true);
-    }
-  }, [ensureAiPlan, refreshAiRuntime]);
 
   const handleRegister = (userInfo) => {
     const userKey = `additionFlashcardsGameState_${userInfo.name}`;
@@ -3426,10 +3426,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   const normalizedBaseUrl = typeof BASE_URL === 'string' ? BASE_URL.trim() : '';
   const apiOfflineMessage = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
   const statusFailed = aiRuntime.lastError === apiOfflineMessage;
-  const showApiWarning = !normalizedBaseUrl || statusFailed;
-  const apiWarningMessage = !normalizedBaseUrl
-    ? 'Cloud AI features need an API base URL. Configure it in AI Settings to bring features online.'
-    : apiOfflineMessage;
+  const showApiWarning = aiOffline || !normalizedBaseUrl || statusFailed;
 
   if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
     return <Register onRegister={handleRegister} onImport={importGameState} />;
@@ -3441,40 +3438,32 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
 
   if (!gameMode) {
     return (
-      <>
-        <ModeSelection
-          learningPath={activeLearningPath}
-          onExit={() => {
-            stopNarration();
-            handleExit();
-          }}
-          onSelectMode={handleModeSelect}
-          gameState={gameState}
-          onShowDashboard={() => setShowDashboard(true)}
-          onExport={exportGameState}
-          onImport={importGameState}
-          onLogout={handleLogout}
-          onOpenAiSettings={() => setShowAiSettings(true)}
-          aiPersonalization={aiPersonalization}
-          aiPreviewItem={aiPreviewItem}
-          aiPlanStatus={aiPlanStatus}
-          interestDraft={interestDraft}
-          onInterestDraftChange={setInterestDraft}
-          onAddInterest={handleAddInterest}
-          onRemoveInterest={handleRemoveInterest}
-          onStartAiPath={startAiPath}
-          onRefreshPlan={() => ensureAiPlan(true)}
-          aiRuntime={aiRuntime}
-          motifJobState={motifJobState}
-          motifRetrySeconds={motifRetrySeconds}
-        />
-        {showAiSettings && (
-          <ParentAISettings
-            onClose={() => setShowAiSettings(false)}
-            onSaved={handleAiSettingsSaved}
-          />
-        )}
-      </>
+      <ModeSelection
+        learningPath={activeLearningPath}
+        onExit={() => {
+          stopNarration();
+          handleExit();
+        }}
+        onSelectMode={handleModeSelect}
+        gameState={gameState}
+        onShowDashboard={() => setShowDashboard(true)}
+        onExport={exportGameState}
+        onImport={importGameState}
+        onLogout={handleLogout}
+        onOpenAiSettings={openSettings}
+        aiPersonalization={aiPersonalization}
+        aiPreviewItem={aiPreviewItem}
+        aiPlanStatus={aiPlanStatus}
+        interestDraft={interestDraft}
+        onInterestDraftChange={setInterestDraft}
+        onAddInterest={handleAddInterest}
+        onRemoveInterest={handleRemoveInterest}
+        onStartAiPath={startAiPath}
+        onRefreshPlan={() => ensureAiPlan(true)}
+        aiRuntime={aiRuntime}
+        motifJobState={motifJobState}
+        motifRetrySeconds={motifRetrySeconds}
+      />
     );
   }
 
@@ -3514,18 +3503,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex flex-col items-center justify-center">
       <div className="w-full max-w-4xl mb-6">
         {showApiWarning && (
-          <div className="mb-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertCircle className="mt-0.5 text-red-500" size={16} />
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span className="font-medium">{apiWarningMessage}</span>
-              <button
-                onClick={() => setShowAiSettings(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-1 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-100"
-              >
-                Open AI Settings
-              </button>
-            </div>
-          </div>
+          <AiOfflineBanner onOpenSettings={openSettings} />
         )}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <button
@@ -3809,12 +3787,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
         Card {currentCard + 1} / {cards.length}
       </div>
     </div>
-    {showAiSettings && (
-      <ParentAISettings
-        onClose={() => setShowAiSettings(false)}
-        onSaved={handleAiSettingsSaved}
-      />
-    )}
     </>
   );
 }

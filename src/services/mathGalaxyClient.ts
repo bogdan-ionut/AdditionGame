@@ -5,6 +5,7 @@ import {
   BASE_URL,
   requireApiUrl,
 } from './math-galaxy-api';
+import { getApiBaseUrl } from '../lib/api/baseUrl';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
@@ -92,7 +93,7 @@ const createStubClient = (): MathGalaxyStub => ({
   postSpriteProcessJob: async () => ({ data: null, response: createStubResponse(503) }),
 });
 
-let resolvedBaseUrl = envValue;
+let resolvedBaseUrl = getApiBaseUrl() || envValue;
 
 if (!resolvedBaseUrl && isDev) {
   resolvedBaseUrl = 'http://localhost:8000';
@@ -113,7 +114,7 @@ if (useStubClient) {
   }
   if (!resolvedBaseUrl) {
     console.warn(
-      '[MathGalaxyAPI] Missing VITE_MATH_API_URL. Using local stub – AI features will stay offline until configured.',
+      '[MathGalaxyAPI] Cloud AI base URL not configured. Using local stub until settings are updated.',
     );
   } else if (shouldForceLocalStub) {
     console.info(

@@ -29,6 +29,16 @@ If you host the static site on a domain that cannot reach the API because of COR
 sure the backend allows requests from `https://<username>.github.io` via its `ALLOW_ORIGINS` configuration. A missing CORS
 origin will look just like an offline API in the UI.
 
+### Cloud AI base URL at runtime
+
+When the app is served from GitHub Pages or any other static host, open **AI Settings** from the in-app banner and paste your backend URL in the **Cloud API Base URL** field. The public Cloud Run instance is:
+
+```
+https://math-api-811756754621.us-central1.run.app
+```
+
+Click **Save override & reload** to persist the override in the browser and refresh the app. The override lives in `localStorage`, so subsequent visits keep Cloud AI features online without rebuilding the site.
+
 ## GitHub Pages deployment
 
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds the app and publishes the contents of `dist/` to the `gh-pages` branch on every push to `main`. Enable **Settings → Pages → Deploy from branch → gh-pages** to serve the latest build at `https://<username>.github.io/AdditionGame/`.

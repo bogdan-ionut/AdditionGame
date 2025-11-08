@@ -1,6 +1,36 @@
 // math-galaxy-api.browser.js
 import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from '../lib/env';
 
+const OFFLINE_EVENT = 'ai:offline';
+const ONLINE_EVENT = 'ai:online';
+
+let onlineNotified = false;
+
+const emitOnline = () => {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  if (onlineNotified) return;
+  window.dispatchEvent(new Event(ONLINE_EVENT));
+  onlineNotified = true;
+};
+
+const emitOffline = (reason) => {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  onlineNotified = false;
+  let detail;
+  if (reason && typeof reason.message === 'string') {
+    detail = reason.message;
+  } else if (typeof reason === 'string') {
+    detail = reason;
+  } else {
+    try {
+      detail = JSON.stringify(reason);
+    } catch {
+      detail = 'AI offline';
+    }
+  }
+  window.dispatchEvent(new CustomEvent(OFFLINE_EVENT, { detail }));
+};
+
 const MISSING_BASE_MESSAGE =
   '[MathGalaxyAPI] baseUrl is empty. Open AI Settings and set the Cloud API Base URL.';
 
@@ -18,9 +48,7 @@ export class MathGalaxyAPI {
     this.baseUrl = stripTrailingSlash(provided || fallback || '');
 
     if (!this.baseUrl) {
-      console.warn(
-        '[MathGalaxyAPI] Missing VITE_MATH_API_URL. Using local stub — AI features will stay offline until configured.',
-      );
+      emitOffline(new Error(MISSING_BASE_MESSAGE));
       throw new Error(MISSING_BASE_MESSAGE);
     }
 
@@ -121,9 +149,13 @@ export class MathGalaxyAPI {
         clearTimeout(t);
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const ct = res.headers.get("content-type")||"";
-        return ct.includes("application/json") ? res.json() : res.text();
+        const payload = ct.includes("application/json") ? res.json() : res.text();
+        emitOnline();
+        return payload;
       }catch(e){ err=e; await new Promise(r=>setTimeout(r, 250)); }
     }
-    throw err || new Error("Network error");
+    const failure = err || new Error("Network error");
+    emitOffline(failure);
+    throw failure;
   }
 }
