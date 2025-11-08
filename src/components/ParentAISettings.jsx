@@ -28,6 +28,59 @@ const SFX_CATEGORY_SYNONYMS = {
 
 const API_OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
 
+const readBooleanish = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) {
+      if (value === 1) return true;
+      if (value === 0) return false;
+    }
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (['true', '1', 'yes', 'y', 'ok', 'success', 'verified'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'fail', 'failed', 'error'].includes(normalized)) return false;
+  }
+  return null;
+};
+
+const readString = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+};
+
+const determineKeyPresence = (payload) => {
+  if (!payload || typeof payload !== 'object') return false;
+  const keys = [
+    'have_key',
+    'haveKey',
+    'server_has_key',
+    'serverHasKey',
+    'key_present',
+    'keyPresent',
+    'has_key',
+    'hasKey',
+    'verified',
+    'isVerified',
+    'ok',
+    'success',
+    'status',
+  ];
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      const candidate = readBooleanish(payload[key]);
+      if (candidate !== null) {
+        return candidate;
+      }
+    }
+  }
+  return false;
+};
+
 const initialRuntime = {
   aiEnabled: false,
   serverHasKey: false,
@@ -556,11 +609,16 @@ export default function ParentAISettings({ onClose, onSaved }) {
       setTestStatus({ state: 'loading', ok: null, message: null });
       try {
         const response = await testGeminiKey();
-        const ok = Boolean(response?.have_key ?? response?.haveKey ?? response?.server_has_key);
-        const message = ok
-          ? 'Gemini key detected on server.'
-          : response?.error || response?.message || 'Gemini key missing on server.';
-        setTestStatus({ state: 'success', ok, message });
+        const hasKey = determineKeyPresence(response);
+        const successMessage =
+          readString(response?.message)
+            || readString(response?.note)
+            || 'Gemini key detected on server.';
+        const failureMessage =
+          readString(response?.error)
+            || readString(response?.message)
+            || 'Gemini key missing on server.';
+        setTestStatus({ state: 'success', ok: hasKey, message: hasKey ? successMessage : failureMessage });
         await syncRuntime(notify);
       } catch (error) {
         const message =

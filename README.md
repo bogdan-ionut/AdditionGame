@@ -17,18 +17,17 @@ Create a `.env.local` (or the appropriate Vite environment file) with the new ba
 
 ```
 VITE_MATH_API_URL=https://math-api-811756754621.us-central1.run.app
+VITE_MATH_API_FORCE_LOCAL=false
 ```
 
-The frontend SDK falls back to this value automatically when recording addition attempts. If you host the static site on a
-domain that cannot reach the API because of CORS restrictions (for example GitHub Pages), the frontend now auto-detects that
-scenario and disables remote AI integrations. To force the local-only behaviour (or override it when running on a custom
-domain that does allow CORS) use the optional flag below:
+The frontend SDK reads `VITE_MATH_API_URL` at build time to configure the MathGalaxy client. When deploying to GitHub Pages you
+must also override the default ".github.io" stub behaviour by setting `VITE_MATH_API_FORCE_LOCAL=false`; otherwise the app will
+continue to use the offline stub even though a remote URL is provided. Use `VITE_MATH_API_FORCE_LOCAL=true` only when you
+explicitly want to disable remote AI features (for example during local demos).
 
-```
-VITE_MATH_API_FORCE_LOCAL=true   # force the stub client
-```
-
-Set the value to `false` to re-enable the remote client even on domains that would otherwise default to the stub.
+If you host the static site on a domain that cannot reach the API because of CORS restrictions (for example GitHub Pages), make
+sure the backend allows requests from `https://<username>.github.io` via its `ALLOW_ORIGINS` configuration. A missing CORS
+origin will look just like an offline API in the UI.
 
 ## GitHub Pages deployment
 

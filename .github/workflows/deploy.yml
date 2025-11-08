@@ -11,7 +11,8 @@ jobs:
   build-deploy:
     runs-on: ubuntu-latest
     env:
-      VITE_MATH_AI_API_URL: ${{ secrets.VITE_MATH_AI_API_URL }}
+      VITE_MATH_API_URL: ${{ secrets.VITE_MATH_API_URL }}
+      VITE_MATH_API_FORCE_LOCAL: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
