@@ -172,21 +172,42 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
   }
 
   const runtimePayload = Object.keys(aggregatedPayload).length ? aggregatedPayload : null;
+  const payloadConfig = (runtimePayload?.config ?? runtimePayload?.settings) as
+    | Record<string, unknown>
+    | null
+    | undefined;
 
   if (runtimePayload) {
-    const payloadConfig = (runtimePayload.config ?? runtimePayload.settings) as
-      | Record<string, unknown>
-      | null
-      | undefined;
+    const remoteHasKey =
+      readBooleanFrom(runtimePayload, [
+        'has_key',
+        'hasKey',
+        'have_key',
+        'haveKey',
+        'server_has_key',
+        'serverHasKey',
+        'key_configured',
+        'keyConfigured',
+      ]) ??
+      readBooleanFrom(payloadConfig, [
+        'has_key',
+        'hasKey',
+        'have_key',
+        'haveKey',
+        'key_present',
+        'keyPresent',
+      ]);
 
-    serverHasKey = Boolean(
-      runtimePayload.have_key ??
-        runtimePayload.haveKey ??
-        runtimePayload.server_has_key ??
-        runtimePayload.key_configured ??
-        readBooleanFrom(payloadConfig, ['have_key', 'has_key', 'key_present']) ??
-        serverHasKey,
-    );
+    if (remoteHasKey !== null) {
+      serverHasKey = remoteHasKey;
+    } else {
+      const remoteVerified =
+        readBooleanFrom(runtimePayload, ['verified', 'isVerified']) ??
+        readBooleanFrom(payloadConfig, ['verified', 'isVerified']);
+      if (remoteVerified !== null) {
+        serverHasKey = remoteVerified;
+      }
+    }
 
     const reportedError = (runtimePayload.error || runtimePayload.message || runtimePayload.reason) as
       | string
@@ -197,11 +218,6 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       lastError = 'Gemini API key missing on server.';
     }
   }
-
-  const payloadConfig = (runtimePayload?.config ?? runtimePayload?.settings) as
-    | Record<string, unknown>
-    | null
-    | undefined;
   const reportedPlanning =
     readStringFrom(runtimePayload, ['planning_model', 'planningModel']) ??
     readStringFrom(payloadConfig, ['planning_model', 'planningModel']) ??
@@ -231,6 +247,23 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     : Boolean(serverHasKey && resolvedPlanningModel && resolvedSpriteModel && aiAllowed);
 
   const runtimeLabel =
+    readStringFrom(runtimePayload, ['runtime_label', 'runtimeLabel', 'runtime']) ??
+    readStringFrom(payloadConfig, ['runtime_label', 'runtimeLabel', 'runtime']) ??
+    null;
+
+  const defaultTtsModel =
+    readStringFrom(runtimePayload, [
+      'default_tts_model',
+      'defaultTtsModel',
+      'tts_default_model',
+      'ttsDefaultModel',
+    ]) ??
+    readStringFrom(payloadConfig, [
+      'default_tts_model',
+      'defaultTtsModel',
+      'tts_default_model',
+      'ttsDefaultModel',
+    ]) ??
     readStringFrom(runtimePayload, ['runtime_label', 'runtimeLabel']) ??
     readStringFrom(payloadConfig, ['runtime_label', 'runtimeLabel']) ??
     null;
@@ -244,6 +277,12 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     const candidates =
       (runtimePayload?.allowed_tts_models as unknown) ??
       (runtimePayload?.allowedTtsModels as unknown) ??
+      (runtimePayload?.tts_available_models as unknown) ??
+      (runtimePayload?.ttsAvailableModels as unknown) ??
+      (payloadConfig?.allowed_tts_models as unknown) ??
+      (payloadConfig?.allowedTtsModels as unknown) ??
+      (payloadConfig?.tts_available_models as unknown) ??
+      (payloadConfig?.ttsAvailableModels as unknown);
       (payloadConfig?.allowed_tts_models as unknown) ??
       (payloadConfig?.allowedTtsModels as unknown);
     if (Array.isArray(candidates)) {

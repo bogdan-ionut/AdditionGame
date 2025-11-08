@@ -169,23 +169,36 @@ export class MathGalaxyAPI {
   }
 
   async aiPlan<T = any>(payload: Record<string, unknown>) {
-    return this.post<T>("/v1/ai/plan", payload);
+    return this.post<T>("/v1/ai/planning", payload);
   }
 
   async postSpriteInterests<T = any>(payload: Record<string, unknown>, init: RequestInit = {}) {
-    return this.postWithMeta<T>("/v1/sprites/interests", payload, init);
+    return this.postWithMeta<T>("/v1/interests/packs", payload, init);
   }
 
   async getSpriteJob<T = any>(jobId: string) {
-    const path = jobId
-      ? `/v1/sprites/jobs/${encodeURIComponent(jobId)}`
-      : "/v1/sprites/jobs";
-    return this.getWithMeta<T>(path);
+    if (!jobId) {
+      throw new MathGalaxyApiError("jobId is required to fetch sprite job status.");
+    }
+
+    const encoded = encodeURIComponent(jobId);
+    return this.getWithMeta<T>(`/v1/sprites/job_status?job_id=${encoded}`);
   }
 
-  async postSpriteProcessJob<T = any>(jobId: string, payload: Record<string, unknown>) {
-    const encoded = encodeURIComponent(jobId);
-    return this.postWithMeta<T>(`/v1/sprites/jobs/${encoded}/process`, payload);
+  async postSpriteProcessJob<T = any>(jobId: string, payload: Record<string, unknown> = {}) {
+    if (!jobId) {
+      throw new MathGalaxyApiError("jobId is required to process sprite job.");
+    }
+
+    const body: Record<string, unknown> & { job_id?: string; jobId?: string } = { ...payload };
+    if (typeof body.job_id !== "string" || !body.job_id.trim()) {
+      body.job_id = jobId;
+    }
+    if (typeof body.jobId !== "string" || !body.jobId.trim()) {
+      body.jobId = jobId;
+    }
+
+    return this.postWithMeta<T>("/v1/sprites/process_job", body);
   }
 
   /** Quick stats for a user */
