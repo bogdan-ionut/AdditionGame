@@ -74,6 +74,7 @@ export type AiRuntimeState = {
   defaultTtsModel?: string | null;
   allowedTtsModels?: string[];
   runtimeLabel?: string | null;
+  note?: string | null;
 };
 
 const readString = (value: unknown): string | null => {
@@ -128,6 +129,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       audioModel: cfg.audioModel,
       aiAllowed: cfg.aiAllowed,
       lastError: null,
+      note: null,
     };
   }
 
@@ -140,11 +142,13 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       audioModel: cfg.audioModel,
       aiAllowed: cfg.aiAllowed,
       lastError: 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.',
+      note: null,
     };
   }
 
   let serverHasKey = false;
   let lastError: string | null = null;
+  let note: string | null = null;
   const aggregatedPayload: Record<string, unknown> = {};
 
   const offlineMessage = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
@@ -209,11 +213,26 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       }
     }
 
+    const remoteNote =
+      readStringFrom(runtimePayload, ['note', 'warning', 'warn', 'warningMessage', 'warning_message']) ??
+      readStringFrom(payloadConfig, ['note', 'warning', 'warn', 'warningMessage', 'warning_message']) ??
+      null;
+    if (remoteNote) {
+      note = remoteNote;
+    }
+
     const reportedError = (runtimePayload.error || runtimePayload.message || runtimePayload.reason) as
       | string
       | undefined;
     if (reportedError && reportedError.trim()) {
-      lastError = reportedError.trim();
+      if (note) {
+        // we already have an explicit warning, surface the message as part of it
+        note = note || reportedError.trim();
+      } else if (serverHasKey) {
+        note = reportedError.trim();
+      } else {
+        lastError = reportedError.trim();
+      }
     } else if (!serverHasKey && !lastError) {
       lastError = 'Gemini API key missing on server.';
     }
@@ -293,5 +312,6 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     defaultTtsModel: resolvedDefaultTtsModel,
     allowedTtsModels,
     runtimeLabel,
+    note,
   };
 }
