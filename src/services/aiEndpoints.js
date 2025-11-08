@@ -122,27 +122,25 @@ export function getAiRuntimeUrl() {
 }
 
 export function getPlanningUrl() {
-  return buildUrl('/v1/ai/plan');
+  return buildUrl('/v1/ai/planning');
 }
 
 export function getInterestPacksUrl() {
-  return buildUrl('/v1/sprites/interests');
+  return buildUrl('/v1/interests/packs');
 }
 
 export function getSpriteJobStatusUrl(jobId) {
-  const base = buildUrl('/v1/sprites/jobs');
+  const base = buildUrl('/v1/sprites/job_status');
   if (!base) return null;
   if (!jobId) return base;
   const encoded = encodeURIComponent(jobId);
-  return `${base}/${encoded}`;
+  return `${base}?job_id=${encoded}`;
 }
 
-export function getSpriteProcessJobUrl(jobId) {
-  if (!jobId) return null;
-  const base = getApiBase();
+export function getSpriteProcessJobUrl() {
+  const base = buildUrl('/v1/sprites/process_job');
   if (!base) return null;
-  const encoded = encodeURIComponent(jobId);
-  return `${base}/v1/sprites/jobs/${encoded}/process`;
+  return base;
 }
 
 export async function postInterestsPacks({ interests = [], mode = 'sync', sync_ms = 6000, tick_limit = 1, model } = {}) {

@@ -17,6 +17,7 @@ import { getAiRuntime } from '../../lib/ai/runtime';
 import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
 import mathGalaxyApi, { flushMathGalaxyQueue, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
+import { useNarrationEngine } from '../../lib/audio/useNarrationEngine';
 
 const DEFAULT_LEARNING_PATH_META = {
   id: 'addition-within-10',
@@ -1635,6 +1636,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     spriteModel: null,
     audioModel: null,
     aiAllowed: true,
+    defaultTtsModel: null,
+    allowedTtsModels: [],
+    runtimeLabel: null,
   });
   const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
   const [motifJobState, setMotifJobState] = useState(() => createDefaultMotifJobState());
@@ -1654,6 +1658,20 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   });
   const inputRef = useRef(null);
   const gameStateRef = useRef(gameState);
+  const {
+    settings: audioSettings,
+    speakText,
+    speakProblem,
+    speakHint,
+    speakMiniLesson,
+    speakFeedback,
+    playSfx,
+    stopNarration,
+  } = useNarrationEngine({ runtime: aiRuntime });
+  const sessionSolvedRef = useRef(0);
+  const streakProgressRef = useRef(0);
+  const checkpointStatusRef = useRef('idle');
+  const spokenModeRef = useRef(null);
 
   useEffect(() => {
     if (!isMathGalaxyConfigured) return;
@@ -1708,6 +1726,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
         spriteModel: null,
         audioModel: null,
         aiAllowed: true,
+        defaultTtsModel: null,
+        allowedTtsModels: [],
+        runtimeLabel: null,
       };
       setAiRuntime(fallback);
       return fallback;
@@ -1724,6 +1745,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       motifPollingRef.current = null;
     }
   }, []);
+
+  useEffect(() => () => {
+    stopNarration();
+  }, [stopNarration]);
 
   useEffect(() => {
     if (!motifJobState.nextRetryAt) {
@@ -2409,6 +2434,45 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   }, [gameMode, generateCards]);
 
   useEffect(() => {
+    if (!gameMode) {
+      spokenModeRef.current = null;
+      return;
+    }
+    if (!audioSettings.narrationEnabled) return;
+    if (spokenModeRef.current === gameMode) return;
+    spokenModeRef.current = gameMode;
+    const lang = audioSettings.narrationLanguage?.toLowerCase?.() || 'ro-ro';
+    const isRomanian = lang.startsWith('ro');
+    let intro = '';
+    if (gameMode === 'ai-path') {
+      intro = isRomanian
+        ? 'Am pregătit o aventură adaptată special pentru tine. Ascultă indiciile și răspunde cu voce tare!'
+        : 'I prepared a special adventure just for you. Listen carefully and say each answer out loud!';
+    } else if (gameMode === 'random') {
+      intro = isRomanian
+        ? 'Începem o sesiune cu exerciții surpriză. Spune rezultatul și mergem mai departe!'
+        : 'Let’s dive into surprise addition challenges. Say the answer and we will keep going!';
+    } else if (gameMode === 'sequential') {
+      intro = isRomanian
+        ? 'Vom parcurge toate adunările pe rând. Respira adânc și spune răspunsul corect!'
+        : 'We will go through every addition in order. Take a breath and tell me the right answer!';
+    } else if (gameMode.startsWith('focus-') && Number.isFinite(focusNumber)) {
+      intro = isRomanian
+        ? `Ne concentrăm pe adunări cu ${focusNumber}. Imaginează-ți ${focusNumber} obiecte și adaugă restul.`
+        : `We are focusing on sums with ${focusNumber}. Picture ${focusNumber} objects and add the rest.`;
+    } else {
+      intro = isRomanian
+        ? 'Hai să rezolvăm probleme de adunare! Eu te ghidez pas cu pas.'
+        : 'Let’s solve addition problems together! I will guide you step by step.';
+    }
+    speakText({ text: intro, type: 'custom', speakingRate: audioSettings.speakingRate * 0.95 }).catch((error) => {
+      if (import.meta.env.DEV) {
+        console.warn('Unable to narrate mode intro', error);
+      }
+    });
+  }, [audioSettings.narrationEnabled, audioSettings.narrationLanguage, audioSettings.speakingRate, focusNumber, gameMode, speakText]);
+
+  useEffect(() => {
     const interests = aiPersonalization.learnerProfile?.interests || [];
     const lastUpdated = aiPersonalization.learnerProfile?.motifsUpdatedAt;
     if (!interests.length) {
@@ -2454,6 +2518,33 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
     }
   }, [attemptCount, feedback]);
 
+  useEffect(() => {
+    if (!audioSettings.narrationEnabled || !audioSettings.narrationAutoplay) return;
+    if (!gameMode) return;
+    const card = cards[currentCard];
+    if (!card) return;
+    speakProblem(card, { story: aiSessionMeta?.story || null }).catch((error) => {
+      if (import.meta.env.DEV) {
+        console.warn('Unable to narrate problem prompt', error);
+      }
+    });
+  }, [audioSettings.narrationAutoplay, audioSettings.narrationEnabled, cards, currentCard, gameMode, aiSessionMeta?.story, speakProblem]);
+
+  useEffect(() => {
+    if (!audioSettings.narrationEnabled) return;
+    if (!showHint) return;
+    const card = cards[currentCard];
+    if (!card) return;
+    const hintText = card.aiPlanItem?.hints?.length
+      ? card.aiPlanItem.hints.slice(0, 2).join(' ')
+      : `Hai să numărăm de la ${card.a} și să adăugăm ${card.b}.`;
+    speakHint(hintText).catch((error) => {
+      if (import.meta.env.DEV) {
+        console.warn('Unable to narrate hint', error);
+      }
+    });
+  }, [audioSettings.narrationEnabled, cards, currentCard, showHint, speakHint]);
+
   // activate guided help after 30 seconds without response submission
   useEffect(() => {
     if (!cards[currentCard] || !problemStartTime) return;
@@ -2489,6 +2580,100 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
 
     return () => clearInterval(interval);
   }, [guidedHelp.active, guidedHelp.complete, cards, currentCard, showCountTogether]);
+
+  useEffect(() => {
+    if (!audioSettings.narrationEnabled) return;
+    if (!guidedHelp.active) return;
+    speakMiniLesson('count-on').catch((error) => {
+      if (import.meta.env.DEV) {
+        console.warn('Unable to narrate mini-lesson', error);
+      }
+    });
+  }, [audioSettings.narrationEnabled, guidedHelp.active, speakMiniLesson]);
+
+  useEffect(() => {
+    const solved = gameState.sessionData?.currentSession?.problemsSolved ?? 0;
+    const previous = sessionSolvedRef.current;
+    if (solved > previous) {
+      if (solved % 5 === 0) {
+        playSfx('progress');
+        if (audioSettings.narrationEnabled) {
+          const lang = audioSettings.narrationLanguage?.toLowerCase?.() || 'ro-ro';
+          const isRomanian = lang.startsWith('ro');
+          const message = isRomanian
+            ? `Bravo! Ai rezolvat ${solved} exerciții până acum. Hai să continuăm!`
+            : `Great work! You have already solved ${solved} problems. Let’s keep going!`;
+          speakText({ text: message, type: 'praise' }).catch((error) => {
+            if (import.meta.env.DEV) {
+              console.warn('Unable to narrate milestone praise', error);
+            }
+          });
+        }
+      }
+      sessionSolvedRef.current = solved;
+    } else if (solved < previous) {
+      sessionSolvedRef.current = solved;
+    }
+  }, [audioSettings.narrationEnabled, audioSettings.narrationLanguage, gameState.sessionData?.currentSession?.problemsSolved, playSfx, speakText]);
+
+  useEffect(() => {
+    const streak = gameState.adaptiveLearning?.consecutiveCorrect ?? 0;
+    const previous = streakProgressRef.current;
+    if (streak > previous) {
+      if (streak > 0 && streak % 5 === 0) {
+        playSfx('progress');
+        if (audioSettings.narrationEnabled) {
+          const lang = audioSettings.narrationLanguage?.toLowerCase?.() || 'ro-ro';
+          const isRomanian = lang.startsWith('ro');
+          const message = isRomanian
+            ? `Streak de ${streak} răspunsuri corecte! Sunt foarte mândru de tine.`
+            : `Wow! ${streak} correct answers in a row. I am so proud of you!`;
+          speakText({ text: message, type: 'praise' }).catch((error) => {
+            if (import.meta.env.DEV) {
+              console.warn('Unable to narrate streak celebration', error);
+            }
+          });
+        }
+      }
+      streakProgressRef.current = streak;
+    } else if (streak < previous) {
+      streakProgressRef.current = streak;
+    }
+  }, [audioSettings.narrationEnabled, audioSettings.narrationLanguage, gameState.adaptiveLearning?.consecutiveCorrect, playSfx, speakText]);
+
+  useEffect(() => {
+    const status = checkpointState.status || 'idle';
+    const previous = checkpointStatusRef.current;
+    if (status === previous) return;
+    checkpointStatusRef.current = status;
+    const lang = audioSettings.narrationLanguage?.toLowerCase?.() || 'ro-ro';
+    const isRomanian = lang.startsWith('ro');
+    if (status === 'passed') {
+      playSfx('progress');
+      if (audioSettings.narrationEnabled) {
+        const message = isRomanian
+          ? 'Ai depășit checkpoint-ul! Felicitări pentru concentrare și răbdare.'
+          : 'You cleared the checkpoint! Fantastic focus and patience!';
+        speakText({ text: message, type: 'praise' }).catch((error) => {
+          if (import.meta.env.DEV) {
+            console.warn('Unable to narrate checkpoint success', error);
+          }
+        });
+      }
+    } else if (status === 'failed') {
+      playSfx('error');
+      if (audioSettings.narrationEnabled) {
+        const message = isRomanian
+          ? 'Nu-i nimic, luăm o mică pauză și mai încercăm. Știu că vei reuși!'
+          : 'That is okay. Let’s take a short break and try again—I know you can do it!';
+        speakText({ text: message, type: 'encouragement' }).catch((error) => {
+          if (import.meta.env.DEV) {
+            console.warn('Unable to narrate checkpoint encouragement', error);
+          }
+        });
+      }
+    }
+  }, [audioSettings.narrationEnabled, audioSettings.narrationLanguage, checkpointState.status, playSfx, speakText]);
 
   // respond to checkpoint review pass/fail outcomes
   useEffect(() => {
@@ -2540,6 +2725,27 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       });
     }
   }, [checkpointState.status, checkpointState.reviewCards, checkpointState.cardsData, cards]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const card = cards[currentCard];
+    if (!card) return;
+    if (feedback === 'correct') {
+      playSfx('success');
+      speakFeedback(true).catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('Unable to narrate positive feedback', error);
+        }
+      });
+    } else if (feedback === 'incorrect') {
+      playSfx('error');
+      speakFeedback(false).catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('Unable to narrate encouragement', error);
+        }
+      });
+    }
+  }, [cards, currentCard, feedback, playSfx, speakFeedback]);
 
   const updateMasteryTracking = (number, correct) => {
     setGameState(prev => {
@@ -2842,6 +3048,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   };
 
   const resetToMenu = () => {
+    stopNarration();
     setGameMode(null);
     setFocusNumber(null);
     setUserAnswer('');
@@ -3022,7 +3229,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       <>
         <ModeSelection
           learningPath={activeLearningPath}
-          onExit={handleExit}
+          onExit={() => {
+            stopNarration();
+            handleExit();
+          }}
           onSelectMode={handleModeSelect}
           gameState={gameState}
           onShowDashboard={() => setShowDashboard(true)}
@@ -3090,7 +3300,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
       <div className="w-full max-w-4xl mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <button
-            onClick={handleExit}
+            onClick={() => {
+              stopNarration();
+              handleExit();
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur rounded-xl shadow hover:shadow-lg transition"
           >
             <ArrowLeft size={18} />
@@ -3335,6 +3548,18 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${showHint ? 'bg-yellow-100 border-yellow-300' : 'bg-white border hover:bg-gray-50'}`}
           >
             💡 Hint
+          </button>
+          <button
+            onClick={() => {
+              if (!card) return;
+              speakProblem(card, { story: aiSessionMeta?.story || null }).catch(() => {});
+            }}
+            disabled={!audioSettings.narrationEnabled}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${
+              audioSettings.narrationEnabled ? 'bg-white border hover:bg-gray-50' : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            🔊 Hear it again
           </button>
           {showCountTogether && (
             <button
