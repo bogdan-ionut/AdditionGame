@@ -138,6 +138,32 @@ export class MathGalaxyAPI {
     return data;
   }
 
+  async aiTtsModels<T = any>() {
+    return this.get<T>("/v1/ai/tts/models");
+  }
+
+  async aiTtsVoices<T = any>(params: { mode?: string } = {}) {
+    const search = new URLSearchParams();
+    if (params.mode) {
+      search.set("mode", params.mode);
+    }
+    const path = search.size ? `/v1/ai/tts/voices?${search.toString()}` : "/v1/ai/tts/voices";
+    return this.get<T>(path);
+  }
+
+  async aiAudioSfx<T = any>(params: { mode?: string } = {}) {
+    const search = new URLSearchParams();
+    if (params.mode) {
+      search.set("mode", params.mode);
+    }
+    const path = search.size ? `/v1/ai/audio/sfx?${search.toString()}` : "/v1/ai/audio/sfx";
+    return this.get<T>(path);
+  }
+
+  async aiTtsSynthesize<T = any>(payload: Record<string, unknown>) {
+    return this.post<T>("/v1/ai/tts/synthesize", payload);
+  }
+
   async saveAiKey<T = any>(payload: Record<string, unknown>) {
     return this.post<T>("/v1/ai/key", payload);
   }
