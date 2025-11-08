@@ -66,7 +66,7 @@ type PlayTextOptions = {
   volume?: number;
 };
 
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
   success: ['success', 'celebration', 'correct', 'victory'],

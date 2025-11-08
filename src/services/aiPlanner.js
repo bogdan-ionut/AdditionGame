@@ -7,7 +7,7 @@ import {
 import mathGalaxyClient, { MathGalaxyApiError } from './mathGalaxyClient';
 import { deriveMotifsFromInterests } from '../lib/aiPersonalization';
 
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const readBoolean = (value) => {
   if (typeof value === 'boolean') return value;

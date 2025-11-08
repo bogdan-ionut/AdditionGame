@@ -1,5 +1,6 @@
 // math-galaxy-api.ts
 // Tiny SDK for Math Galaxy API (FastAPI @ Cloud Run)
+import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from "../lib/env";
 
 export type Problem = { a: number; b: number; op?: string };
 export type AttemptIn = {
@@ -28,27 +29,14 @@ type PostOpts = { beacon?: boolean };
 
 const LSQ_KEY = "mgq_v1";
 
-function readStoredApiUrl(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    const value = window.localStorage?.getItem("MG_API_URL");
-    return typeof value === "string" ? value.trim() : "";
-  } catch {
-    return "";
-  }
-}
+const MISSING_BASE_ERROR =
+  "[MathGalaxyAPI] baseUrl is empty. Open AI Settings and set the Cloud API Base URL.";
 
-const envBaseUrl = ((import.meta as any)?.env?.VITE_MATH_API_URL ?? "").trim();
-const storedBaseUrl = readStoredApiUrl();
-const nodeBaseUrl = typeof process !== "undefined" ? (process.env?.MATH_API_URL ?? "").trim() : "";
-
-export const BASE_URL = envBaseUrl || storedBaseUrl || nodeBaseUrl || "";
+export const BASE_URL = resolveApiBaseUrl();
 
 export function requireApiUrl(): string {
   if (!BASE_URL) {
-    console.error(
-      "[MathGalaxyAPI] baseUrl is empty. Pass { baseUrl } or set VITE_MATH_API_URL.",
-    );
+    console.warn(MISSING_BASE_ERROR);
   }
   return BASE_URL;
 }
@@ -119,13 +107,13 @@ export class MathGalaxyAPI {
   readonly cfg: Required<Omit<ApiConfig, "baseUrl">>;
 
   constructor(cfg: ApiConfig = {}) {
-    const provided = typeof cfg.baseUrl === "string" ? cfg.baseUrl.trim() : "";
-    const fallback = detectBaseUrl();
-    const base = (provided || fallback || "").replace(/\/+$/, "");
+    const provided = typeof cfg.baseUrl === "string" ? stripTrailingSlash(cfg.baseUrl) : "";
+    const fallback = stripTrailingSlash(detectBaseUrl() || "");
+    const base = stripTrailingSlash(provided || fallback || "");
     if (!base) {
       requireApiUrl();
       throw new MathGalaxyApiError(
-        "MathGalaxyAPI requires a baseUrl. Pass { baseUrl } or set VITE_MATH_API_URL.",
+        MISSING_BASE_ERROR,
       );
     }
 
@@ -288,7 +276,7 @@ export class MathGalaxyAPI {
 
     if (opts.beacon && typeof navigator !== "undefined" && "sendBeacon" in navigator) {
       try {
-        const url = `${this.baseUrl}/v1/sessions/attempt`;
+        const url = joinApi(this.baseUrl, "/v1/sessions/attempt");
         const blob = new Blob([JSON.stringify(body)], { type: "application/json" });
         const ok = (navigator as any).sendBeacon(url, blob);
         if (ok) return { ok: true, transport: "beacon" };
@@ -368,7 +356,7 @@ export class MathGalaxyAPI {
   }
 
   private async request(path: string, init: RequestInit & { method: string }): Promise<Response> {
-    const url = `${this.baseUrl}${path}`;
+    const url = joinApi(this.baseUrl, path);
     let attempt = 0;
     let lastErr: MathGalaxyApiError | null = null;
 

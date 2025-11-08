@@ -3424,11 +3424,11 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
   const checkpointCleared = Object.values(checkpointState.cardsData || {}).filter(entry => entry.correct > 0).length;
 
   const normalizedBaseUrl = typeof BASE_URL === 'string' ? BASE_URL.trim() : '';
-  const apiOfflineMessage = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+  const apiOfflineMessage = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
   const statusFailed = aiRuntime.lastError === apiOfflineMessage;
   const showApiWarning = !normalizedBaseUrl || statusFailed;
   const apiWarningMessage = !normalizedBaseUrl
-    ? 'Cloud AI features need an API base URL. Open AI Settings to configure it or set VITE_MATH_API_URL.'
+    ? 'Cloud AI features need an API base URL. Configure it in AI Settings to bring features online.'
     : apiOfflineMessage;
 
   if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
@@ -3516,7 +3516,15 @@ export default function AdditionWithinTenApp({ learningPath, onExit }) {
         {showApiWarning && (
           <div className="mb-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="mt-0.5 text-red-500" size={16} />
-            <span>{apiWarningMessage}</span>
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="font-medium">{apiWarningMessage}</span>
+              <button
+                onClick={() => setShowAiSettings(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-1 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-100"
+              >
+                Open AI Settings
+              </button>
+            </div>
           </div>
         )}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

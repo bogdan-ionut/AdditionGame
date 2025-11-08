@@ -3,22 +3,27 @@ import mathGalaxyClient, {
   isMathGalaxyConfigured,
   requireApiUrl,
 } from './mathGalaxyClient';
+import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from '../lib/env';
 
 const rawApiBase = (() => {
+  const runtimeBase = stripTrailingSlash(resolveApiBaseUrl() || '');
+  if (runtimeBase) {
+    return runtimeBase;
+  }
   const base = requireApiUrl();
-  return base ? base.replace(/\/+$/, '') : '';
+  return base ? stripTrailingSlash(base) : '';
 })();
 
 export const AiEndpoints = {
-  status: rawApiBase ? `${rawApiBase}/v1/ai/status` : '',
-  saveKey: rawApiBase ? `${rawApiBase}/v1/ai/key` : '',
-  plan: rawApiBase ? `${rawApiBase}/v1/ai/plan` : '',
-  runtime: rawApiBase ? `${rawApiBase}/v1/ai/runtime` : '',
-  sprites: rawApiBase ? `${rawApiBase}/v1/ai/sprites` : '',
+  status: rawApiBase ? joinApi(rawApiBase, '/v1/ai/status') : '',
+  saveKey: rawApiBase ? joinApi(rawApiBase, '/v1/ai/key') : '',
+  plan: rawApiBase ? joinApi(rawApiBase, '/v1/ai/plan') : '',
+  runtime: rawApiBase ? joinApi(rawApiBase, '/v1/ai/runtime') : '',
+  sprites: rawApiBase ? joinApi(rawApiBase, '/v1/ai/sprites') : '',
 };
 
 const RETRY_AFTER_DEFAULT_MS = 45000;
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Verifică VITE_MATH_API_URL.';
+const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
 const toHeadersLookup = (headers) => ({
   get(name) {
@@ -122,7 +127,7 @@ export function getApiBase() {
 
 const buildUrl = (path) => {
   const base = getApiBase();
-  return base ? `${base}${path}` : null;
+  return base ? joinApi(base, path) : null;
 };
 
 export function isAiProxyConfigured() {
