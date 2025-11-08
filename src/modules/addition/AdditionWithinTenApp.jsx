@@ -1852,6 +1852,19 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     }
   }, [onOpenAiSettings]);
 
+  const speakProblemDebounced = useCallback(
+    (card, meta = {}) => {
+      if (!card) return Promise.resolve();
+      const now = Date.now();
+      if (now - narrationCooldownRef.current < 600) {
+        return Promise.resolve();
+      }
+      narrationCooldownRef.current = now;
+      return speakProblem(card, meta);
+    },
+    [speakProblem],
+  );
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handleHealthUpdate = (event) => {
@@ -3893,15 +3906,3 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     </>
   );
 }
-  const speakProblemDebounced = useCallback(
-    (card, meta) => {
-      if (!card) return Promise.resolve();
-      const now = Date.now();
-      if (now - narrationCooldownRef.current < 600) {
-        return Promise.resolve();
-      }
-      narrationCooldownRef.current = now;
-      return speakProblem(card, meta);
-    },
-    [speakProblem],
-  );

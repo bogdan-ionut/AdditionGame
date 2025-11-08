@@ -9,6 +9,7 @@ export type SpeakOptions = {
   rate?: number;
   pitch?: number;
   volume?: number;
+  model?: string | null;
 };
 
 export type SpeakResult = { ok: boolean; mode: SpeakMode };
@@ -37,43 +38,93 @@ function toFinite(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? (value as number) : fallback;
 }
 
+type ServerPlayback = {
+  audio: HTMLAudioElement;
+  finalize: (success: boolean) => void;
+};
+
+let activeServerPlayback: ServerPlayback | null = null;
+
+function stopActiveServerPlayback() {
+  if (!activeServerPlayback) {
+    return;
+  }
+  const playback = activeServerPlayback;
+  activeServerPlayback = null;
+  try {
+    playback.finalize(false);
+  } catch (error) {
+    console.warn("[tts] Failed to stop active server playback", error);
+  }
+}
+
 async function playAudioBuffer(buffer: ArrayBuffer, mimeType: string): Promise<boolean> {
   if (typeof window === "undefined" || typeof Audio === "undefined") {
     return false;
   }
+
+  stopActiveServerPlayback();
+
   const blob = new Blob([buffer], { type: mimeType });
   const objectUrl = URL.createObjectURL(blob);
   const audio = new Audio();
   audio.src = objectUrl;
+
   try {
     await audio.play();
-    await new Promise<void>((resolve, reject) => {
-      const handleEnded = () => {
-        audio.removeEventListener("ended", handleEnded);
-        audio.removeEventListener("error", handleError);
-        resolve();
-      };
-      const handleError = (event: Event) => {
-        audio.removeEventListener("ended", handleEnded);
-        audio.removeEventListener("error", handleError);
-        reject(event);
-      };
-      audio.addEventListener("ended", handleEnded);
-      audio.addEventListener("error", handleError);
-    });
-    return true;
   } catch (error) {
     console.warn("[tts] Unable to play server audio", error);
-    return false;
-  } finally {
-    try {
-      audio.pause();
-      audio.src = "";
-    } catch {
-      // ignore
-    }
     URL.revokeObjectURL(objectUrl);
+    return false;
   }
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+
+    const finalize = (success: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
+      try {
+        audio.pause();
+        audio.src = "";
+      } catch {
+        // ignore cleanup errors
+      }
+      URL.revokeObjectURL(objectUrl);
+      resolve(success);
+    };
+
+    const handleEnded = () => {
+      if (activeServerPlayback?.audio === audio) {
+        activeServerPlayback = null;
+      }
+      finalize(true);
+    };
+
+    const handleError = () => {
+      if (activeServerPlayback?.audio === audio) {
+        activeServerPlayback = null;
+      }
+      finalize(false);
+    };
+
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
+
+    activeServerPlayback = {
+      audio,
+      finalize: (success: boolean) => {
+        if (activeServerPlayback?.audio === audio) {
+          activeServerPlayback = null;
+        }
+        finalize(success);
+      },
+    };
+  });
 }
 
 async function waitForVoices(synth: SpeechSynthesis): Promise<SpeechSynthesisVoice[]> {
@@ -107,6 +158,7 @@ async function speakWithWebSpeech(payload: WebSpeechPayload): Promise<boolean> {
     return false;
   }
   try {
+    stopActiveServerPlayback();
     synth.cancel();
   } catch (error) {
     console.warn("[tts] Unable to cancel existing speech synthesis", error);
@@ -166,6 +218,9 @@ function buildServerPayload(options: Required<Pick<SpeakOptions, "text">> & Spea
   if (typeof options.volume === "number") {
     payload.volume = options.volume;
   }
+  if (options.model) {
+    payload.model = options.model;
+  }
   return payload;
 }
 
@@ -181,6 +236,7 @@ export async function speak({
   rate = 1,
   pitch = 1,
   volume = 1,
+  model = null,
 }: SpeakOptions): Promise<SpeakResult> {
   const content = text?.trim();
   if (!content) {
@@ -196,13 +252,14 @@ export async function speak({
     volume: clamp(toFinite(volume, 1), 0, 1),
   };
 
-  const payload = buildServerPayload({ text: content, lang, voiceName, rate, pitch, volume });
+  const payload = buildServerPayload({ text: content, lang, voiceName, rate, pitch, volume, model });
   const headers: HeadersInit = {
     Accept: "audio/*,application/json",
     "Content-Type": "application/json",
   };
 
   try {
+    stopActiveServerPlayback();
     const response = await request("/v1/ai/tts/say", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -267,6 +324,22 @@ const PRAISE_DEFAULT = "Bravo!";
 
 export async function speakPraise(text: string = PRAISE_DEFAULT): Promise<SpeakResult> {
   return speak({ text });
+}
+
+export function stopSpeaking(): void {
+  stopActiveServerPlayback();
+  if (typeof window === "undefined") {
+    return;
+  }
+  const synth = window.speechSynthesis;
+  if (!synth) {
+    return;
+  }
+  try {
+    synth.cancel();
+  } catch (error) {
+    console.warn("[tts] Unable to cancel speech synthesis", error);
+  }
 }
 
 if (typeof window !== "undefined") {

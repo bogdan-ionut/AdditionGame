@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MathGalaxyApiError, isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
-import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../../services/audioCatalog';
+import { isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
+import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices } from '../../services/audioCatalog';
 import { AUDIO_SETTINGS_EVENT, LS_AUDIO_SETTINGS, loadAudioSettings, saveAudioSettings, type AudioSettings } from './preferences';
-import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from './utils';
+import { createObjectUrlFromBase64 } from './utils';
+import { speak, stopSpeaking } from '../tts';
 import type { AiRuntimeState } from '../ai/runtime';
 
 export type VoicePreset = {
@@ -65,20 +66,6 @@ type PlayTextOptions = {
   model?: string | null;
   volume?: number;
 };
-
-type AudioClipResource = { url: string; revoke: () => void };
-
-type WebSpeechPayload = {
-  text: string;
-  language?: string | null;
-  speakingRate?: number;
-  pitch?: number;
-  volume?: number;
-};
-
-type ClipSource =
-  | ({ kind: 'audio' } & AudioClipResource)
-  | { kind: 'webspeech'; payload: WebSpeechPayload };
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
@@ -145,8 +132,6 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
   const [catalog, setCatalog] = useState<CatalogState>({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
   const [catalogStatus, setCatalogStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const narrationRef = useRef<HTMLAudioElement | null>(null);
-  const clipCache = useRef<Map<string, AudioClipResource>>(new Map());
   const sfxPlayersRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [narrationNotice, setNarrationNotice] = useState<string | null>(null);
 
@@ -177,12 +162,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
   );
 
   const stopNarration = useCallback(() => {
-    const audio = narrationRef.current;
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-    }
-    narrationRef.current = null;
+    stopSpeaking();
   }, []);
 
   useEffect(() => () => stopNarration(), [stopNarration]);
@@ -193,14 +173,6 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     const timeout = window.setTimeout(() => setNarrationNotice(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [narrationNotice]);
-
-  const clearNarrationClip = useCallback((key: string) => {
-    const cache = clipCache.current;
-    if (!cache.has(key)) return;
-    const entry = cache.get(key);
-    if (entry) entry.revoke();
-    cache.delete(key);
-  }, []);
 
   const getVoicePreset = useCallback(
     (voiceId: string | null | undefined): VoicePreset | null => {
@@ -346,200 +318,56 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     };
   }, []);
 
-  const ensureModel = useCallback(() => effectiveModel, [effectiveModel]);
-
-  const makeCacheKey = useCallback(
-    (text: string, overrides: Partial<PlayTextOptions>) => {
-      const model = overrides.model || effectiveModel || '';
-      const voice = overrides.voiceId || settings.narrationVoiceId || '';
-      const language = overrides.language || settings.narrationLanguage || '';
-      const rate = overrides.speakingRate || settings.speakingRate || 1;
-      const pitch = overrides.pitch || settings.pitch || 0;
-      return JSON.stringify({ text, model, voice, language, rate, pitch });
-    },
-    [effectiveModel, settings.narrationLanguage, settings.narrationVoiceId, settings.pitch, settings.speakingRate],
-  );
-
-  const fetchClip = useCallback(
-    async (text: string, overrides: Partial<PlayTextOptions>): Promise<ClipSource | null> => {
-      if (!text || !text.trim()) return null;
-      const model = overrides.model || ensureModel();
-      if (!model) return null;
-      if (!isMathGalaxyConfigured() || (!runtime?.serverHasKey && !runtime?.aiEnabled)) {
-        throw new MathGalaxyApiError(OFFLINE_MESSAGE);
-      }
-      const key = makeCacheKey(text, overrides);
-      const existing = clipCache.current.get(key);
-      if (existing) {
-        return { kind: 'audio', url: existing.url, revoke: existing.revoke };
-      }
-
-      const voiceId = overrides.voiceId || settings.narrationVoiceId || null;
-      const speakingRate = overrides.speakingRate || settings.speakingRate;
-      const pitch = overrides.pitch ?? settings.pitch;
-      const language = overrides.language || settings.narrationLanguage;
-
-      const payload: Record<string, unknown> = {
-        text,
-        model,
-        speakingRate,
-        speaking_rate: speakingRate,
-        pitch,
-        language,
-      };
-      if (voiceId) {
-        payload.voice = voiceId;
-        payload.voiceId = voiceId;
-      }
-
-      try {
-        const response = await synthesizeSpeech(payload);
-        if (!response || !response.buffer) {
-          throw new Error('TTS response missing audio payload.');
-        }
-
-        const playable = response.base64
-          ? createObjectUrlFromBase64(response.base64, response.mimeType)
-          : createObjectUrlFromBuffer(response.buffer, response.mimeType);
-        const clip: ClipSource = { kind: 'audio', url: playable.objectUrl, revoke: playable.revoke };
-        clipCache.current.set(key, { url: clip.url, revoke: clip.revoke });
-        return clip;
-      } catch (error) {
-        const fallbackPayload: WebSpeechPayload = {
-          text,
-          language,
-          speakingRate,
-          pitch,
-          volume: overrides.volume ?? settings.narrationVolume,
-        };
-        if (error instanceof MathGalaxyApiError && (error.status === 500 || error.status === 501)) {
-          console.error('[MathGalaxyAPI] /v1/ai/tts/say failed', {
-            status: error.status,
-            data: error.data || null,
-          });
-          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
-          return { kind: 'webspeech', payload: fallbackPayload };
-        }
-        if (error instanceof TypeError) {
-          console.warn('[MathGalaxyAPI] /v1/ai/tts/say network error, falling back to Web Speech.', error);
-          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
-          return { kind: 'webspeech', payload: fallbackPayload };
-        }
-        if (error instanceof MathGalaxyApiError && error.status === 0) {
-          console.warn('[MathGalaxyAPI] /v1/ai/tts/say returned no data, using Web Speech fallback.', error);
-          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
-          return { kind: 'webspeech', payload: fallbackPayload };
-        }
-        throw error;
-      }
-    },
-    [
-      ensureModel,
-      makeCacheKey,
-      runtime?.aiEnabled,
-      runtime?.serverHasKey,
-      settings.narrationLanguage,
-      settings.narrationVoiceId,
-      settings.pitch,
-      settings.speakingRate,
-      settings.narrationVolume,
-    ],
-  );
-
-  const playClip = useCallback(
-    async (clip: AudioClipResource, volume?: number) => {
-      stopNarration();
-      const audio = new Audio(clip.url);
-      audio.volume = normalizeVolume(volume ?? settings.narrationVolume, settings.narrationVolume);
-      narrationRef.current = audio;
-      try {
-        await audio.play();
-        await new Promise<void>((resolve, reject) => {
-          const handleEnd = () => {
-            audio.removeEventListener('ended', handleEnd);
-            audio.removeEventListener('error', handleError);
-            resolve();
-          };
-          const handleError = (event: Event) => {
-            audio.removeEventListener('ended', handleEnd);
-            audio.removeEventListener('error', handleError);
-            reject(event);
-          };
-          audio.addEventListener('ended', handleEnd);
-          audio.addEventListener('error', handleError);
-        });
-      } finally {
-        audio.pause();
-        audio.src = '';
-        narrationRef.current = null;
-      }
-    },
-    [settings.narrationVolume, stopNarration],
-  );
-
-  const speakWithWebSpeech = useCallback(
-    async (payload: WebSpeechPayload) => {
-      if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') {
-        throw new Error('Web Speech API not available');
-      }
-      if (!payload.text || !payload.text.trim()) {
-        return;
-      }
-      const synthesis = window.speechSynthesis;
-      try {
-        synthesis.cancel();
-      } catch (error) {
-        console.warn('[audio] Unable to cancel existing speech synthesis', error);
-      }
-      const utterance = new SpeechSynthesisUtterance(payload.text);
-      utterance.lang = payload.language || settings.narrationLanguage || 'ro-RO';
-      const rate = payload.speakingRate ?? settings.speakingRate ?? 1;
-      utterance.rate = Math.min(2, Math.max(0.1, rate));
-      const pitch = payload.pitch ?? settings.pitch ?? 1;
-      utterance.pitch = Math.min(2, Math.max(0, pitch));
-      utterance.volume = normalizeVolume(payload.volume ?? settings.narrationVolume, settings.narrationVolume);
-      await new Promise<void>((resolve, reject) => {
-        utterance.onend = () => resolve();
-        utterance.onerror = (event) => reject(event.error || event);
-        synthesis.speak(utterance);
-      });
-    },
-    [settings.narrationLanguage, settings.narrationVolume, settings.pitch, settings.speakingRate],
-  );
-
   const speakText = useCallback(
     async (options: PlayTextOptions) => {
       if (!settings.narrationEnabled) return;
+      const content = options.text?.trim();
+      if (!content) return;
+
+      stopNarration();
+
+      const voiceId = options.voiceId || settings.narrationVoiceId || null;
+      const voicePreset = getVoicePreset(voiceId);
+      const language = options.language || settings.narrationLanguage || undefined;
+      const speakingRate = options.speakingRate ?? settings.speakingRate ?? 1;
+      const pitch = options.pitch ?? settings.pitch ?? 1;
+      const volume = normalizeVolume(options.volume ?? settings.narrationVolume, settings.narrationVolume);
+      const model = options.model || effectiveModel || null;
+
       try {
-        const clip = await fetchClip(options.text, options);
-        if (!clip) return;
-        if (clip.kind === 'webspeech') {
-          try {
-            await speakWithWebSpeech({
-              text: options.text,
-              language: clip.payload.language,
-              speakingRate: clip.payload.speakingRate,
-              pitch: clip.payload.pitch,
-              volume: clip.payload.volume ?? options.volume,
-            });
-          } catch (fallbackError) {
-            console.warn('[audio] Web Speech API playback failed', fallbackError);
-            setNarrationNotice('Vocea dispozitivului nu este disponibilă pe acest browser.');
-          }
-          return;
-        }
-        try {
-          await playClip(clip, options.volume);
-        } catch (error) {
-          console.warn('[audio] Unable to play narration clip', error);
-          clearNarrationClip(makeCacheKey(options.text, options));
+        const result = await speak({
+          text: content,
+          lang: language || undefined,
+          voiceName: voicePreset?.id || voiceId || undefined,
+          rate: speakingRate,
+          pitch,
+          volume,
+          model,
+        });
+
+        if (result.mode === 'server') {
+          setNarrationNotice(null);
+        } else if (result.mode === 'webspeech') {
+          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
+        } else {
+          setNarrationNotice('Vocea dispozitivului nu este disponibilă pe acest browser.');
         }
       } catch (error) {
-        console.warn('[audio] Unable to prepare narration clip', error);
-        clearNarrationClip(makeCacheKey(options.text, options));
+        console.warn('[audio] Unable to speak text', error);
+        setNarrationNotice('Nu am putut reda vocea. Verifică setările audio.');
       }
     },
-    [clearNarrationClip, fetchClip, makeCacheKey, playClip, settings.narrationEnabled, speakWithWebSpeech],
+    [
+      effectiveModel,
+      getVoicePreset,
+      settings.narrationEnabled,
+      settings.narrationLanguage,
+      settings.narrationVoiceId,
+      settings.narrationVolume,
+      settings.pitch,
+      settings.speakingRate,
+      stopNarration,
+    ],
   );
 
   const speakProblem = useCallback(
