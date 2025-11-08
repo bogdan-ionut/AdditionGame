@@ -90,12 +90,21 @@ const describeLanguageOption = (code) => {
 };
 
 export default function ParentAISettings({ onClose }) {
+  const initialConfig = useMemo(() => loadAiConfig(), []);
   const [keyInput, setKeyInput] = useState('');
-  const [planningModel, setPlanningModel] = useState('');
-  const [spriteModel, setSpriteModel] = useState('gemini-2.5-flash-image');
-  const [audioModel, setAudioModel] = useState('');
-  const [aiAllowed, setAiAllowed] = useState(true);
-  const [runtime, setRuntime] = useState(initialRuntime);
+  const [planningModel, setPlanningModel] = useState(() => initialConfig.planningModel || '');
+  const [spriteModel, setSpriteModel] = useState(
+    () => initialConfig.spriteModel || 'gemini-2.5-flash-image',
+  );
+  const [audioModel, setAudioModel] = useState(() => initialConfig.audioModel || '');
+  const [aiAllowed, setAiAllowed] = useState(() => initialConfig.aiAllowed !== false);
+  const [runtime, setRuntime] = useState(() => ({
+    ...initialRuntime,
+    planningModel: initialConfig.planningModel,
+    spriteModel: initialConfig.spriteModel,
+    audioModel: initialConfig.audioModel,
+    aiAllowed: initialConfig.aiAllowed !== false,
+  }));
   const [keyStatus, setKeyStatus] = useState({ state: 'idle', message: null });
   const [keyWarning, setKeyWarning] = useState(null);
   const [testStatus, setTestStatus] = useState({ state: 'idle', message: null, ok: null });
@@ -114,46 +123,6 @@ export default function ParentAISettings({ onClose }) {
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
   const ttsAvailable = Boolean(currentBaseUrl && runtime.serverHasKey);
-
-  const saveApiBase = useCallback(() => {
-    const value = (apiBase || '').trim();
-    if (!value) {
-      setApiBaseStatus({ state: 'error', message: 'Introduce a valid HTTPS URL before saving.' });
-      return;
-    }
-
-    try {
-      setApiBaseUrl(value);
-      setApiBaseStatus({ state: 'success', message: 'Saved! Reloading…' });
-    } catch (error) {
-      console.warn('Unable to persist Cloud API base override.', error);
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'We could not persist the Cloud API Base URL. Check storage permissions.';
-      setApiBaseStatus({
-        state: 'error',
-        message,
-      });
-      return;
-    }
-  }, [apiBase]);
-
-  const resetApiBase = useCallback(() => {
-    try {
-      setApiBaseUrl('');
-      setApiBase('');
-      setApiBaseStatus({ state: 'success', message: 'Override cleared. Reloading…' });
-    } catch (error) {
-      console.warn('Unable to clear Cloud API base override.', error);
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'Unable to clear Cloud API Base URL. Try again.';
-      setApiBaseStatus({ state: 'error', message });
-      return;
-    }
-  }, []);
 
   const describeVoice = useCallback((voice) => {
     if (!voice) return '';
@@ -635,18 +604,15 @@ export default function ParentAISettings({ onClose }) {
     }
   }, [audioCatalog.voices, audioSettings]);
 
-  const applyConfig = useCallback(() => {
-    const cfg = loadAiConfig();
-    setPlanningModel(cfg.planningModel || '');
-    setSpriteModel(cfg.spriteModel || 'gemini-2.5-flash-image');
-    setAudioModel(cfg.audioModel || '');
-    setAiAllowed(cfg.aiAllowed !== false);
-  }, []);
-
-  const syncRuntime = useCallback(async () => {
+  const syncRuntime = useCallback(async (options = {}) => {
     const next = await getAiRuntime();
     setRuntime(next);
-    setKeyWarning(next.note || null);
+    const fallbackNote = options?.fallbackNote;
+    setKeyWarning(() => {
+      if (next.note) return next.note;
+      if (fallbackNote !== undefined) return fallbackNote;
+      return null;
+    });
     setPlanningModel((prev) => {
       const trimmed = typeof prev === 'string' ? prev.trim() : '';
       return trimmed ? prev : next.planningModel || '';
@@ -659,7 +625,9 @@ export default function ParentAISettings({ onClose }) {
       const trimmed = typeof prev === 'string' ? prev.trim() : '';
       return trimmed ? prev : next.audioModel || '';
     });
-    setAiAllowed(next.aiAllowed !== false);
+    if (!options?.preserveAiAllowed) {
+      setAiAllowed(next.aiAllowed !== false);
+    }
     setAudioSettings((prev) => {
       const target = next.audioModel || next.defaultTtsModel || prev.narrationModel || null;
       if (!target || prev.narrationModel === target) {
@@ -670,10 +638,55 @@ export default function ParentAISettings({ onClose }) {
     return next;
   }, []);
 
+  const saveApiBase = useCallback(async () => {
+    const value = (apiBase || '').trim();
+    if (!value) {
+      setApiBaseStatus({ state: 'error', message: 'Introduce a valid HTTPS URL before saving.' });
+      return;
+    }
+
+    try {
+      setApiBaseStatus({ state: 'loading', message: 'Saving override…' });
+      setApiBaseUrl(value);
+      setApiBaseStatus({ state: 'loading', message: 'Override saved. Updating runtime…' });
+      await syncRuntime({ preserveAiAllowed: true });
+      setApiBaseStatus({ state: 'success', message: 'Override saved.' });
+    } catch (error) {
+      console.warn('Unable to persist Cloud API base override.', error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'We could not persist the Cloud API Base URL. Check storage permissions.';
+      setApiBaseStatus({
+        state: 'error',
+        message,
+      });
+      return;
+    }
+  }, [apiBase, syncRuntime]);
+
+  const resetApiBase = useCallback(async () => {
+    try {
+      setApiBaseStatus({ state: 'loading', message: 'Clearing override…' });
+      setApiBaseUrl('');
+      setApiBase('');
+      setApiBaseStatus({ state: 'loading', message: 'Override cleared. Updating runtime…' });
+      await syncRuntime({ preserveAiAllowed: true });
+      setApiBaseStatus({ state: 'success', message: 'Override cleared.' });
+    } catch (error) {
+      console.warn('Unable to clear Cloud API base override.', error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to clear Cloud API Base URL. Try again.';
+      setApiBaseStatus({ state: 'error', message });
+      return;
+    }
+  }, [syncRuntime]);
+
   useEffect(() => {
-    applyConfig();
     syncRuntime();
-  }, [applyConfig, syncRuntime]);
+  }, [syncRuntime]);
 
   const runHealthCheck = useCallback(
     async () => {
@@ -703,7 +716,7 @@ export default function ParentAISettings({ onClose }) {
         }
         setTestStatus({ state: 'success', ok: true, message: infoParts.join(' • ') });
         window.dispatchEvent(new Event('ai:online'));
-        await syncRuntime();
+        await syncRuntime({ preserveAiAllowed: true });
       } catch (error) {
         const message =
           error instanceof MathGalaxyApiError || error instanceof TypeError
@@ -712,7 +725,7 @@ export default function ParentAISettings({ onClose }) {
         setTestStatus({ state: 'error', ok: false, message });
         window.dispatchEvent(new CustomEvent('ai:offline', { detail: message }));
         setKeyWarning(null);
-        await syncRuntime();
+        await syncRuntime({ preserveAiAllowed: true });
       }
     },
     [apiBase, currentBaseUrl, syncRuntime],
@@ -735,7 +748,23 @@ export default function ParentAISettings({ onClose }) {
       setKeyStatus({ state: 'success', message });
       setKeyWarning(response?.note || null);
       setKeyInput((prev) => prev.trim());
-      await syncRuntime();
+      const updatedRuntime = await syncRuntime({ fallbackNote: response?.note ?? undefined, preserveAiAllowed: true });
+      if (response?.verified) {
+        setRuntime((prev) => {
+          const base = updatedRuntime || prev;
+          const effectivePlanning = (planningModel.trim() || base.planningModel || '').trim();
+          const effectiveSprite = (spriteModel.trim() || base.spriteModel || '').trim();
+          const aiEnabled = Boolean(aiAllowed && effectivePlanning && effectiveSprite);
+          const nextLastError =
+            base.lastError && base.lastError.includes('Gemini API key missing') ? null : base.lastError;
+          return {
+            ...base,
+            serverHasKey: true,
+            aiEnabled: response.verified ? aiEnabled : base.aiEnabled,
+            lastError: nextLastError,
+          };
+        });
+      }
     } catch (error) {
       const message =
         error instanceof MathGalaxyApiError || error instanceof TypeError
@@ -744,7 +773,7 @@ export default function ParentAISettings({ onClose }) {
       setKeyStatus({ state: 'error', message });
       setKeyWarning(null);
     }
-  }, [keyInput, planningModel, runtime.planningModel, syncRuntime]);
+  }, [aiAllowed, keyInput, planningModel, runtime.planningModel, spriteModel, syncRuntime]);
 
   const handleSaveModels = useCallback(async () => {
     const nextErrors = {
@@ -766,16 +795,41 @@ export default function ParentAISettings({ onClose }) {
         aiAllowed,
       });
       setModelStatus({ state: 'success', message: 'Model preferences saved.' });
-      await syncRuntime();
+      const updatedRuntime = await syncRuntime();
+      setRuntime((prev) => {
+        const base = updatedRuntime || prev;
+        const planning = planningModel.trim();
+        const sprite = spriteModel.trim();
+        const audio = audioModel.trim() ? audioModel.trim() : null;
+        const aiEnabled = Boolean(base.serverHasKey && aiAllowed && planning && sprite);
+        return {
+          ...base,
+          planningModel: planning || base.planningModel,
+          spriteModel: sprite || base.spriteModel,
+          audioModel: audio ?? base.audioModel,
+          aiAllowed,
+          aiEnabled,
+        };
+      });
     } catch (error) {
       setModelStatus({ state: 'error', message: error.message || 'Unable to save model preferences.' });
     }
   }, [aiAllowed, audioModel, planningModel, spriteModel, syncRuntime]);
 
   const toggleAiAllowed = useCallback(() => {
-    setAiAllowed((prev) => !prev);
+    const nextAllowed = !aiAllowed;
+    setAiAllowed(nextAllowed);
     setModelStatus({ state: 'idle', message: null });
-  }, []);
+    setRuntime((prev) => {
+      const planningValue = (planningModel.trim() || prev.planningModel || '').trim();
+      const spriteValue = (spriteModel.trim() || prev.spriteModel || '').trim();
+      return {
+        ...prev,
+        aiAllowed: nextAllowed,
+        aiEnabled: Boolean(prev.serverHasKey && nextAllowed && planningValue && spriteValue),
+      };
+    });
+  }, [aiAllowed, planningModel, spriteModel]);
 
   const aiToggleLabel = useMemo(() => (aiAllowed ? 'AI features will run when enabled.' : 'AI features are paused until you re-enable them.'), [aiAllowed]);
 
