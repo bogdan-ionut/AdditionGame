@@ -17,7 +17,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handleOffline = (event) => {
+    const handleOffline = () => {
       setAiOffline(true);
     };
     const handleOnline = () => {
@@ -62,7 +62,7 @@ function App() {
           aiOffline={aiOffline}
         />
         {aiSettingsOpen && (
-          <ParentAISettings onClose={closeAiSettings} onSaved={closeAiSettings} />
+          <ParentAISettings onClose={closeAiSettings} />
         )}
       </>
     );
@@ -84,7 +84,7 @@ function App() {
         }}
       />
       {aiSettingsOpen && (
-        <ParentAISettings onClose={closeAiSettings} onSaved={closeAiSettings} />
+        <ParentAISettings onClose={closeAiSettings} />
       )}
     </>
   );

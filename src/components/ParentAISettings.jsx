@@ -30,61 +30,6 @@ const SFX_CATEGORY_SYNONYMS = {
 
 const API_OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
-const readBooleanish = (value) => {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') {
-    if (Number.isFinite(value)) {
-      if (value === 1) return true;
-      if (value === 0) return false;
-    }
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (!normalized) return null;
-    if (['true', '1', 'yes', 'y', 'ok', 'success', 'verified'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'n', 'fail', 'failed', 'error'].includes(normalized)) return false;
-  }
-  return null;
-};
-
-const readString = (value) => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-};
-
-const determineKeyPresence = (payload) => {
-  if (!payload || typeof payload !== 'object') return false;
-  if (typeof payload.serverHasKey === 'boolean') return payload.serverHasKey;
-  if (typeof payload.server_has_key === 'boolean') return payload.server_has_key;
-  const keys = [
-    'have_key',
-    'haveKey',
-    'server_has_key',
-    'serverHasKey',
-    'key_present',
-    'keyPresent',
-    'has_key',
-    'hasKey',
-    'verified',
-    'isVerified',
-    'ok',
-    'success',
-    'status',
-  ];
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(payload, key)) {
-      const candidate = readBooleanish(payload[key]);
-      if (candidate !== null) {
-        return candidate;
-      }
-    }
-  }
-  return false;
-};
-
 const initialRuntime = {
   aiEnabled: false,
   serverHasKey: false,
@@ -144,7 +89,7 @@ const describeLanguageOption = (code) => {
   return code;
 };
 
-export default function ParentAISettings({ onClose, onSaved }) {
+export default function ParentAISettings({ onClose }) {
   const [keyInput, setKeyInput] = useState('');
   const [planningModel, setPlanningModel] = useState('');
   const [spriteModel, setSpriteModel] = useState('gemini-2.5-flash-image');
@@ -163,35 +108,70 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const [previewStatus, setPreviewStatus] = useState({ state: 'idle', message: null });
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
   const [apiBase, setApiBase] = useState(() => getApiBaseUrl() || '');
-  const [saved, setSaved] = useState(false);
+  const [apiBaseStatus, setApiBaseStatus] = useState({ state: 'idle', message: null });
+  const [effectiveBaseUrl, setEffectiveBaseUrl] = useState(() => getConfiguredBaseUrl() || getApiBaseUrl() || '');
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
-  const effectiveBaseUrl = useMemo(() => getConfiguredBaseUrl() || '', []);
 
   const saveApiBase = useCallback(() => {
     const value = (apiBase || '').trim();
+    if (!value) {
+      setApiBaseStatus({ state: 'error', message: 'Introduce a valid HTTPS URL before saving.' });
+      return;
+    }
+
+    let normalized;
     try {
-      setApiBaseUrl(value || null);
-      setSaved(true);
+      const parsed = new URL(value);
+      if (!/^https?:$/.test(parsed.protocol)) {
+        throw new Error('Cloud API base must start with http:// or https://');
+      }
+      normalized = value.replace(/\/+$/, '');
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to read Cloud API Base URL. Please check the format.';
+      setApiBaseStatus({ state: 'error', message });
+      return;
+    }
+
+    try {
+      setApiBaseUrl(normalized);
+      setApiBase(normalized);
+      setApiBaseStatus({ state: 'success', message: 'Saved! Reloading…' });
     } catch (error) {
       console.warn('Unable to persist Cloud API base override.', error);
+      setApiBaseStatus({
+        state: 'error',
+        message: 'We could not persist the Cloud API Base URL. Check storage permissions.',
+      });
+      return;
     }
+
     if (typeof window !== 'undefined') {
-      window.location.reload();
+      setTimeout(() => {
+        window.location.reload();
+      }, 250);
     }
   }, [apiBase]);
 
   const resetApiBase = useCallback(() => {
     try {
       setApiBaseUrl(null);
+      setApiBase('');
+      setApiBaseStatus({ state: 'success', message: 'Override cleared. Reloading…' });
     } catch (error) {
       console.warn('Unable to clear Cloud API base override.', error);
+      setApiBaseStatus({ state: 'error', message: 'Unable to clear Cloud API Base URL. Try again.' });
+      return;
     }
-    setApiBase('');
-    setSaved(true);
+
     if (typeof window !== 'undefined') {
-      window.location.reload();
+      setTimeout(() => {
+        window.location.reload();
+      }, 250);
     }
   }, []);
 
@@ -270,11 +250,15 @@ export default function ParentAISettings({ onClose, onSaved }) {
 
     setCatalogStatus({ state: 'loading', message: 'Se încarcă vocile și sunetele…' });
     try {
-      const [modelsResult, voicesResult, sfxResult] = await Promise.all([
-        fetchTtsModels().catch(() => null),
-        fetchTtsVoices({ mode: audioSettings.sfxLowStimMode ? 'low-stim' : undefined }).catch(() => null),
-        fetchAudioSfx({ mode: audioSettings.sfxLowStimMode ? 'low-stim' : undefined }).catch(() => null),
+      const [modelsOutcome, voicesOutcome, sfxOutcome] = await Promise.allSettled([
+        fetchTtsModels(),
+        fetchTtsVoices({ mode: audioSettings.sfxLowStimMode ? 'low-stim' : undefined }),
+        fetchAudioSfx({ mode: audioSettings.sfxLowStimMode ? 'low-stim' : undefined }),
       ]);
+
+      const modelsResult = modelsOutcome.status === 'fulfilled' ? modelsOutcome.value : null;
+      const voicesResult = voicesOutcome.status === 'fulfilled' ? voicesOutcome.value : null;
+      const sfxResult = sfxOutcome.status === 'fulfilled' ? sfxOutcome.value : null;
 
       const modelIds = Array.isArray(modelsResult?.models)
         ? modelsResult.models.filter((value) => typeof value === 'string')
@@ -348,7 +332,30 @@ export default function ParentAISettings({ onClose, onSaved }) {
             : sfxPacks.find((pack) => pack.default)?.id || null;
 
       setAudioCatalog({ models: modelIds, voices, sfxPacks, defaultSfxPackId: defaultPackId });
-      setCatalogStatus({ state: 'success', message: null });
+
+      const failedResources = [];
+      if (modelsOutcome.status === 'rejected') {
+        console.warn('Unable to load TTS models.', modelsOutcome.reason);
+        failedResources.push('models');
+      }
+      if (voicesOutcome.status === 'rejected') {
+        console.warn('Unable to load TTS voices.', voicesOutcome.reason);
+        failedResources.push('voices');
+      }
+      if (sfxOutcome.status === 'rejected') {
+        console.warn('Unable to load SFX packs.', sfxOutcome.reason);
+      }
+
+      if (failedResources.length) {
+        const label = failedResources.length === 2 ? 'models and voices' : failedResources[0];
+        const message = `Unable to load ${label}. Check API key and CORS.`;
+        setCatalogStatus({ state: 'error', message });
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert(message);
+        }
+      } else {
+        setCatalogStatus({ state: 'success', message: null });
+      }
     } catch (error) {
       const message =
         error instanceof MathGalaxyApiError || error instanceof TypeError
@@ -599,46 +606,44 @@ export default function ParentAISettings({ onClose, onSaved }) {
     setAiAllowed(cfg.aiAllowed !== false);
   }, []);
 
-  const syncRuntime = useCallback(
-    async (notify = false) => {
-      const next = await getAiRuntime();
-      setRuntime(next);
-      setKeyWarning(next.note || null);
-      setPlanningModel((prev) => {
-        const trimmed = typeof prev === 'string' ? prev.trim() : '';
-        return trimmed ? prev : next.planningModel || '';
-      });
-      setSpriteModel((prev) => {
-        const trimmed = typeof prev === 'string' ? prev.trim() : '';
-        return trimmed ? prev : next.spriteModel || 'gemini-2.5-flash-image';
-      });
-      setAudioModel((prev) => {
-        const trimmed = typeof prev === 'string' ? prev.trim() : '';
-        return trimmed ? prev : next.audioModel || '';
-      });
-      setAiAllowed(next.aiAllowed !== false);
-      setAudioSettings((prev) => {
-        const target = next.audioModel || next.defaultTtsModel || prev.narrationModel || null;
-        if (!target || prev.narrationModel === target) {
-          return prev;
-        }
-        return saveAudioSettings({ narrationModel: target });
-      });
-      if (notify) {
-        onSaved?.(next);
+  const syncRuntime = useCallback(async () => {
+    const next = await getAiRuntime();
+    setRuntime(next);
+    setKeyWarning(next.note || null);
+    setPlanningModel((prev) => {
+      const trimmed = typeof prev === 'string' ? prev.trim() : '';
+      return trimmed ? prev : next.planningModel || '';
+    });
+    setSpriteModel((prev) => {
+      const trimmed = typeof prev === 'string' ? prev.trim() : '';
+      return trimmed ? prev : next.spriteModel || 'gemini-2.5-flash-image';
+    });
+    setAudioModel((prev) => {
+      const trimmed = typeof prev === 'string' ? prev.trim() : '';
+      return trimmed ? prev : next.audioModel || '';
+    });
+    setAiAllowed(next.aiAllowed !== false);
+    setAudioSettings((prev) => {
+      const target = next.audioModel || next.defaultTtsModel || prev.narrationModel || null;
+      if (!target || prev.narrationModel === target) {
+        return prev;
       }
-      return next;
-    },
-    [onSaved],
-  );
+      return saveAudioSettings({ narrationModel: target });
+    });
+    return next;
+  }, []);
 
   useEffect(() => {
     applyConfig();
-    syncRuntime(false);
+    syncRuntime();
   }, [applyConfig, syncRuntime]);
 
+  useEffect(() => {
+    setEffectiveBaseUrl(getConfiguredBaseUrl() || getApiBaseUrl() || '');
+  }, [apiBaseStatus]);
+
   const runHealthCheck = useCallback(
-    async (notify = false) => {
+    async () => {
       const candidateBase = (apiBase || '').trim() || getConfiguredBaseUrl() || getApiBaseUrl() || '';
       if (!candidateBase) {
         setTestStatus({ state: 'error', ok: false, message: 'Set a Cloud API Base URL before testing the connection.' });
@@ -665,7 +670,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
         }
         setTestStatus({ state: 'success', ok: true, message: infoParts.join(' • ') });
         window.dispatchEvent(new Event('ai:online'));
-        await syncRuntime(notify);
+        await syncRuntime();
       } catch (error) {
         const message =
           error instanceof MathGalaxyApiError || error instanceof TypeError
@@ -674,7 +679,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
         setTestStatus({ state: 'error', ok: false, message });
         window.dispatchEvent(new CustomEvent('ai:offline', { detail: message }));
         setKeyWarning(null);
-        await syncRuntime(notify);
+        await syncRuntime();
       }
     },
     [apiBase, syncRuntime],
@@ -696,8 +701,8 @@ export default function ParentAISettings({ onClose, onSaved }) {
         || 'API key saved securely.';
       setKeyStatus({ state: 'success', message });
       setKeyWarning(response?.note || null);
-      setKeyInput('');
-      await runHealthCheck(true);
+      setKeyInput((prev) => prev.trim());
+      await syncRuntime();
     } catch (error) {
       const message =
         error instanceof MathGalaxyApiError || error instanceof TypeError
@@ -706,7 +711,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
       setKeyStatus({ state: 'error', message });
       setKeyWarning(null);
     }
-  }, [keyInput, runHealthCheck]);
+  }, [keyInput, planningModel, runtime.planningModel, syncRuntime]);
 
   const handleSaveModels = useCallback(async () => {
     const nextErrors = {
@@ -728,7 +733,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
         aiAllowed,
       });
       setModelStatus({ state: 'success', message: 'Model preferences saved.' });
-      await syncRuntime(true);
+      await syncRuntime();
     } catch (error) {
       setModelStatus({ state: 'error', message: error.message || 'Unable to save model preferences.' });
     }
@@ -794,7 +799,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
               value={apiBase}
               onChange={(event) => {
                 setApiBase(event.target.value);
-                setSaved(false);
+                setApiBaseStatus({ state: 'idle', message: null });
               }}
               placeholder="https://math-api-811756754621.us-central1.run.app"
               className="w-full rounded-2xl border-2 border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -819,8 +824,14 @@ export default function ParentAISettings({ onClose, onSaved }) {
             <p className="text-xs text-gray-500">
               Current base: <span className="font-semibold">{effectiveBaseUrl || 'Not configured'}</span>.
             </p>
-            {saved && (
-              <p className="text-xs font-medium text-emerald-600">Saved! Reloading…</p>
+            {apiBaseStatus.state !== 'idle' && apiBaseStatus.message && (
+              <p
+                className={`text-xs font-medium ${
+                  apiBaseStatus.state === 'error' ? 'text-red-600' : 'text-emerald-600'
+                }`}
+              >
+                {apiBaseStatus.message}
+              </p>
             )}
           </div>
           <div className="flex gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
@@ -861,7 +872,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
                 )}
               </button>
               <button
-                onClick={() => runHealthCheck(true)}
+                onClick={() => runHealthCheck()}
                 disabled={testStatus.state === 'loading'}
                 className={`px-5 py-3 rounded-xl font-semibold border-2 shadow-sm ${
                   testStatus.state === 'loading'
