@@ -121,6 +121,44 @@ const sanitizeInterestList = (values = []) => {
     .slice(0, 12);
 };
 
+const normalizeApiHealth = (health) => {
+  if (!health || typeof health !== 'object') {
+    return {
+      ok: false,
+      has_key: false,
+      cors_ok: false,
+      tts_ok: false,
+      sprites_ok: false,
+      lastCheckedAt: null,
+    };
+  }
+
+  const keyValue =
+    health.has_key ??
+    health.hasKey ??
+    health.key_on_server ??
+    health.keyOnServer ??
+    health.key_configured ??
+    health.keyConfigured;
+
+  return {
+    ...health,
+    ok: Boolean(health.ok),
+    has_key: keyValue !== undefined ? Boolean(keyValue) : Boolean(health.has_key),
+    cors_ok: Boolean(health.cors_ok ?? health.corsOk),
+    tts_ok: Boolean(health.tts_ok ?? health.ttsOk),
+    sprites_ok: Boolean(health.sprites_ok ?? health.spritesOk ?? health.sprites_ready ?? health.spritesReady),
+    lastCheckedAt:
+      typeof health.lastCheckedAt === 'string'
+        ? health.lastCheckedAt
+        : typeof health.last_checked_at === 'string'
+          ? health.last_checked_at
+          : typeof health.last_checked === 'string'
+            ? health.last_checked
+            : null,
+  };
+};
+
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -1245,6 +1283,9 @@ const ModeSelection = ({
   aiRuntime,
   motifJobState,
   motifRetrySeconds,
+  apiHealth,
+  aiBadgeActive,
+  narrationNotice,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1304,8 +1345,6 @@ const ModeSelection = ({
     return !(prev && (prev.level === 'mastered' || prevAccuracy >= 0.9));
   };
 
-  const aiBadgeActive = useMemo(() => Boolean(apiHealth.ok && apiHealth.has_key && apiHealth.cors_ok), [apiHealth]);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
       <div className="max-w-5xl w-full">
@@ -1337,7 +1376,7 @@ const ModeSelection = ({
           >
             <span>{aiBadgeActive ? 'AI features enabled' : 'AI features disabled'}</span>
             <span className="text-xs font-normal text-gray-500">
-              Server key: {apiHealth.has_key ? 'Yes' : 'No'} · CORS: {apiHealth.cors_ok ? 'OK' : 'Blocked'}
+              Server key: {apiHealth?.has_key ? 'Yes' : 'No'} · CORS: {apiHealth?.cors_ok ? 'OK' : 'Blocked'}
             </span>
           </div>
         </div>
@@ -1769,7 +1808,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     allowedTtsModels: [],
     runtimeLabel: null,
   });
-  const [apiHealth, setApiHealth] = useState(() => getMathGalaxyHealth());
+  const [apiHealth, setApiHealth] = useState(() => normalizeApiHealth(getMathGalaxyHealth()));
   const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
   const [motifJobState, setMotifJobState] = useState(() => createDefaultMotifJobState());
   const motifPollingRef = useRef(null);
@@ -1803,6 +1842,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const streakProgressRef = useRef(0);
   const checkpointStatusRef = useRef('idle');
   const spokenModeRef = useRef(null);
+  const aiBadgeActive = useMemo(() => Boolean(apiHealth.ok && apiHealth.has_key && apiHealth.cors_ok), [apiHealth]);
 
   const openSettings = useCallback(() => {
     if (typeof onOpenAiSettings === 'function') {
@@ -1817,13 +1857,17 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const handleHealthUpdate = (event) => {
       const detail = event instanceof CustomEvent ? event.detail : null;
       if (detail) {
-        setApiHealth(detail);
+        setApiHealth(normalizeApiHealth(detail));
       } else {
-        setApiHealth(getMathGalaxyHealth());
+        setApiHealth(normalizeApiHealth(getMathGalaxyHealth()));
       }
     };
     window.addEventListener('mg:health:updated', handleHealthUpdate);
-    refreshMathGalaxyHealth().then(setApiHealth).catch(() => {});
+    refreshMathGalaxyHealth()
+      .then((health) => {
+        setApiHealth(normalizeApiHealth(health));
+      })
+      .catch(() => {});
     return () => {
       window.removeEventListener('mg:health:updated', handleHealthUpdate);
     };
@@ -3519,6 +3563,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         aiRuntime={aiRuntime}
         motifJobState={motifJobState}
         motifRetrySeconds={motifRetrySeconds}
+        apiHealth={apiHealth}
+        aiBadgeActive={aiBadgeActive}
+        narrationNotice={narrationNotice}
       />
     );
   }
