@@ -2,6 +2,43 @@
 // Tiny SDK for Math Galaxy API (FastAPI @ Cloud Run)
 import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from "../lib/env";
 
+const OFFLINE_EVENT = "ai:offline";
+const ONLINE_EVENT = "ai:online";
+
+let onlineNotified = false;
+
+function emitOnline() {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") {
+    return;
+  }
+  if (onlineNotified) {
+    return;
+  }
+  window.dispatchEvent(new Event(ONLINE_EVENT));
+  onlineNotified = true;
+}
+
+function emitOffline(reason: unknown) {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") {
+    return;
+  }
+  onlineNotified = false;
+  const detail = (() => {
+    if (reason instanceof Error && reason.message) {
+      return reason.message;
+    }
+    if (typeof reason === "string") {
+      return reason;
+    }
+    try {
+      return JSON.stringify(reason);
+    } catch {
+      return "AI offline";
+    }
+  })();
+  window.dispatchEvent(new CustomEvent(OFFLINE_EVENT, { detail }));
+}
+
 export type Problem = { a: number; b: number; op?: string };
 export type AttemptIn = {
   userId: string;
@@ -36,7 +73,7 @@ export const BASE_URL = resolveApiBaseUrl();
 
 export function requireApiUrl(): string {
   if (!BASE_URL) {
-    console.warn(MISSING_BASE_ERROR);
+    emitOffline(new Error(MISSING_BASE_ERROR));
   }
   return BASE_URL;
 }
@@ -377,6 +414,7 @@ export class MathGalaxyAPI {
         if (!response.ok) {
           throw await this.buildHttpError(response);
         }
+        emitOnline();
         return response;
       } catch (error) {
         clearTimeout(timeout);
@@ -394,6 +432,7 @@ export class MathGalaxyAPI {
 
         lastErr = normalized;
         if (attempt >= this.cfg.retries) {
+          emitOffline(normalized);
           throw normalized;
         }
 
@@ -402,7 +441,9 @@ export class MathGalaxyAPI {
       attempt++;
     }
 
-    throw lastErr ?? new MathGalaxyApiError("Network error");
+    const failure = lastErr ?? new MathGalaxyApiError("Network error");
+    emitOffline(failure);
+    throw failure;
   }
 
   private async buildHttpError(response: Response): Promise<MathGalaxyApiError> {

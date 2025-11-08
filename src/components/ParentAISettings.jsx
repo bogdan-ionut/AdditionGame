@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { loadAiConfig, saveAiConfig, getAiRuntime } from '../lib/ai/runtime';
-import { saveGeminiKey, testGeminiKey } from '../services/aiPlanner';
+import { saveGeminiKey } from '../services/aiPlanner';
 import { isAiProxyConfigured } from '../services/aiEndpoints';
 import { MathGalaxyApiError, getConfiguredBaseUrl } from '../services/mathGalaxyClient';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
 import { createObjectUrlFromBase64, extractAudioFromResponse } from '../lib/audio/utils';
-import { resolveApiBaseUrl } from '../lib/env';
+import { MathGalaxyAPI } from '../services/math-galaxy-api';
+import { getApiBaseUrl, setApiBaseUrl } from '../lib/api/baseUrl';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -161,7 +162,7 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const [audioCatalog, setAudioCatalog] = useState({ models: [], voices: [], sfxPacks: [], defaultSfxPackId: null });
   const [previewStatus, setPreviewStatus] = useState({ state: 'idle', message: null });
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
-  const [apiBase, setApiBase] = useState(() => resolveApiBaseUrl());
+  const [apiBase, setApiBase] = useState(() => getApiBaseUrl() || '');
   const [saved, setSaved] = useState(false);
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
@@ -169,35 +170,29 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const effectiveBaseUrl = useMemo(() => getConfiguredBaseUrl() || '', []);
 
   const saveApiBase = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
     const value = (apiBase || '').trim();
     try {
-      if (value) {
-        window.localStorage.setItem('mg:apiBaseUrl', value);
-      } else {
-        window.localStorage.removeItem('mg:apiBaseUrl');
-      }
+      setApiBaseUrl(value || null);
       setSaved(true);
     } catch (error) {
       console.warn('Unable to persist Cloud API base override.', error);
     }
-    window.location.reload();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   }, [apiBase]);
 
   const resetApiBase = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
     try {
-      window.localStorage.removeItem('mg:apiBaseUrl');
+      setApiBaseUrl(null);
     } catch (error) {
       console.warn('Unable to clear Cloud API base override.', error);
     }
     setApiBase('');
     setSaved(true);
-    window.location.reload();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   }, []);
 
   const describeVoice = useCallback((voice) => {
@@ -644,24 +639,32 @@ export default function ParentAISettings({ onClose, onSaved }) {
 
   const runHealthCheck = useCallback(
     async (notify = false) => {
+      const candidateBase = (apiBase || '').trim() || getConfiguredBaseUrl() || getApiBaseUrl() || '';
+      if (!candidateBase) {
+        setTestStatus({ state: 'error', ok: false, message: 'Set a Cloud API Base URL before testing the connection.' });
+        return;
+      }
+
       setTestStatus({ state: 'loading', ok: null, message: null });
       try {
-        const response = await testGeminiKey();
-        const hasKey = determineKeyPresence(response);
+        const client = new MathGalaxyAPI({ baseUrl: candidateBase });
+        const status = await client.aiStatus();
         const infoParts = [];
-        infoParts.push(`Server key: ${hasKey ? 'Yes' : 'No'}`);
-        if (response?.model) {
-          infoParts.push(`Model: ${response.model}`);
+        if (status && typeof status === 'object') {
+          const statusText = typeof status.status === 'string' ? status.status : null;
+          const messageText = typeof status.message === 'string' ? status.message : null;
+          if (statusText) {
+            infoParts.push(statusText);
+          }
+          if (messageText) {
+            infoParts.push(messageText);
+          }
         }
-        if (response?.message) {
-          infoParts.push(response.message);
+        if (!infoParts.length) {
+          infoParts.push('Cloud AI is reachable.');
         }
-        setTestStatus({
-          state: 'success',
-          ok: hasKey,
-          message: infoParts.filter(Boolean).join(' • '),
-        });
-        setKeyWarning(response?.note || null);
+        setTestStatus({ state: 'success', ok: true, message: infoParts.join(' • ') });
+        window.dispatchEvent(new Event('ai:online'));
         await syncRuntime(notify);
       } catch (error) {
         const message =
@@ -669,11 +672,12 @@ export default function ParentAISettings({ onClose, onSaved }) {
             ? API_OFFLINE_MESSAGE
             : error?.message || API_OFFLINE_MESSAGE;
         setTestStatus({ state: 'error', ok: false, message });
+        window.dispatchEvent(new CustomEvent('ai:offline', { detail: message }));
         setKeyWarning(null);
         await syncRuntime(notify);
       }
     },
-    [syncRuntime],
+    [apiBase, syncRuntime],
   );
 
   const handleSaveKey = useCallback(async () => {
@@ -738,38 +742,48 @@ export default function ParentAISettings({ onClose, onSaved }) {
   const aiToggleLabel = useMemo(() => (aiAllowed ? 'AI features will run when enabled.' : 'AI features are paused until you re-enable them.'), [aiAllowed]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl rounded-2xl border border-white/40 bg-white shadow-2xl max-h-[85vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 border-b bg-white/90 p-4 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
-                <StatusChip active={runtime.aiEnabled} />
-              </div>
-              <div className="space-y-1 text-xs text-gray-500">
-                <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
-                <p>
-                  AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
-                </p>
-                {runtime.lastError && (
-                  <p className="flex items-center gap-2 font-medium text-red-600">
-                    <AlertCircle size={14} /> {runtime.lastError}
-                  </p>
-                )}
-              </div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          onClose?.();
+        }
+      }}
+      tabIndex={-1}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="pointer-events-auto absolute left-1/2 top-1/2 w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-white px-5 py-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
+              <StatusChip active={runtime.aiEnabled} />
             </div>
-            <button
-              onClick={onClose}
-              className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
-              aria-label="Close AI settings"
-            >
-              <X size={20} />
-            </button>
+            <div className="space-y-1 text-xs text-gray-500">
+              <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
+              <p>
+                AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
+              </p>
+              {runtime.lastError && (
+                <p className="flex items-center gap-2 font-medium text-red-600">
+                  <AlertCircle size={14} /> {runtime.lastError}
+                </p>
+              )}
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+            aria-label="Close AI settings"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        <div className="space-y-5 p-4">
+        <div className="max-h-[70vh] overflow-y-auto px-5 py-4 space-y-5">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700" htmlFor="cloud-api-base">
               Cloud API Base URL
@@ -1345,6 +1359,14 @@ export default function ParentAISettings({ onClose, onSaved }) {
           <option value={option} key={option} />
         ))}
       </datalist>
+        <div className="sticky bottom-0 z-10 border-t bg-white px-5 py-3 text-right">
+          <button
+            onClick={onClose}
+            className="rounded-lg border px-3 py-1.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

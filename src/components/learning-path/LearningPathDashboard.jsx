@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import LearningPathCard from './LearningPathCard.jsx';
 import { groupPathsByOperation, LEARNING_PATH_STATUS } from '../../lib/learningPaths.js';
+import AiOfflineBanner from '../AiOfflineBanner.jsx';
 
 const OPERATION_ICONS = {
   addition: Plus,
@@ -148,7 +149,7 @@ const QuickPathCard = ({ path, isActive, onPreview, onLaunch }) => {
   );
 };
 
-const LearningPathDashboard = ({ operations, learningPaths, onSelectPath }) => {
+const LearningPathDashboard = ({ operations, learningPaths, onSelectPath, aiOffline = false, onOpenAiSettings }) => {
   const groupedPaths = useMemo(() => groupPathsByOperation(learningPaths), [learningPaths]);
   const operationList = useMemo(() => Object.values(operations), [operations]);
   const [activeOperationId, setActiveOperationId] = useState(operationList[0]?.id ?? null);
@@ -219,6 +220,9 @@ const LearningPathDashboard = ({ operations, learningPaths, onSelectPath }) => {
       <div className="pointer-events-none absolute -right-40 top-20 h-64 w-64 rounded-full bg-indigo-500/10 blur-[120px]" />
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-16 px-4 pb-20 pt-12 sm:px-6 lg:px-8">
+        {aiOffline && (
+          <AiOfflineBanner onOpenSettings={onOpenAiSettings} />
+        )}
         <header className="space-y-12">
           <div className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_30px_120px_-60px_rgba(56,189,248,0.45)] backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-4">
