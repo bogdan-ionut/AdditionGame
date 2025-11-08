@@ -4,6 +4,7 @@ import { joinApi, resolveApiBaseUrl, stripTrailingSlash } from "../lib/env";
 
 const OFFLINE_EVENT = "ai:offline";
 const ONLINE_EVENT = "ai:online";
+const HEALTH_EVENT = "mg:health:updated";
 
 let onlineNotified = false;
 
@@ -37,6 +38,31 @@ function emitOffline(reason: unknown) {
     }
   })();
   window.dispatchEvent(new CustomEvent(OFFLINE_EVENT, { detail }));
+}
+
+export type MathGalaxyHealth = {
+  ok: boolean;
+  has_key: boolean;
+  cors_ok: boolean;
+  tts_ok: boolean;
+  sprites_ok: boolean;
+  lastCheckedAt: string | null;
+};
+
+const DEFAULT_HEALTH: MathGalaxyHealth = {
+  ok: false,
+  has_key: false,
+  cors_ok: false,
+  tts_ok: false,
+  sprites_ok: false,
+  lastCheckedAt: null,
+};
+
+function emitHealthUpdate(health: MathGalaxyHealth) {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(HEALTH_EVENT, { detail: health }));
 }
 
 export type Problem = { a: number; b: number; op?: string };
@@ -189,8 +215,9 @@ function saveQueue(items: AttemptIn[]) {
 }
 
 export class MathGalaxyAPI {
-  readonly baseUrl: string;
+  private _baseUrl: string;
   readonly cfg: Required<Omit<ApiConfig, "baseUrl">>;
+  private healthState: MathGalaxyHealth;
 
   constructor(cfg: ApiConfig = {}) {
     const provided = typeof cfg.baseUrl === "string" ? stripTrailingSlash(cfg.baseUrl) : "";
@@ -203,7 +230,7 @@ export class MathGalaxyAPI {
       );
     }
 
-    this.baseUrl = base;
+    this._baseUrl = base;
     this.cfg = {
       defaultUserId: cfg.defaultUserId ?? "",
       defaultGame: cfg.defaultGame ?? "addition-0-9",
@@ -211,17 +238,103 @@ export class MathGalaxyAPI {
       timeoutMs: cfg.timeoutMs ?? 7000,
       retries: cfg.retries ?? 1,
     };
+    this.healthState = { ...DEFAULT_HEALTH };
+    this.refreshHealth().catch((error) => {
+      console.warn("[MathGalaxyAPI] Failed to refresh health during init.", error);
+    });
+  }
+
+  get baseUrl() {
+    return this._baseUrl;
+  }
+
+  get health(): MathGalaxyHealth {
+    return this.healthState;
+  }
+
+  private persistBaseUrl(value: string) {
+    if (typeof window === "undefined" || !window.localStorage) {
+      return;
+    }
+    try {
+      if (value) {
+        window.localStorage.setItem("mg.baseUrl", value);
+      } else {
+        window.localStorage.removeItem("mg.baseUrl");
+      }
+    } catch (error) {
+      console.warn("[MathGalaxyAPI] Failed to persist baseUrl override.", error);
+    }
+  }
+
+  async setBaseUrl(url: string) {
+    const normalized = typeof url === "string" ? stripTrailingSlash(url.trim()) : "";
+    this._baseUrl = normalized;
+    this.persistBaseUrl(normalized);
+    if (!normalized) {
+      this.healthState = { ...DEFAULT_HEALTH };
+      emitHealthUpdate(this.healthState);
+      return this.healthState;
+    }
+    return this.refreshHealth();
+  }
+
+  async refreshHealth(): Promise<MathGalaxyHealth> {
+    if (!this._baseUrl) {
+      this.healthState = { ...DEFAULT_HEALTH };
+      emitHealthUpdate(this.healthState);
+      return this.healthState;
+    }
+
+    const now = new Date().toISOString();
+    let statusPayload: Record<string, any> | null = null;
+
+    try {
+      statusPayload = await this.get<Record<string, any>>("/v1/ai/status");
+    } catch (error) {
+      console.warn("[MathGalaxyAPI] Failed to read /v1/ai/status", error);
+      statusPayload = null;
+    }
+
+    const probes = await Promise.allSettled([
+      request("/v1/ai/tts/voices", { method: "GET", mode: "cors", credentials: "omit" }, this._baseUrl),
+      request("/v1/ai/audio/sfx", { method: "GET", mode: "cors", credentials: "omit" }, this._baseUrl),
+    ]);
+
+    const corsProbeValues = probes.filter(
+      (probe): probe is PromiseFulfilledResult<Response> => probe.status === "fulfilled",
+    );
+
+    const corsOk =
+      probes.length > 0 &&
+      corsProbeValues.length === probes.length &&
+      corsProbeValues.every((result) => Boolean(result.value.headers.get("access-control-allow-origin")));
+
+    const ttsOk =
+      probes[0]?.status === "fulfilled" &&
+      (probes[0] as PromiseFulfilledResult<Response>).value.ok === true;
+
+    const sfxOk =
+      probes[1]?.status === "fulfilled" &&
+      (probes[1] as PromiseFulfilledResult<Response>).value.ok === true;
+
+    this.healthState = {
+      ok: Boolean(statusPayload?.ok),
+      has_key:
+        Boolean(statusPayload?.has_key ?? statusPayload?.hasKey ?? statusPayload?.key_configured ?? statusPayload?.keyConfigured),
+      cors_ok: corsOk,
+      tts_ok: ttsOk,
+      sprites_ok: Boolean(statusPayload?.sprites_ok ?? statusPayload?.spritesOk ?? statusPayload?.sprites_ready),
+      lastCheckedAt: now,
+    };
+
+    emitHealthUpdate(this.healthState);
+    return this.healthState;
   }
 
   /** Ping new API */
   async status<T = any>() {
     const { data } = await this.getWithMeta<T>("/v1/status");
-    return data;
-  }
-
-  /** Health */
-  async health<T = any>() {
-    const { data } = await this.getWithMeta<T>("/health");
     return data;
   }
 

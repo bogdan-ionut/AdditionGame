@@ -17,7 +17,14 @@ import { postProcessJob, getSpriteJobStatus } from '../../services/aiEndpoints';
 import { getAiRuntime } from '../../lib/ai/runtime';
 import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
-import mathGalaxyApi, { flushMathGalaxyQueue, isMathGalaxyConfigured, BASE_URL } from '../../services/mathGalaxyClient';
+import mathGalaxyApi, {
+  BASE_URL,
+  flushMathGalaxyQueue,
+  getMathGalaxyHealth,
+  MathGalaxyApiError,
+  isMathGalaxyConfigured,
+  refreshMathGalaxyHealth,
+} from '../../services/mathGalaxyClient';
 import { useNarrationEngine } from '../../lib/audio/useNarrationEngine';
 
 const DEFAULT_LEARNING_PATH_META = {
@@ -1297,6 +1304,8 @@ const ModeSelection = ({
     return !(prev && (prev.level === 'mastered' || prevAccuracy >= 0.9));
   };
 
+  const aiBadgeActive = useMemo(() => Boolean(apiHealth.ok && apiHealth.has_key && apiHealth.cors_ok), [apiHealth]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
       <div className="max-w-5xl w-full">
@@ -1321,17 +1330,23 @@ const ModeSelection = ({
         <div className="flex justify-center mb-6">
           <div
             className={`flex items-center gap-3 px-4 py-2 rounded-full border text-sm font-semibold ${
-              aiRuntime?.aiEnabled
+              aiBadgeActive
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                 : 'bg-gray-100 border-gray-200 text-gray-600'
             }`}
           >
-            <span>{aiRuntime?.aiEnabled ? 'AI features enabled' : 'AI features disabled'}</span>
+            <span>{aiBadgeActive ? 'AI features enabled' : 'AI features disabled'}</span>
             <span className="text-xs font-normal text-gray-500">
-              Server key: {aiRuntime?.serverHasKey ? 'Yes' : 'No'}
+              Server key: {apiHealth.has_key ? 'Yes' : 'No'} · CORS: {apiHealth.cors_ok ? 'OK' : 'Blocked'}
             </span>
           </div>
         </div>
+
+        {narrationNotice && (
+          <div className="mx-auto mb-6 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 shadow">
+            {narrationNotice}
+          </div>
+        )}
 
         {/* Profile Section */}
         <div className="flex justify-center items-center gap-4 mb-8">
@@ -1610,6 +1625,11 @@ const ModeSelection = ({
               })()}
             </div>
             <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm">
+              {aiPlanStatus?.error && (
+                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700">
+                  {aiPlanStatus.error}
+                </div>
+              )}
               <NextUpCard
                 item={aiPreviewItem}
                 story={aiPreviewItem?.microStory || aiPersonalization?.lastPlan?.microStory}
@@ -1749,6 +1769,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     allowedTtsModels: [],
     runtimeLabel: null,
   });
+  const [apiHealth, setApiHealth] = useState(() => getMathGalaxyHealth());
   const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
   const [motifJobState, setMotifJobState] = useState(() => createDefaultMotifJobState());
   const motifPollingRef = useRef(null);
@@ -1766,6 +1787,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   });
   const inputRef = useRef(null);
   const gameStateRef = useRef(gameState);
+  const narrationCooldownRef = useRef(0);
   const {
     settings: audioSettings,
     speakText,
@@ -1775,6 +1797,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     speakFeedback,
     playSfx,
     stopNarration,
+    narrationNotice,
   } = useNarrationEngine({ runtime: aiRuntime });
   const sessionSolvedRef = useRef(0);
   const streakProgressRef = useRef(0);
@@ -1790,12 +1813,29 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   }, [onOpenAiSettings]);
 
   useEffect(() => {
-    if (!isMathGalaxyConfigured) return;
+    if (typeof window === 'undefined') return undefined;
+    const handleHealthUpdate = (event) => {
+      const detail = event instanceof CustomEvent ? event.detail : null;
+      if (detail) {
+        setApiHealth(detail);
+      } else {
+        setApiHealth(getMathGalaxyHealth());
+      }
+    };
+    window.addEventListener('mg:health:updated', handleHealthUpdate);
+    refreshMathGalaxyHealth().then(setApiHealth).catch(() => {});
+    return () => {
+      window.removeEventListener('mg:health:updated', handleHealthUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMathGalaxyConfigured()) return;
     flushMathGalaxyQueue().catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!isMathGalaxyConfigured) return;
+    if (!isMathGalaxyConfigured()) return;
     if (typeof document === 'undefined') return;
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -2366,7 +2406,15 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         }
       } catch (error) {
         console.warn('Gemini planning failed, falling back to local planner.', error);
-        setAiPlanStatus((prev) => ({ ...prev, error: error.message || 'Gemini planning failed.' }));
+        const message =
+          error instanceof MathGalaxyApiError && (error.status === 500 || error.status === 501)
+            ? 'Serverul AI a întâmpinat o eroare. Încerc fallback local.'
+            : error instanceof MathGalaxyApiError && error.message
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : 'Gemini planning failed.';
+        setAiPlanStatus((prev) => ({ ...prev, error: message }));
       }
     }
 
@@ -2730,12 +2778,20 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     if (!gameMode) return;
     const card = cards[currentCard];
     if (!card) return;
-    speakProblem(card, { story: aiSessionMeta?.story || null }).catch((error) => {
+    speakProblemDebounced(card, { story: aiSessionMeta?.story || null }).catch((error) => {
       if (import.meta.env.DEV) {
         console.warn('Unable to narrate problem prompt', error);
       }
     });
-  }, [audioSettings.narrationAutoplay, audioSettings.narrationEnabled, cards, currentCard, gameMode, aiSessionMeta?.story, speakProblem]);
+  }, [
+    audioSettings.narrationAutoplay,
+    audioSettings.narrationEnabled,
+    cards,
+    currentCard,
+    gameMode,
+    aiSessionMeta?.story,
+    speakProblemDebounced,
+  ]);
 
   useEffect(() => {
     if (!audioSettings.narrationEnabled) return;
@@ -3194,7 +3250,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     updateMasteryTracking(card.a, correct);
     updateMasteryTracking(card.b, correct);
 
-    if (isMathGalaxyConfigured) {
+    if (isMathGalaxyConfigured()) {
       const meta = {
         mode: gameMode || 'unknown',
         focusNumber: focusNumber ?? null,
@@ -3217,7 +3273,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       if (card.aiPlanItem?.source) meta.aiPlanSource = card.aiPlanItem.source;
       if (typeof card.deckId === 'string') meta.deckId = card.deckId;
 
-      if (isMathGalaxyConfigured && mathGalaxyApi) {
+      if (isMathGalaxyConfigured() && mathGalaxyApi) {
         mathGalaxyApi
           .recordAdditionAttempt({
             userId: userIdForApi,
@@ -3759,7 +3815,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           <button
             onClick={() => {
               if (!card) return;
-              speakProblem(card, { story: aiSessionMeta?.story || null }).catch(() => {});
+              speakProblemDebounced(card, { story: aiSessionMeta?.story || null }).catch(() => {});
             }}
             disabled={!audioSettings.narrationEnabled}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${
@@ -3790,3 +3846,15 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     </>
   );
 }
+  const speakProblemDebounced = useCallback(
+    (card, meta) => {
+      if (!card) return Promise.resolve();
+      const now = Date.now();
+      if (now - narrationCooldownRef.current < 600) {
+        return Promise.resolve();
+      }
+      narrationCooldownRef.current = now;
+      return speakProblem(card, meta);
+    },
+    [speakProblem],
+  );

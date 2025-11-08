@@ -1,4 +1,5 @@
 import { MathGalaxyApiError, request } from './mathGalaxyClient';
+import { getLocalSfxCatalog, getLocalSfxClip } from '../lib/audio/localSfx';
 import { isAiProxyConfigured } from './aiEndpoints';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
@@ -67,14 +68,37 @@ export async function fetchTtsVoices({ lang, model } = {}) {
   }
 }
 
-export async function fetchAudioSfx({ pack, name } = {}) {
+const resolveLocalPackKey = ({ pack, mode } = {}) => {
+  if (mode === 'low-stim') return 'low-stim';
+  if (pack && pack !== 'auto') return pack;
+  return 'default';
+};
+
+const loadLocalSfx = ({ pack, category, mode } = {}) => {
+  if (category) {
+    return getLocalSfxClip(category, resolveLocalPackKey({ pack, mode }));
+  }
+  return getLocalSfxCatalog(resolveLocalPackKey({ pack, mode }));
+};
+
+export async function fetchAudioSfx({ pack, name, category, mode } = {}) {
   if (!isAiProxyConfigured()) {
+    const fallback = loadLocalSfx({ pack, category, mode });
+    if (fallback) {
+      return fallback;
+    }
     throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
   try {
     const search = new URLSearchParams();
     if (pack) {
       search.set('pack', pack);
+    }
+    if (category) {
+      search.set('category', category);
+    }
+    if (mode) {
+      search.set('mode', mode);
     }
     if (name) {
       search.set('name', name);
@@ -85,7 +109,9 @@ export async function fetchAudioSfx({ pack, name } = {}) {
     });
     const contentType = response.headers.get('content-type') || '';
     if (!response.ok) {
-      if (response.status === 404) {
+      if (response.status === 404 || response.status === 403) {
+        const fallback = loadLocalSfx({ pack, category, mode });
+        if (fallback) return fallback;
         return null;
       }
       const data = contentType.includes('application/json') ? await response.json() : null;
@@ -95,14 +121,30 @@ export async function fetchAudioSfx({ pack, name } = {}) {
       );
     }
     if (contentType.includes('application/json')) {
-      return await response.json();
+      const data = await response.json();
+      if (!data) {
+        const fallback = loadLocalSfx({ pack, category, mode });
+        if (fallback) return fallback;
+      }
+      return data;
     }
     if (contentType.startsWith('audio/')) {
       const buffer = await response.arrayBuffer();
+      if (buffer.byteLength === 0) {
+        const fallback = loadLocalSfx({ pack, category, mode });
+        if (fallback) return fallback;
+      }
       return { buffer, mimeType: contentType.split(';')[0] || contentType };
     }
+    const fallback = loadLocalSfx({ pack, category, mode });
+    if (fallback) return fallback;
     return null;
   } catch (error) {
+    const fallback = loadLocalSfx({ pack, category, mode });
+    if (fallback) {
+      console.warn('[audio] Falling back to local SFX assets due to remote error.', error);
+      return fallback;
+    }
     throw normalizeError(error);
   }
 }

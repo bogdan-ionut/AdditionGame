@@ -399,6 +399,12 @@ export async function requestGeminiPlan(payload, options = {}) {
     return data;
   } catch (error) {
     if (error instanceof MathGalaxyApiError) {
+      if (error.status === 500 || error.status === 501) {
+        console.error('[MathGalaxyAPI] /v1/ai/plan failed', {
+          status: error.status,
+          data: error.data || null,
+        });
+      }
       throw error;
     }
     throw new MathGalaxyApiError(error instanceof Error ? error.message : OFFLINE_MESSAGE, { cause: error });

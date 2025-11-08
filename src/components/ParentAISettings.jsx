@@ -3,12 +3,18 @@ import { X, Lock, ShieldCheck, CheckCircle2, AlertCircle, AlertTriangle, Loader2
 import { loadAiConfig, saveAiConfig, getAiRuntime } from '../lib/ai/runtime';
 import { saveGeminiKey } from '../services/aiPlanner';
 import { isAiProxyConfigured } from '../services/aiEndpoints';
-import { MathGalaxyApiError, getConfiguredBaseUrl } from '../services/mathGalaxyClient';
+import {
+  MathGalaxyApiError,
+  getConfiguredBaseUrl,
+  getMathGalaxyHealth,
+  refreshMathGalaxyHealth,
+  setMathGalaxyBaseUrl,
+} from '../services/mathGalaxyClient';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
 import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from '../lib/audio/utils';
 import { MathGalaxyAPI } from '../services/math-galaxy-api';
-import { getStoredApiBaseUrl, resolveApiBaseUrl, setApiBaseUrl } from '../lib/api/baseUrl';
+import { getStoredApiBaseUrl, resolveApiBaseUrl } from '../lib/api/baseUrl';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -119,6 +125,8 @@ export default function ParentAISettings({ onClose }) {
   const [apiBase, setApiBase] = useState(() => getStoredApiBaseUrl() || '');
   const [apiBaseStatus, setApiBaseStatus] = useState({ state: 'idle', message: null });
   const [currentBaseUrl] = useState(() => resolveApiBaseUrl() || getConfiguredBaseUrl() || '');
+  const [health, setHealth] = useState(() => getMathGalaxyHealth());
+  const [toast, setToast] = useState(null);
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
@@ -174,6 +182,29 @@ export default function ParentAISettings({ onClose }) {
     cleanupPreviewVoice();
     cleanupPreviewSfx();
   }, [cleanupPreviewSfx, cleanupPreviewVoice]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (!toast) return undefined;
+    const timeout = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleHealthUpdate = (event) => {
+      const detail = event instanceof CustomEvent ? event.detail : null;
+      if (detail) {
+        setHealth(detail);
+      } else {
+        setHealth(getMathGalaxyHealth());
+      }
+    };
+    window.addEventListener('mg:health:updated', handleHealthUpdate);
+    return () => {
+      window.removeEventListener('mg:health:updated', handleHealthUpdate);
+    };
+  }, []);
 
   const loadAudioCatalog = useCallback(async () => {
     if (!aiProxyConfigured) {
@@ -532,7 +563,7 @@ export default function ParentAISettings({ onClose }) {
         let missingRemote = false;
         if (clip?.id && packId) {
           try {
-            const remote = await fetchAudioSfx({ pack: packId, name: clip.id });
+            const remote = await fetchAudioSfx({ pack: packId, name: clip.id, category });
             if (remote && remote.buffer) {
               const playable = createObjectUrlFromBuffer(remote.buffer, remote.mimeType);
               audio = new Audio(playable.objectUrl);
@@ -607,6 +638,12 @@ export default function ParentAISettings({ onClose }) {
   const syncRuntime = useCallback(async (options = {}) => {
     const next = await getAiRuntime();
     setRuntime(next);
+    try {
+      const updatedHealth = await refreshMathGalaxyHealth();
+      setHealth(updatedHealth);
+    } catch (error) {
+      console.warn('[AI Settings] Unable to refresh Math Galaxy health.', error);
+    }
     const fallbackNote = options?.fallbackNote;
     setKeyWarning(() => {
       if (next.note) return next.note;
@@ -638,37 +675,51 @@ export default function ParentAISettings({ onClose }) {
     return next;
   }, []);
 
-  const saveApiBase = useCallback(async () => {
-    const value = (apiBase || '').trim();
-    if (!value) {
-      setApiBaseStatus({ state: 'error', message: 'Introduce a valid HTTPS URL before saving.' });
-      return;
-    }
+  const saveApiBase = useCallback(
+    async (event) => {
+      event?.preventDefault?.();
+      const value = (apiBase || '').trim();
+      if (!value) {
+        setApiBaseStatus({ state: 'error', message: 'Introduce a valid HTTPS URL before saving.' });
+        return;
+      }
 
-    try {
-      setApiBaseStatus({ state: 'loading', message: 'Saving override…' });
-      setApiBaseUrl(value);
-      setApiBaseStatus({ state: 'loading', message: 'Override saved. Updating runtime…' });
-      await syncRuntime({ preserveAiAllowed: true });
-      setApiBaseStatus({ state: 'success', message: 'Override saved.' });
-    } catch (error) {
-      console.warn('Unable to persist Cloud API base override.', error);
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'We could not persist the Cloud API Base URL. Check storage permissions.';
-      setApiBaseStatus({
-        state: 'error',
-        message,
-      });
-      return;
-    }
-  }, [apiBase, syncRuntime]);
+      try {
+        setApiBaseStatus({ state: 'loading', message: 'Saving override…' });
+        const nextHealth = await setMathGalaxyBaseUrl(value);
+        setHealth(nextHealth);
+        setApiBaseStatus({ state: 'loading', message: 'Override saved. Updating runtime…' });
+        await syncRuntime({ preserveAiAllowed: true });
+        const healthy = Boolean(nextHealth.ok && nextHealth.has_key && nextHealth.cors_ok);
+        const message = healthy
+          ? 'Override saved. Cloud AI looks healthy.'
+          : nextHealth.ok
+            ? nextHealth.has_key
+              ? 'Override saved. Verify server CORS headers for AI endpoints.'
+              : 'Override saved, but the server key is missing.'
+            : 'Override saved, but the AI server did not respond as healthy.';
+        setApiBaseStatus({ state: healthy ? 'success' : 'error', message });
+      } catch (error) {
+        console.warn('Unable to persist Cloud API base override.', error);
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : 'We could not persist the Cloud API Base URL. Check storage permissions.';
+        setApiBaseStatus({
+          state: 'error',
+          message,
+        });
+        setToast({ type: 'error', message });
+      }
+    },
+    [apiBase, syncRuntime],
+  );
 
   const resetApiBase = useCallback(async () => {
     try {
       setApiBaseStatus({ state: 'loading', message: 'Clearing override…' });
-      setApiBaseUrl('');
+      const nextHealth = await setMathGalaxyBaseUrl('');
+      setHealth(nextHealth);
       setApiBase('');
       setApiBaseStatus({ state: 'loading', message: 'Override cleared. Updating runtime…' });
       await syncRuntime({ preserveAiAllowed: true });
@@ -680,6 +731,7 @@ export default function ParentAISettings({ onClose }) {
           ? error.message
           : 'Unable to clear Cloud API Base URL. Try again.';
       setApiBaseStatus({ state: 'error', message });
+      setToast({ type: 'error', message });
       return;
     }
   }, [syncRuntime]);
@@ -749,6 +801,7 @@ export default function ParentAISettings({ onClose }) {
       setKeyWarning(response?.note || null);
       setKeyInput((prev) => prev.trim());
       const updatedRuntime = await syncRuntime({ fallbackNote: response?.note ?? undefined, preserveAiAllowed: true });
+      setToast({ type: 'success', message: 'Key saved' });
       if (response?.verified) {
         setRuntime((prev) => {
           const base = updatedRuntime || prev;
@@ -772,6 +825,7 @@ export default function ParentAISettings({ onClose }) {
           : error?.message || 'We could not save the API key. Please try again.';
       setKeyStatus({ state: 'error', message });
       setKeyWarning(null);
+      setToast({ type: 'error', message });
     }
   }, [aiAllowed, keyInput, planningModel, runtime.planningModel, spriteModel, syncRuntime]);
 
@@ -847,17 +901,20 @@ export default function ParentAISettings({ onClose }) {
       tabIndex={-1}
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="pointer-events-auto absolute left-1/2 top-1/2 flex w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl max-h-[85vh]">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/60 bg-white/95 px-5 py-4 backdrop-blur">
+      <div className="pointer-events-auto absolute left-1/2 top-1/2 flex w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-2xl bg-white shadow-2xl max-h-[85vh]">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/60 bg-white/80 px-5 py-4 backdrop-blur">
           <div className="space-y-2">
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
-              <StatusChip active={runtime.aiEnabled} />
+              <StatusChip active={runtime.aiEnabled && health.ok && health.has_key && health.cors_ok} />
             </div>
             <div className="space-y-1 text-xs text-gray-500">
               <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
               <p>
                 AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
+              </p>
+              <p>
+                CORS check: <span className="font-semibold">{health.cors_ok ? 'Allowed' : 'Blocked'}</span>
               </p>
               {runtime.lastError && (
                 <p className="flex items-center gap-2 font-medium text-red-600">
@@ -875,6 +932,17 @@ export default function ParentAISettings({ onClose }) {
           </button>
         </div>
 
+        {toast && (
+          <div
+            className={`mx-5 mt-3 rounded-xl border px-4 py-2 text-sm font-semibold shadow ${
+              toast.type === 'error'
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {toast.message}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700" htmlFor="cloud-api-base">

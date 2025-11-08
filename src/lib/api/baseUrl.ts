@@ -1,4 +1,5 @@
-const STORAGE_KEY = 'math.api.baseUrl';
+const STORAGE_KEY = 'mg.baseUrl';
+const LEGACY_STORAGE_KEY = 'math.api.baseUrl';
 
 const HTTPS_PATTERN = /^https:\/\//i;
 const LOCALHOST_PATTERN = /^http:\/\/localhost(?::\d+)?(\/|$)/i;
@@ -20,13 +21,31 @@ function normalize(value: string | null | undefined): string | null {
   return stripTrailingSlash(trimmed);
 }
 
+function migrateLegacyValue(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEY, value);
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn('[MathGalaxyAPI] Failed to migrate legacy API base override.', error);
+  }
+  return value;
+}
+
 function readLocalStorage(): string | null {
   if (typeof window === 'undefined' || !window.localStorage) {
     return null;
   }
   try {
     const value = window.localStorage.getItem(STORAGE_KEY);
-    return normalize(value);
+    if (value) {
+      return normalize(value);
+    }
+    const legacyValue = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    const migrated = migrateLegacyValue(normalize(legacyValue));
+    return normalize(migrated);
   } catch (error) {
     console.warn('[MathGalaxyAPI] Failed to read API base override from localStorage.', error);
     return null;
@@ -68,6 +87,7 @@ export function clearApiBaseUrl() {
   }
   try {
     window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch (error) {
     console.warn('[MathGalaxyAPI] Failed to clear API base override from localStorage.', error);
     throw error;
@@ -103,6 +123,7 @@ export function setApiBaseUrl(url: string) {
 
   try {
     window.localStorage.setItem(STORAGE_KEY, normalized);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch (error) {
     console.warn('[MathGalaxyAPI] Failed to persist API base override to localStorage.', error);
     throw error;
