@@ -264,6 +264,13 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       'tts_default_model',
       'ttsDefaultModel',
     ]) ??
+    readStringFrom(runtimePayload, ['runtime_label', 'runtimeLabel']) ??
+    readStringFrom(payloadConfig, ['runtime_label', 'runtimeLabel']) ??
+    null;
+
+  const defaultTtsModel =
+    readStringFrom(runtimePayload, ['default_tts_model', 'defaultTtsModel']) ??
+    readStringFrom(payloadConfig, ['default_tts_model', 'defaultTtsModel']) ??
     resolvedAudioModel;
 
   const allowedTtsModels = (() => {
@@ -276,6 +283,8 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       (payloadConfig?.allowedTtsModels as unknown) ??
       (payloadConfig?.tts_available_models as unknown) ??
       (payloadConfig?.ttsAvailableModels as unknown);
+      (payloadConfig?.allowed_tts_models as unknown) ??
+      (payloadConfig?.allowedTtsModels as unknown);
     if (Array.isArray(candidates)) {
       return candidates.filter((value) => typeof value === 'string' && value.trim());
     }
