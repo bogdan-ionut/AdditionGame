@@ -1,6 +1,7 @@
 import { MathGalaxyApiError, request } from './mathGalaxyClient';
 import { getLocalSfxCatalog, getLocalSfxClip } from '../lib/audio/localSfx';
 import { isAiProxyConfigured } from './aiEndpoints';
+import { synthesize } from '../api/tts';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
@@ -174,28 +175,25 @@ export async function synthesizeSpeech(payload = {}) {
     throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
   try {
-    const response = await request('/v1/ai/tts/say', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-      headers: { Accept: 'audio/mpeg,application/json' },
+    const text = typeof payload.text === 'string' ? payload.text : '';
+    const blob = await synthesize(text, {
+      voiceId: payload.voiceId || payload.voice || undefined,
+      speakingRate:
+        typeof payload.speakingRate === 'number'
+          ? payload.speakingRate
+          : typeof payload.speaking_rate === 'number'
+          ? payload.speaking_rate
+          : undefined,
+      pitch: typeof payload.pitch === 'number' ? payload.pitch : undefined,
+      languageCode:
+        payload.languageCode ||
+        payload.language_code ||
+        payload.language ||
+        payload.lang ||
+        undefined,
     });
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok) {
-      const data = contentType.includes('application/json') ? await response.json() : null;
-      throw new MathGalaxyApiError(
-        (data && data.error) || 'TTS synthesis failed.',
-        { data, status: response.status },
-      );
-    }
-    if (contentType.startsWith('audio/')) {
-      const buffer = await response.arrayBuffer();
-      return { buffer, mimeType: contentType.split(';')[0] || contentType };
-    }
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      throw new MathGalaxyApiError(data?.error || 'TTS synthesis failed.', { data });
-    }
-    throw new MathGalaxyApiError('TTS synthesis returned an unexpected response.');
+    const buffer = await blob.arrayBuffer();
+    return { buffer, mimeType: blob.type || 'audio/mpeg' };
   } catch (error) {
     throw normalizeError(error);
   }

@@ -1,4 +1,4 @@
-import { ttsSay } from "../../services/api";
+import { synthesize } from "../../api/tts";
 
 export type SpeakMode = "server" | "webspeech" | "none";
 
@@ -208,9 +208,10 @@ export async function speak({
   rate = 1,
   pitch = 1,
   volume = 1,
-  model = null,
+  model: _model = null,
   allowBrowserFallback = false,
 }: SpeakOptions): Promise<SpeakResult> {
+  void _model;
   const content = text?.trim();
   if (!content) {
     return { ok: false, mode: "none" };
@@ -227,28 +228,16 @@ export async function speak({
 
   try {
     stopActiveServerPlayback();
-    const requestPayload: Record<string, unknown> = {
-      text: content,
-      speaking_rate: toFinite(rate, 1),
+    const blob = await synthesize(content, {
+      voiceId: voiceName || undefined,
+      speakingRate: toFinite(rate, 1),
       pitch: toFinite(pitch, 1),
-    };
-    if (voiceName) {
-      requestPayload.voice_id = voiceName;
-    }
-    if (lang) {
-      requestPayload.language = lang;
-    }
-    if (model) {
-      requestPayload.model = model;
-    }
-    const { buffer, contentType } = await ttsSay(requestPayload as {
-      text: string;
-      voice_id?: string;
-      speaking_rate?: number;
-      pitch?: number;
+      languageCode: lang,
     });
+    const buffer = await blob.arrayBuffer();
     if (buffer.byteLength > 0) {
-      const played = await playAudioBuffer(buffer, contentType || "audio/mpeg", clamp(volume, 0, 1));
+      const contentType = blob.type || "audio/mpeg";
+      const played = await playAudioBuffer(buffer, contentType, clamp(volume, 0, 1));
       if (played) {
         return { ok: true, mode: "server" };
       }

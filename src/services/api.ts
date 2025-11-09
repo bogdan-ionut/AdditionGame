@@ -23,7 +23,7 @@ const readStoredApiBase = (): string | null => {
 
 export const API_BASE = readStoredApiBase() || '';
 
-const requireApiBase = (): string => {
+export const requireApiBase = (): string => {
   const base = readStoredApiBase() || API_BASE;
   if (!base) {
     throw new Error('Math Galaxy API base URL is not configured. Open AI Settings.');
@@ -150,30 +150,3 @@ export const fetchVoices = async () => {
 
 export const fetchSfx = () => getJson('/v1/ai/audio/sfx');
 
-export async function ttsSay(input: {
-  text: string;
-  voice_id?: string;
-  speaking_rate?: number;
-  pitch?: number;
-}): Promise<{ buffer: ArrayBuffer; contentType: string }> {
-  const base = requireApiBase();
-  const res = await fetch(`${base}/v1/ai/tts/say`, {
-    method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  if (res.status === 501 || res.status === 503) throw new Error('tts_unavailable');
-  if (!res.ok) throw new Error(`tts_error_${res.status}`);
-  const ct = res.headers.get('content-type') || '';
-  if (ct.startsWith('audio/')) {
-    const buffer = await res.arrayBuffer();
-    return { buffer, contentType: ct.split(';')[0] || ct };
-  }
-  const j = await res.json();
-  const bin = atob(j.audio_b64);
-  const bytes = new Uint8Array([...bin].map((c) => c.charCodeAt(0)));
-  const contentType = typeof j.content_type === 'string' && j.content_type.trim() ? j.content_type : 'audio/mpeg';
-  return { buffer: bytes.buffer, contentType };
-}

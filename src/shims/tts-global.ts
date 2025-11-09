@@ -1,3 +1,4 @@
+import { synthesize } from '../api/tts'
 import { speakHint, speakPraise, speakProblem } from '../lib/tts'
 
 export function installTtsShim() {
@@ -9,5 +10,6 @@ export function installTtsShim() {
     ;(window as any).speakProblem ??= (window as any).__tts.speakProblem
     ;(window as any).speakHint ??= (window as any).__tts.speakHint
     ;(window as any).speakPraise ??= (window as any).__tts.speakPraise
+    ;(window as any).synthesize ??= synthesize
   }
 }
