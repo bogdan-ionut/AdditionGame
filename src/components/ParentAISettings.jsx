@@ -48,6 +48,7 @@ const initialRuntime = {
   allowedTtsModels: [],
   runtimeLabel: null,
   note: null,
+  acceptsClientKey: null,
 };
 
 const StatusChip = ({ active }) => (
@@ -124,13 +125,17 @@ export default function ParentAISettings({ onClose }) {
   const [sfxPreviewStatus, setSfxPreviewStatus] = useState({ state: 'idle', message: null });
   const [apiBase, setApiBase] = useState(() => getStoredApiBaseUrl() || '');
   const [apiBaseStatus, setApiBaseStatus] = useState({ state: 'idle', message: null });
-  const [currentBaseUrl] = useState(() => resolveApiBaseUrl() || getConfiguredBaseUrl() || '');
+  const [currentBaseUrl, setCurrentBaseUrl] = useState(
+    () => resolveApiBaseUrl() || getConfiguredBaseUrl() || '',
+  );
   const [health, setHealth] = useState(() => getMathGalaxyHealth());
   const [toast, setToast] = useState(null);
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
   const ttsAvailable = Boolean(currentBaseUrl && runtime.serverHasKey);
+  const acceptsClientKey = runtime.acceptsClientKey === true;
+  const disableSaveKey = keyStatus.state === 'loading' || !acceptsClientKey;
 
   const describeVoice = useCallback((voice) => {
     if (!voice) return '';
@@ -638,13 +643,14 @@ export default function ParentAISettings({ onClose }) {
   const syncRuntime = useCallback(async (options = {}) => {
     const next = await getAiRuntime();
     setRuntime(next);
+    const fallbackNote = options?.fallbackNote;
     try {
-      const updatedHealth = await refreshMathGalaxyHealth();
+      const updatedHealth = options?.prefetchedHealth || (await refreshMathGalaxyHealth());
       setHealth(updatedHealth);
     } catch (error) {
       console.warn('[AI Settings] Unable to refresh Math Galaxy health.', error);
     }
-    const fallbackNote = options?.fallbackNote;
+    setCurrentBaseUrl(resolveApiBaseUrl() || getConfiguredBaseUrl() || '');
     setKeyWarning(() => {
       if (next.note) return next.note;
       if (fallbackNote !== undefined) return fallbackNote;
@@ -673,7 +679,7 @@ export default function ParentAISettings({ onClose }) {
       return saveAudioSettings({ narrationModel: target });
     });
     return next;
-  }, []);
+  }, [setCurrentBaseUrl]);
 
   const saveApiBase = useCallback(
     async (event) => {
@@ -686,10 +692,18 @@ export default function ParentAISettings({ onClose }) {
 
       try {
         setApiBaseStatus({ state: 'loading', message: 'Saving override…' });
-        const nextHealth = await setMathGalaxyBaseUrl(value);
+        await setMathGalaxyBaseUrl(value);
+        let nextHealth;
+        try {
+          nextHealth = await refreshMathGalaxyHealth();
+        } catch (refreshError) {
+          console.warn('[AI Settings] Unable to refresh Math Galaxy health after saving base URL.', refreshError);
+          nextHealth = getMathGalaxyHealth();
+        }
         setHealth(nextHealth);
+        setCurrentBaseUrl(resolveApiBaseUrl() || value);
         setApiBaseStatus({ state: 'loading', message: 'Override saved. Updating runtime…' });
-        await syncRuntime({ preserveAiAllowed: true });
+        await syncRuntime({ preserveAiAllowed: true, prefetchedHealth: nextHealth });
         const healthy = Boolean(nextHealth.ok && nextHealth.has_key && nextHealth.cors_ok);
         const message = healthy
           ? 'Override saved. Cloud AI looks healthy.'
@@ -718,11 +732,19 @@ export default function ParentAISettings({ onClose }) {
   const resetApiBase = useCallback(async () => {
     try {
       setApiBaseStatus({ state: 'loading', message: 'Clearing override…' });
-      const nextHealth = await setMathGalaxyBaseUrl('');
+      await setMathGalaxyBaseUrl('');
+      let nextHealth;
+      try {
+        nextHealth = await refreshMathGalaxyHealth();
+      } catch (refreshError) {
+        console.warn('[AI Settings] Unable to refresh Math Galaxy health after clearing base URL.', refreshError);
+        nextHealth = getMathGalaxyHealth();
+      }
       setHealth(nextHealth);
       setApiBase('');
+      setCurrentBaseUrl(resolveApiBaseUrl() || getConfiguredBaseUrl() || '');
       setApiBaseStatus({ state: 'loading', message: 'Override cleared. Updating runtime…' });
-      await syncRuntime({ preserveAiAllowed: true });
+      await syncRuntime({ preserveAiAllowed: true, prefetchedHealth: nextHealth });
       setApiBaseStatus({ state: 'success', message: 'Override cleared.' });
     } catch (error) {
       console.warn('Unable to clear Cloud API base override.', error);
@@ -784,6 +806,13 @@ export default function ParentAISettings({ onClose }) {
   );
 
   const handleSaveKey = useCallback(async () => {
+    if (!acceptsClientKey) {
+      setKeyStatus({
+        state: 'error',
+        message: 'Server is not accepting client-supplied API keys.',
+      });
+      return;
+    }
     if (!keyInput.trim()) {
       setKeyStatus({ state: 'error', message: 'Please paste a valid Google Gemini API key.' });
       return;
@@ -827,7 +856,7 @@ export default function ParentAISettings({ onClose }) {
       setKeyWarning(null);
       setToast({ type: 'error', message });
     }
-  }, [aiAllowed, keyInput, planningModel, runtime.planningModel, spriteModel, syncRuntime]);
+  }, [acceptsClientKey, aiAllowed, keyInput, planningModel, runtime.planningModel, spriteModel, syncRuntime]);
 
   const handleSaveModels = useCallback(async () => {
     const nextErrors = {
@@ -901,49 +930,52 @@ export default function ParentAISettings({ onClose }) {
       tabIndex={-1}
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="pointer-events-auto absolute left-1/2 top-1/2 flex w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-2xl bg-white shadow-2xl max-h-[85vh]">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/60 bg-white/80 px-5 py-4 backdrop-blur">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
-              <StatusChip active={runtime.aiEnabled && health.ok && health.has_key && health.cors_ok} />
+      <div className="pointer-events-auto absolute left-1/2 top-1/2 w-[min(720px,92vw)] -translate-x-1/2 -translate-y-1/2">
+        <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/60 bg-white/90 px-5 py-4 backdrop-blur">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold text-gray-800">AI Settings</h2>
+                  <StatusChip active={runtime.aiEnabled && health.ok && health.has_key && health.cors_ok} />
+                </div>
+                <div className="space-y-1 text-xs text-gray-500">
+                  <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
+                  <p>
+                    AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
+                  </p>
+                  <p>
+                    CORS check: <span className="font-semibold">{health.cors_ok ? 'Allowed' : 'Blocked'}</span>
+                  </p>
+                  {runtime.lastError && (
+                    <p className="flex items-center gap-2 font-medium text-red-600">
+                      <AlertCircle size={14} /> {runtime.lastError}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="relative z-10 rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                aria-label="Close AI settings"
+              >
+                <X size={20} />
+              </button>
             </div>
-            <div className="space-y-1 text-xs text-gray-500">
-              <p>Key configured on server: <span className="font-semibold">{runtime.serverHasKey ? 'Yes' : 'No'}</span></p>
-              <p>
-                AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
-              </p>
-              <p>
-                CORS check: <span className="font-semibold">{health.cors_ok ? 'Allowed' : 'Blocked'}</span>
-              </p>
-              {runtime.lastError && (
-                <p className="flex items-center gap-2 font-medium text-red-600">
-                  <AlertCircle size={14} /> {runtime.lastError}
-                </p>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
-            aria-label="Close AI settings"
-          >
-            <X size={20} />
-          </button>
-        </div>
 
-        {toast && (
-          <div
-            className={`mx-5 mt-3 rounded-xl border px-4 py-2 text-sm font-semibold shadow ${
-              toast.type === 'error'
-                ? 'border-rose-200 bg-rose-50 text-rose-700'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            }`}
-          >
-            {toast.message}
-          </div>
-        )}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            {toast && (
+              <div
+                className={`mx-5 mt-3 rounded-xl border px-4 py-2 text-sm font-semibold shadow ${
+                  toast.type === 'error'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}
+              >
+                {toast.message}
+              </div>
+            )}
+            <div className="px-5 py-4 space-y-5">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700" htmlFor="cloud-api-base">
               Cloud API Base URL
@@ -966,7 +998,7 @@ export default function ParentAISettings({ onClose }) {
                 onClick={saveApiBase}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700"
               >
-                Save override & reload
+                Save override
               </button>
               <button
                 type="button"
@@ -1015,9 +1047,14 @@ export default function ParentAISettings({ onClose }) {
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleSaveKey}
-                disabled={keyStatus.state === 'loading'}
+                disabled={disableSaveKey}
+                title={
+                  !acceptsClientKey
+                    ? 'Server is not accepting client-supplied API keys right now.'
+                    : undefined
+                }
                 className={`px-5 py-3 rounded-xl font-semibold text-white shadow ${
-                  keyStatus.state === 'loading' ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                  disableSaveKey ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                 }`}
               >
                 {keyStatus.state === 'loading' ? (
@@ -1536,24 +1573,22 @@ export default function ParentAISettings({ onClose }) {
               {modelStatus.message}
             </div>
           )}
+          <datalist id="planning-model-options">
+            {PLANNING_MODEL_OPTIONS.map((option) => (
+              <option value={option} key={option} />
+            ))}
+          </datalist>
+          <datalist id="sprite-model-options">
+            {SPRITE_MODEL_OPTIONS.map((option) => (
+              <option value={option} key={option} />
+            ))}
+          </datalist>
+          <datalist id="audio-model-options">
+            {audioModelOptionsList.map((option) => (
+              <option value={option} key={option} />
+            ))}
+          </datalist>
         </div>
-      </div>
-
-      <datalist id="planning-model-options">
-        {PLANNING_MODEL_OPTIONS.map((option) => (
-          <option value={option} key={option} />
-        ))}
-      </datalist>
-      <datalist id="sprite-model-options">
-        {SPRITE_MODEL_OPTIONS.map((option) => (
-          <option value={option} key={option} />
-        ))}
-      </datalist>
-      <datalist id="audio-model-options">
-        {audioModelOptionsList.map((option) => (
-          <option value={option} key={option} />
-        ))}
-      </datalist>
         <div className="sticky bottom-0 z-10 border-t bg-white px-5 py-3 text-right">
           <button
             onClick={onClose}
@@ -1563,6 +1598,9 @@ export default function ParentAISettings({ onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  </div>
+    </div>
     </div>
   );
 }
