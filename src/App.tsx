@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { status, type StatusResponse } from './api'
+import { AdditionGame } from './components/AdditionGame'
 import { Card } from './components/Card'
 import { LearningPlan } from './components/LearningPlan'
 
@@ -8,6 +9,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
 
   const fetchStatus = useCallback(async () => {
     setLoading(true)
@@ -65,10 +67,24 @@ export default function App() {
     )
   }, [data])
 
+  if (isPlaying) {
+    return <AdditionGame onExit={() => setIsPlaying(false)} />
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-950">
       <main className="flex flex-1 justify-center px-4 py-16">
         <div className="w-full max-w-6xl">
+          <div className="mb-8 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setIsPlaying(true)}
+              className="inline-flex items-center rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-emerald-950 shadow transition hover:bg-emerald-400"
+            >
+              Play addition game
+            </button>
+          </div>
+
           <div className="grid gap-10 lg:grid-cols-2">
             <Card
               title="Runtime & Models"
