@@ -1,3 +1,5 @@
+import { API_URL } from './config'
+
 export interface StatusResponse {
   ok: boolean
   service: string
@@ -39,64 +41,16 @@ export type PlanResponse =
       message?: string
     }
 
-export interface SpriteImage {
-  mime: string
-  bytes_base64: string
-}
-
-export interface SpritesBody {
-  prompt: string
-  model?: string
-}
-
-export interface SpritesResponse {
-  ok: true
-  images: SpriteImage[]
-}
-
-export interface Voice {
-  id: string
-  name: string
-  lang?: string
-  gender?: string
-  sample_url?: string
-}
-
-export interface VoicesResponse {
-  voices: Voice[]
-}
-
-export interface TtsSayBody {
-  text: string
-  voice_id?: string
-  speaking_rate?: number
-  pitch?: number
-}
-
-export interface TtsSayResponse {
-  ok: true
-  content_type: string
-  audio_b64: string
-}
-
 const trailingSlashPattern = /\/+$/
+const API_BASE = API_URL.replace(trailingSlashPattern, '')
 
-export function apiBase(): string {
-  const envBase = import.meta.env.VITE_API_URL
-  if (typeof envBase === 'string' && envBase.trim().length > 0) {
-    return envBase.replace(trailingSlashPattern, '')
-  }
-
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin.replace(trailingSlashPattern, '')
-  }
-
-  throw new Error('Unable to determine API base URL. Set VITE_API_URL to continue.')
+function createUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE}${normalizedPath}`
 }
 
 export async function http<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const base = apiBase()
-  const url = new URL(path, base.endsWith('/') ? base : `${base}/`)
+  const url = createUrl(path)
   const headers = new Headers(init.headers ?? {})
 
   if (!headers.has('Accept')) {
@@ -109,15 +63,15 @@ export async function http<T>(path: string, init: RequestInit = {}): Promise<T> 
 
   let response: Response
   try {
-    response = await fetch(url.toString(), {
+    response = await fetch(url, {
       ...init,
       headers,
     })
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`Network error while requesting ${url.pathname}: ${error.message}`)
+      throw new Error(`Network error while requesting ${url}: ${error.message}`)
     }
-    throw new Error(`Network error while requesting ${url.pathname}.`)
+    throw new Error(`Network error while requesting ${url}.`)
   }
 
   const text = response.status === 204 ? '' : await response.text()
@@ -127,12 +81,12 @@ export async function http<T>(path: string, init: RequestInit = {}): Promise<T> 
     try {
       data = JSON.parse(text)
     } catch (error) {
-      throw new Error(`Failed to parse JSON response from ${url.pathname}.`)
+      throw new Error(`Failed to parse JSON response from ${url}.`)
     }
   }
 
   if (!response.ok) {
-    let message = `Request to ${url.pathname} failed with status ${response.status}`
+    let message = `Request to ${url} failed with status ${response.status}`
     if (
       data &&
       typeof data === 'object' &&
@@ -146,36 +100,18 @@ export async function http<T>(path: string, init: RequestInit = {}): Promise<T> 
   }
 
   if (data == null) {
-    throw new Error(`Empty response received from ${url.pathname}.`)
+    throw new Error(`Empty response received from ${url}.`)
   }
 
   return data as T
 }
 
 export function status(): Promise<StatusResponse> {
-  return http<StatusResponse>('/v1/ai/status')
-}
-
-export function listVoices(): Promise<VoicesResponse> {
-  return http<VoicesResponse>('/v1/ai/tts/voices')
-}
-
-export function ttsSay(body: TtsSayBody): Promise<TtsSayResponse> {
-  return http<TtsSayResponse>('/v1/ai/tts/say', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  return http<StatusResponse>('v1/ai/status')
 }
 
 export function plan(body: PlanBody): Promise<PlanResponse> {
-  return http<PlanResponse>('/v1/ai/plan', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export function sprites(body: SpritesBody): Promise<SpritesResponse> {
-  return http<SpritesResponse>('/v1/ai/sprites', {
+  return http<PlanResponse>('v1/ai/plan', {
     method: 'POST',
     body: JSON.stringify(body),
   })
