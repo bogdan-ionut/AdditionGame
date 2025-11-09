@@ -1,31 +1,37 @@
 import { requireApiBaseUrl } from '../lib/api/baseUrl';
-import { supportsTtsStream } from '../services/aiFeatures';
+import { showToast } from '../lib/ui/toast';
 
 export type TtsSynthesizeOptions = {
   voiceId?: string;
   speakingRate?: number;
   pitch?: number;
   language?: string;
+  model?: string | null;
+  preferredMime?: string | null;
+  mime?: string | null;
   signal?: AbortSignal;
 };
 
 export type TtsSayRequest = {
   text: string;
-  voice_id?: string;
-  speaking_rate?: number;
-  pitch?: number;
-  language?: string;
+  voice?: string;
+  model?: string;
+  mime: string;
 };
 
 export type TtsSayResponse = {
   ok?: boolean;
+  mimeType?: string | null;
+  mime_type?: string | null;
   content_type?: string | null;
+  audioB64?: string | null;
   audio_b64?: string | null;
   error?: string | null;
   message?: string | null;
   note?: string | null;
   code?: string | null;
-  error_code?: string | null;
+  detail?: string | null;
+  hint?: string | null;
   [key: string]: unknown;
 };
 
@@ -74,7 +80,94 @@ function decodeBase64(value: string): Uint8Array {
 }
 
 const JSON_ENDPOINT = '/v1/ai/tts/say';
-const STREAM_ENDPOINT = '/v1/ai/tts/say/stream';
+const DEFAULT_MIME = 'audio/ogg;codecs=opus';
+const CONFIG_TOAST_MESSAGE =
+  'TTS temporarily unavailable (server config). Refresh later or change voice.';
+
+let lastConfigToastAt = 0;
+let lastTts503LogAt = 0;
+
+const CONFIG_HINT_KEYS = ['message', 'error', 'note', 'detail', 'hint', 'code'];
+
+function collectCandidateStrings(candidate: unknown): string[] {
+  if (!candidate || typeof candidate !== 'object') {
+    return [];
+  }
+  const bag: string[] = [];
+  for (const key of CONFIG_HINT_KEYS) {
+    const value = (candidate as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value.trim()) {
+      bag.push(value.trim());
+    }
+  }
+  return bag;
+}
+
+function hasMimeMismatchHint(candidate: unknown): boolean {
+  const strings = collectCandidateStrings(candidate);
+  if (!strings.length) {
+    return false;
+  }
+  return strings.some((entry) => {
+    const lower = entry.toLowerCase();
+    return lower.includes('mime') || lower.includes('tool');
+  });
+}
+
+function maybeNotifyConfigIssue(candidate: unknown): boolean {
+  if (!hasMimeMismatchHint(candidate)) {
+    return false;
+  }
+  const now = Date.now();
+  if (now - lastConfigToastAt > 3000) {
+    showToast({ level: 'warning', message: CONFIG_TOAST_MESSAGE });
+    lastConfigToastAt = now;
+  }
+  return true;
+}
+
+function logTtsFailure(status: number, message: string) {
+  if (status === 503) {
+    const now = Date.now();
+    if (now - lastTts503LogAt > 3000) {
+      console.warn(`[MathGalaxyAPI] TTS request failed (${status}): ${message}`);
+      lastTts503LogAt = now;
+    }
+    return;
+  }
+  console.error(`[MathGalaxyAPI] TTS request failed (${status}): ${message}`);
+}
+
+function resolveMimeType(payload: TtsSayResponse | null, fallback: string): string {
+  const candidate =
+    (payload?.mimeType && payload.mimeType.trim()) ||
+    (payload?.mime_type && payload.mime_type.trim()) ||
+    (payload?.content_type && payload.content_type.trim()) ||
+    '';
+  return candidate || fallback;
+}
+
+function extractAudioBase64(payload: TtsSayResponse | null): string | null {
+  if (!payload) return null;
+  const candidates = [payload.audioB64, payload.audio_b64] as (string | null | undefined)[];
+  for (const item of candidates) {
+    if (typeof item === 'string' && item.trim()) {
+      return item.trim();
+    }
+  }
+  return null;
+}
+
+function extractErrorMessage(payload: TtsSayResponse | null, fallback: string): string {
+  if (!payload) {
+    return fallback;
+  }
+  const strings = collectCandidateStrings(payload);
+  if (strings.length) {
+    return strings[0];
+  }
+  return fallback;
+}
 
 async function requestJsonEndpoint(
   baseUrl: string,
@@ -82,20 +175,6 @@ async function requestJsonEndpoint(
   signal?: AbortSignal,
 ): Promise<Blob> {
   const url = `${baseUrl}${JSON_ENDPOINT}`;
-  const body: TtsSayRequest = { text: payload.text };
-  if (payload.voice_id) {
-    body.voice_id = payload.voice_id;
-  }
-  if (typeof payload.speaking_rate === 'number') {
-    body.speaking_rate = payload.speaking_rate;
-  }
-  if (typeof payload.pitch === 'number') {
-    body.pitch = payload.pitch;
-  }
-  if (payload.language) {
-    body.language = payload.language;
-  }
-
   let response: Response;
   try {
     response = await fetch(url, {
@@ -104,7 +183,7 @@ async function requestJsonEndpoint(
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       mode: 'cors',
       credentials: 'omit',
       signal,
@@ -114,80 +193,46 @@ async function requestJsonEndpoint(
   }
 
   const contentType = response.headers.get('content-type') || '';
-  if (response.ok && contentType.startsWith('audio/')) {
-    return response.blob();
-  }
-
   let json: TtsSayResponse | null = null;
-  if (contentType.includes('application/json')) {
+  const isJson = contentType.includes('application/json');
+  if (isJson) {
     json = await response.json().catch(() => null);
   }
 
-  if (response.status === 501 || response.status === 503) {
-    throw new JsonEndpointUnavailableError(response.status, json);
-  }
-
   if (!response.ok) {
-    const message =
-      (json?.error && String(json.error)) ||
-      (json?.message && String(json.message)) ||
-      `TTS request failed with status ${response.status}`;
-    const error = new Error(message);
+    const detail = extractErrorMessage(json, `HTTP ${response.status}`);
+    if (response.status === 503 || response.status === 501) {
+      maybeNotifyConfigIssue(json);
+      logTtsFailure(response.status, detail);
+      throw new JsonEndpointUnavailableError(response.status, json);
+    }
+    logTtsFailure(response.status, detail);
+    const error = new Error(`TTS request failed with status ${response.status}`);
     (error as any).cause = json ?? undefined;
     throw error;
   }
 
-  if (!json || typeof json.audio_b64 !== 'string' || !json.audio_b64) {
+  if (!isJson) {
+    if (contentType.startsWith('audio/')) {
+      return response.blob();
+    }
+    const fallbackMime = payload.mime || DEFAULT_MIME;
+    const buffer = await response.arrayBuffer();
+    return new Blob([buffer], { type: fallbackMime });
+  }
+
+  if (!json) {
+    throw new Error('TTS response did not include JSON data.');
+  }
+
+  const audioBase64 = extractAudioBase64(json);
+  if (!audioBase64) {
     throw new Error('TTS response did not include audio data.');
   }
 
-  const bytes = decodeBase64(json.audio_b64);
-  const mimeType = json.content_type && json.content_type.trim() ? json.content_type.trim() : 'audio/mpeg';
+  const bytes = decodeBase64(audioBase64);
+  const mimeType = resolveMimeType(json, payload.mime || DEFAULT_MIME);
   return new Blob([bytes], { type: mimeType });
-}
-
-type StreamPayload = {
-  text: string;
-  voice?: string;
-  speaking_rate?: number;
-  pitch?: number;
-  language?: string;
-  audio_mime_type: string;
-};
-
-async function requestStreamEndpoint(
-  baseUrl: string,
-  payload: StreamPayload,
-  signal?: AbortSignal,
-): Promise<Blob> {
-  const response = await fetch(`${baseUrl}${STREAM_ENDPOINT}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'audio/mpeg,application/json',
-    },
-    body: JSON.stringify(payload),
-    mode: 'cors',
-    credentials: 'omit',
-    signal,
-  });
-
-  if (!response.ok) {
-    const message = `TTS stream request failed with status ${response.status}`;
-    const error = new Error(message);
-    try {
-      const responseType = response.headers.get('content-type') || '';
-      if (responseType.includes('application/json')) {
-        const data = await response.json();
-        (error as any).cause = data;
-      }
-    } catch {
-      // ignore parsing failures
-    }
-    throw error;
-  }
-
-  return response.blob();
 }
 
 export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}): Promise<Blob> {
@@ -197,60 +242,29 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
   }
 
   const baseUrl = requireApiBaseUrl();
+  const preferredMime =
+    opts.preferredMime?.trim() || opts.mime?.trim() || DEFAULT_MIME;
+  const model = typeof opts.model === 'string' ? opts.model.trim() : undefined;
   const payload: TtsSayRequest = {
     text: normalized,
-    voice_id: opts.voiceId?.trim() || undefined,
-    speaking_rate: typeof opts.speakingRate === 'number' ? opts.speakingRate : undefined,
-    pitch: typeof opts.pitch === 'number' ? opts.pitch : undefined,
-    language: opts.language?.trim() || undefined,
+    voice: opts.voiceId?.trim() || undefined,
+    model: model || undefined,
+    mime: preferredMime || DEFAULT_MIME,
   };
 
   try {
     return await requestJsonEndpoint(baseUrl, payload, opts.signal);
   } catch (error) {
     if (error instanceof JsonEndpointUnavailableError) {
-      if (!supportsTtsStream()) {
-        const message =
-          (error.body?.message && String(error.body.message)) ||
-          (error.body?.error && String(error.body.error)) ||
-          'Text-to-speech is temporarily unavailable. Please try again later.';
-        throw new Error(message);
-      }
-
-      try {
-        return await requestStreamEndpoint(baseUrl, {
-          text: normalized,
-          voice: payload.voice_id,
-          speaking_rate: payload.speaking_rate,
-          pitch: payload.pitch,
-          language: payload.language,
-          audio_mime_type: 'audio/mpeg',
-        }, opts.signal);
-      } catch (streamError) {
-        const friendly = new Error('Unable to synthesize speech right now. Please try again later.');
-        (friendly as any).cause = streamError;
-        throw friendly;
-      }
+      const friendly = new Error('tts_unavailable');
+      (friendly as any).cause = error.body ?? undefined;
+      throw friendly;
     }
 
     if (error instanceof JsonEndpointNetworkError) {
-      if (!supportsTtsStream()) {
-        throw new Error('Unable to reach the text-to-speech service. Please check your connection and try again.');
-      }
-      try {
-        return await requestStreamEndpoint(baseUrl, {
-          text: normalized,
-          voice: payload.voice_id,
-          speaking_rate: payload.speaking_rate,
-          pitch: payload.pitch,
-          language: payload.language,
-          audio_mime_type: 'audio/mpeg',
-        }, opts.signal);
-      } catch (streamError) {
-        const friendly = new Error('Unable to synthesize speech right now. Please try again later.');
-        (friendly as any).cause = streamError;
-        throw friendly;
-      }
+      const friendly = new Error('tts_unavailable');
+      (friendly as any).cause = error.cause ?? undefined;
+      throw friendly;
     }
 
     if (error instanceof Error) {

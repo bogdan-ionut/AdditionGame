@@ -38,6 +38,37 @@ const SFX_CATEGORY_SYNONYMS = {
 
 const API_OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
+const TTS_CONFIG_TOAST_MESSAGE =
+  'TTS temporarily unavailable (server config). Refresh later or change voice.';
+const TTS_TEST_DEFAULT_MIME = 'audio/ogg;codecs=opus';
+const TTS_CONFIG_HINT_KEYS = ['message', 'error', 'note', 'detail', 'hint', 'code'];
+
+const collectTtsHintStrings = (payload) => {
+  if (!payload || typeof payload !== 'object') return [];
+  const strings = [];
+  for (const key of TTS_CONFIG_HINT_KEYS) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim()) {
+      strings.push(value.trim());
+    }
+  }
+  return strings;
+};
+
+const hasTtsMimeMismatchHint = (payload) =>
+  collectTtsHintStrings(payload).some((entry) => {
+    const lower = entry.toLowerCase();
+    return lower.includes('mime') || lower.includes('tool');
+  });
+
+const extractTtsResponseMessage = (payload, fallback = 'Unexpected response') => {
+  const strings = collectTtsHintStrings(payload);
+  if (strings.length) {
+    return strings[0];
+  }
+  return fallback;
+};
+
 const initialRuntime = {
   aiEnabled: false,
   serverHasKey: false,
@@ -141,8 +172,12 @@ export default function ParentAISettings({ onClose }) {
     ttsOptions: { state: 'idle', message: null },
     ttsPost: { state: 'idle', message: null },
   });
+  const [ttsTest, setTtsTest] = useState({ state: 'idle', message: null, audioUrl: null, mimeType: null });
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
+  const ttsTestAudioRef = useRef(null);
+  const ttsTestUrlRef = useRef(null);
+  const lastTtsConfigToastRef = useRef(0);
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
   const currentOrigin = useMemo(() => (typeof window !== 'undefined' ? window.location.origin : ''), []);
   const ttsAvailable = Boolean(currentBaseUrl && runtime.serverHasKey);
@@ -196,6 +231,55 @@ export default function ParentAISettings({ onClose }) {
     return bits.length ? `${voice.label} (${bits.join(' · ')})` : voice.label;
   }, []);
 
+  const notifyTtsConfigIssue = (payload) => {
+    if (!hasTtsMimeMismatchHint(payload)) {
+      return false;
+    }
+    const now = Date.now();
+    if (now - lastTtsConfigToastRef.current > 3000) {
+      showToast({ level: 'warning', message: TTS_CONFIG_TOAST_MESSAGE });
+      lastTtsConfigToastRef.current = now;
+    }
+    return true;
+  };
+
+  const revokeTtsTestUrl = useCallback(() => {
+    if (ttsTestUrlRef.current) {
+      URL.revokeObjectURL(ttsTestUrlRef.current);
+      ttsTestUrlRef.current = null;
+    }
+  }, []);
+
+  const handleTtsAudioComplete = useCallback(() => {
+    revokeTtsTestUrl();
+    const audioNode = ttsTestAudioRef.current;
+    if (audioNode) {
+      try {
+        audioNode.pause();
+        audioNode.removeAttribute('src');
+        audioNode.load();
+      } catch (error) {
+        // ignore cleanup issues
+      }
+    }
+    setTtsTest((prev) => (prev && prev.audioUrl ? { ...prev, audioUrl: null } : prev));
+  }, [revokeTtsTestUrl]);
+
+  const setTtsTestAudioNode = useCallback(
+    (node) => {
+      if (ttsTestAudioRef.current) {
+        ttsTestAudioRef.current.removeEventListener('ended', handleTtsAudioComplete);
+        ttsTestAudioRef.current.removeEventListener('error', handleTtsAudioComplete);
+      }
+      if (node) {
+        node.addEventListener('ended', handleTtsAudioComplete);
+        node.addEventListener('error', handleTtsAudioComplete);
+      }
+      ttsTestAudioRef.current = node;
+    },
+    [handleTtsAudioComplete],
+  );
+
   const cleanupPreviewVoice = useCallback(() => {
     const current = previewVoiceRef.current;
     if (current.audio) {
@@ -228,10 +312,170 @@ export default function ParentAISettings({ onClose }) {
     previewSfxRef.current = { audio: null, revoke: null };
   }, []);
 
+  const handleTestTts = useCallback(async () => {
+    const candidateBase = baseCandidate || '';
+    if (!candidateBase) {
+      const message = 'Set a Cloud API Base URL before testing TTS.';
+      setTtsTest({ state: 'error', message, audioUrl: null, mimeType: null });
+      showToast({ level: 'error', message });
+      return;
+    }
+
+    handleTtsAudioComplete();
+
+    const normalizedBase = candidateBase.replace(/\/+$/, '');
+    const url = (() => {
+      try {
+        return new URL('/v1/ai/tts/say', normalizedBase).toString();
+      } catch (error) {
+        return `${normalizedBase}/v1/ai/tts/say`;
+      }
+    })();
+
+    setTtsTest({
+      state: 'loading',
+      message: 'Solicităm un eșantion TTS…',
+      audioUrl: null,
+      mimeType: null,
+    });
+
+    try {
+      const voiceId = audioSettings.narrationVoiceId?.trim() || '';
+      const modelCandidate = (audioModel || '').trim() || runtime.audioModel || runtime.defaultTtsModel || '';
+
+      const response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          text: 'Test audio',
+          voice: voiceId || undefined,
+          model: modelCandidate || undefined,
+          mime: TTS_TEST_DEFAULT_MIME,
+        }),
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const payload = isJson ? await response.json().catch(() => null) : null;
+
+      if (!response.ok || !payload) {
+        if (payload) {
+          notifyTtsConfigIssue(payload);
+        }
+        const detail = payload
+          ? extractTtsResponseMessage(payload, `HTTP ${response.status}`)
+          : `HTTP ${response.status}`;
+        const message = `Test TTS failed: ${detail}`;
+        setTtsTest({ state: 'error', message, audioUrl: null, mimeType: null });
+        showToast({ level: 'error', message });
+        return;
+      }
+
+      const audioB64 = (() => {
+        if (typeof payload.audioB64 === 'string' && payload.audioB64.trim()) {
+          return payload.audioB64.trim();
+        }
+        if (typeof payload.audio_b64 === 'string' && payload.audio_b64.trim()) {
+          return payload.audio_b64.trim();
+        }
+        return null;
+      })();
+
+      if (!audioB64) {
+        const message = 'Test TTS response did not include audio data.';
+        setTtsTest({ state: 'error', message, audioUrl: null, mimeType: null });
+        showToast({ level: 'error', message });
+        return;
+      }
+
+      let binary;
+      try {
+        binary = atob(audioB64);
+      } catch (decodeError) {
+        console.warn('[AI Settings] Failed to decode TTS test audio.', decodeError);
+        const message = 'Unable to decode TTS audio payload.';
+        setTtsTest({ state: 'error', message, audioUrl: null, mimeType: null });
+        showToast({ level: 'error', message });
+        return;
+      }
+
+      const bytes = Uint8Array.from([...binary].map((char) => char.charCodeAt(0)));
+      const mimeTypeCandidate =
+        (payload.mimeType && payload.mimeType.trim()) ||
+        (payload.mime_type && payload.mime_type.trim()) ||
+        (payload.content_type && payload.content_type.trim()) ||
+        TTS_TEST_DEFAULT_MIME;
+      revokeTtsTestUrl();
+      const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeTypeCandidate || TTS_TEST_DEFAULT_MIME }));
+      ttsTestUrlRef.current = objectUrl;
+      setTtsTest({
+        state: 'success',
+        message: 'Test audio pregătit. Ascultă mostra pentru a confirma vocea.',
+        audioUrl: objectUrl,
+        mimeType: mimeTypeCandidate || TTS_TEST_DEFAULT_MIME,
+      });
+    } catch (error) {
+      revokeTtsTestUrl();
+      const message =
+        error instanceof DOMException && error.name === 'AbortError'
+          ? 'Testul TTS a fost întrerupt.'
+          : error instanceof Error
+            ? error.message
+            : 'Unable to synthesize test audio.';
+      setTtsTest({ state: 'error', message, audioUrl: null, mimeType: null });
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.warn('[AI Settings] Test TTS failed.', error);
+        showToast({ level: 'error', message });
+      }
+    }
+  }, [
+    audioModel,
+    audioSettings.narrationVoiceId,
+    baseCandidate,
+    handleTtsAudioComplete,
+    notifyTtsConfigIssue,
+    revokeTtsTestUrl,
+    runtime.audioModel,
+    runtime.defaultTtsModel,
+    showToast,
+  ]);
+
   useEffect(() => () => {
     cleanupPreviewVoice();
     cleanupPreviewSfx();
   }, [cleanupPreviewSfx, cleanupPreviewVoice]);
+
+  useEffect(() => {
+    if (ttsTest.state === 'success' && ttsTest.audioUrl) {
+      const audioNode = ttsTestAudioRef.current;
+      if (!audioNode) {
+        return;
+      }
+      try {
+        audioNode.src = ttsTest.audioUrl;
+        audioNode.load();
+        const playPromise = audioNode.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {});
+        }
+      } catch (error) {
+        console.warn('[AI Settings] Unable to autoplay TTS test audio.', error);
+      }
+    }
+  }, [ttsTest.audioUrl, ttsTest.state]);
+
+  useEffect(
+    () => () => {
+      if (ttsTestAudioRef.current) {
+        ttsTestAudioRef.current.removeEventListener('ended', handleTtsAudioComplete);
+        ttsTestAudioRef.current.removeEventListener('error', handleTtsAudioComplete);
+      }
+      revokeTtsTestUrl();
+    },
+    [handleTtsAudioComplete, revokeTtsTestUrl],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -932,8 +1176,17 @@ export default function ParentAISettings({ onClose }) {
     });
 
     try {
+      let statusAttempted = false;
+      let voicesAttempted = false;
+      let statusOk = false;
+      let voicesOk = false;
       for (const endpoint of endpoints) {
         try {
+          if (endpoint.key === 'status') {
+            statusAttempted = true;
+          } else if (endpoint.key === 'voices') {
+            voicesAttempted = true;
+          }
           const response = await endpoint.request();
           const contentType = response.headers.get('content-type') || '';
           const body =
@@ -946,6 +1199,14 @@ export default function ParentAISettings({ onClose }) {
           }
 
           let messageDetail = `HTTP ${response.status}`;
+          if (response.ok) {
+            if (endpoint.key === 'status') {
+              statusOk = true;
+            }
+            if (endpoint.key === 'voices') {
+              voicesOk = true;
+            }
+          }
           if (!response.ok) {
             if (endpoint.key === 'ttsPost' && response.status === 503 && body?.message) {
               messageDetail = String(body.message);
@@ -977,6 +1238,9 @@ export default function ParentAISettings({ onClose }) {
           }));
           showToast({ level: 'error', message: `${endpoint.label} failed: ${message}` });
         }
+      }
+      if (statusAttempted && voicesAttempted && !statusOk && !voicesOk) {
+        showToast({ level: 'error', message: API_OFFLINE_MESSAGE });
       }
     } finally {
       setConnectivity((prev) => ({ ...prev, running: false }));
@@ -1522,7 +1786,7 @@ export default function ParentAISettings({ onClose }) {
               list="audio-model-options"
               value={audioModel}
               onChange={(event) => setAudioModel(event.target.value)}
-              placeholder="gemini-2.5-pro-preview-tts"
+              placeholder="Leave empty to use server default"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
             <p className="mt-1 text-xs text-gray-500">
@@ -1640,6 +1904,31 @@ export default function ParentAISettings({ onClose }) {
                   </button>
                   <button
                     type="button"
+                    onClick={handleTestTts}
+                    disabled={!ttsAvailable || ttsTest.state === 'loading'}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
+                      ttsTest.state === 'loading'
+                        ? 'border-gray-300 text-gray-500 cursor-wait'
+                        : ttsAvailable
+                          ? 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                          : 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                    }`}
+                    title={
+                      !ttsAvailable
+                        ? 'Configurează Cloud AI Base URL și cheia Gemini pentru a testa vocea.'
+                        : undefined
+                    }
+                  >
+                    {ttsTest.state === 'loading' ? (
+                      <>
+                        <Loader2 className="animate-spin" size={14} /> Testăm vocea…
+                      </>
+                    ) : (
+                      'Test TTS'
+                    )}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() =>
                       setAudioSettings((prev) => ({
                         ...prev,
@@ -1702,6 +1991,30 @@ export default function ParentAISettings({ onClose }) {
                     {audioSettings.feedbackVoiceEnabled ? 'Feedback vocal activ' : 'Feedback vocal oprit'}
                   </button>
                 </div>
+                {ttsTest.state !== 'idle' && ttsTest.message && (
+                  <div
+                    className={`text-xs rounded-xl px-3 py-2 border ${
+                      ttsTest.state === 'error'
+                        ? 'border-red-200 bg-red-50 text-red-600'
+                        : ttsTest.state === 'success'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                          : 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                    }`}
+                  >
+                    {ttsTest.message}
+                  </div>
+                )}
+                <audio
+                  ref={setTtsTestAudioNode}
+                  controls
+                  preload="auto"
+                  className={`mt-2 w-full ${
+                    ttsTest.state === 'success' && ttsTest.audioUrl ? 'block' : 'hidden'
+                  }`}
+                  src={ttsTest.audioUrl ?? undefined}
+                >
+                  Your browser does not support the audio element.
+                </audio>
                 {previewStatus.state !== 'idle' && previewStatus.message && (
                   <div
                     className={`text-xs rounded-xl px-3 py-2 border ${
