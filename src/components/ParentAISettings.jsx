@@ -16,6 +16,7 @@ import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from '../lib/aud
 import { MathGalaxyAPI } from '../services/math-galaxy-api';
 import { getStoredApiBaseUrl, resolveApiBaseUrl } from '../lib/api/baseUrl';
 import { playEncouragement, playLowStim, playSuccess } from '../lib/sfx/synth';
+import { showToast } from '../lib/ui/toast';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -131,12 +132,44 @@ export default function ParentAISettings({ onClose }) {
   );
   const [health, setHealth] = useState(() => getMathGalaxyHealth());
   const [toast, setToast] = useState(null);
+  const [connectivity, setConnectivity] = useState({
+    running: false,
+    status: { state: 'idle', message: null },
+    voices: { state: 'idle', message: null },
+    sfx: { state: 'idle', message: null },
+    ttsOptions: { state: 'idle', message: null },
+    ttsPost: { state: 'idle', message: null },
+  });
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
   const ttsAvailable = Boolean(currentBaseUrl && runtime.serverHasKey);
   const acceptsClientKey = runtime.acceptsClientKey === true;
   const disableSaveKey = keyStatus.state === 'loading' || !acceptsClientKey;
+
+  const connectivityRows = useMemo(
+    () => [
+      { key: 'status', label: 'GET /v1/ai/status', result: connectivity.status },
+      { key: 'voices', label: 'GET /v1/ai/tts/voices', result: connectivity.voices },
+      { key: 'sfx', label: 'GET /v1/ai/audio/sfx', result: connectivity.sfx },
+      { key: 'ttsOptions', label: 'OPTIONS /v1/ai/tts/say', result: connectivity.ttsOptions },
+      { key: 'ttsPost', label: 'POST /v1/ai/tts/say', result: connectivity.ttsPost },
+    ],
+    [connectivity],
+  );
+
+  const renderConnectivityIcon = (state) => {
+    if (state === 'pending') {
+      return <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />;
+    }
+    if (state === 'success') {
+      return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+    }
+    if (state === 'error') {
+      return <AlertCircle className="h-4 w-4 text-rose-500" />;
+    }
+    return <span className="block h-2.5 w-2.5 rounded-full bg-gray-300" />;
+  };
 
   const describeVoice = useCallback((voice) => {
     if (!voice) return '';
@@ -786,6 +819,133 @@ export default function ParentAISettings({ onClose }) {
     }
   }, [syncRuntime]);
 
+  const runConnectivityDiagnostics = useCallback(async () => {
+    const candidate = (apiBase || '').trim() || currentBaseUrl;
+    if (!candidate) {
+      const message = 'Set a Cloud API Base URL before testing connectivity.';
+      setConnectivity((prev) => ({
+        ...prev,
+        status: { state: 'error', message },
+        voices: { state: 'idle', message: null },
+        sfx: { state: 'idle', message: null },
+        ttsOptions: { state: 'idle', message: null },
+        ttsPost: { state: 'idle', message: null },
+      }));
+      showToast({ level: 'error', message });
+      return;
+    }
+
+    const base = candidate.replace(/\/+$/, '');
+    const toUrl = (path) => {
+      try {
+        return new URL(path, base).toString();
+      } catch (error) {
+        return `${base}${path}`;
+      }
+    };
+
+    const endpoints = [
+      {
+        key: 'status',
+        label: 'GET /v1/ai/status',
+        request: () =>
+          fetch(toUrl('/v1/ai/status'), {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: { Accept: 'application/json' },
+          }),
+      },
+      {
+        key: 'voices',
+        label: 'GET /v1/ai/tts/voices',
+        request: () =>
+          fetch(toUrl('/v1/ai/tts/voices'), {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: { Accept: 'application/json' },
+          }),
+      },
+      {
+        key: 'sfx',
+        label: 'GET /v1/ai/audio/sfx',
+        request: () =>
+          fetch(toUrl('/v1/ai/audio/sfx'), {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: { Accept: 'application/json' },
+          }),
+      },
+      {
+        key: 'ttsOptions',
+        label: 'OPTIONS /v1/ai/tts/say',
+        request: () =>
+          fetch(toUrl('/v1/ai/tts/say'), {
+            method: 'OPTIONS',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: {
+              'Access-Control-Request-Method': 'POST',
+              'Access-Control-Request-Headers': 'content-type',
+            },
+          }),
+      },
+      {
+        key: 'ttsPost',
+        label: 'POST /v1/ai/tts/say',
+        request: () =>
+          fetch(toUrl('/v1/ai/tts/say'), {
+            method: 'POST',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: 'connectivity check' }),
+          }),
+      },
+    ];
+
+    setConnectivity({
+      running: true,
+      status: { state: 'pending', message: null },
+      voices: { state: 'pending', message: null },
+      sfx: { state: 'pending', message: null },
+      ttsOptions: { state: 'pending', message: null },
+      ttsPost: { state: 'pending', message: null },
+    });
+
+    try {
+      for (const endpoint of endpoints) {
+        try {
+          const response = await endpoint.request();
+          setConnectivity((prev) => ({
+            ...prev,
+            [endpoint.key]: {
+              state: response.ok ? 'success' : 'error',
+              message: `HTTP ${response.status}`,
+            },
+          }));
+          if (!response.ok) {
+            showToast({
+              level: 'error',
+              message: `${endpoint.label} returned HTTP ${response.status}`,
+            });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Network error';
+          setConnectivity((prev) => ({
+            ...prev,
+            [endpoint.key]: { state: 'error', message },
+          }));
+          showToast({ level: 'error', message: `${endpoint.label} failed: ${message}` });
+        }
+      }
+    } finally {
+      setConnectivity((prev) => ({ ...prev, running: false }));
+    }
+  }, [apiBase, currentBaseUrl]);
+
   useEffect(() => {
     syncRuntime();
   }, [syncRuntime]);
@@ -1049,6 +1209,50 @@ export default function ParentAISettings({ onClose }) {
               </p>
             )}
           </div>
+          <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-gray-700">Connectivity test</p>
+                <p className="text-xs text-gray-500">
+                  Rulează verificări CORS pentru endpoint-urile principale Math Galaxy.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={runConnectivityDiagnostics}
+                disabled={connectivity.running}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold shadow ${
+                  connectivity.running
+                    ? 'cursor-wait border border-gray-200 bg-gray-50 text-gray-500'
+                    : 'border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                }`}
+              >
+                {connectivity.running ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Testăm…
+                  </>
+                ) : (
+                  'Rulează testul'
+                )}
+              </button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {connectivityRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-3 py-2"
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700">{row.label}</p>
+                    {row.result.message && (
+                      <p className="text-[11px] text-gray-500">{row.result.message}</p>
+                    )}
+                  </div>
+                  {renderConnectivityIcon(row.result.state)}
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="flex gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
             <Lock className="text-indigo-500" size={24} />
             <div className="space-y-1 text-sm text-indigo-800">
@@ -1307,6 +1511,24 @@ export default function ParentAISettings({ onClose }) {
                   </button>
                   <button
                     type="button"
+                    onClick={() =>
+                      setAudioSettings((prev) => ({
+                        ...prev,
+                        browserVoiceFallback: !prev.browserVoiceFallback,
+                      }))
+                    }
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
+                      audioSettings.browserVoiceFallback
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                        : 'border-gray-200 bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    {audioSettings.browserVoiceFallback
+                      ? 'Browser voice fallback on'
+                      : 'Allow browser fallback'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setAudioSettings((prev) => ({ ...prev, narrationAutoplay: !prev.narrationAutoplay }))}
                     disabled={!ttsAvailable}
                     className={`px-3 py-2 rounded-xl text-xs font-semibold border ${
@@ -1410,6 +1632,9 @@ export default function ParentAISettings({ onClose }) {
                     className="w-full accent-indigo-500"
                   />
                 </div>
+                <p className="text-[11px] text-gray-500">
+                  Activează fallback-ul pentru browser doar dacă accepți Web Speech când API-ul returnează 501/503.
+                </p>
               </div>
             </div>
 

@@ -5,15 +5,41 @@ import ParentAISettings from './components/ParentAISettings.jsx';
 import { LEARNING_PATHS, OPERATIONS } from './lib/learningPaths.js';
 import { moduleRegistry } from './modules/index.js';
 import { flushMathGalaxyQueue, isMathGalaxyConfigured } from './services/mathGalaxyClient';
+import ToastHost from './components/ToastHost.jsx';
+import { fetchRuntime } from './services/api';
+import { showToast } from './lib/ui/toast';
 
 function App() {
   const [activePathId, setActivePathId] = useState(null);
   const [aiOffline, setAiOffline] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [runtimeInfo, setRuntimeInfo] = useState(null);
 
   useEffect(() => {
     if (!isMathGalaxyConfigured()) return;
     flushMathGalaxyQueue().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRuntime()
+      .then((payload) => {
+        if (cancelled) return;
+        if (payload && typeof payload === 'object') {
+          setRuntimeInfo(payload);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRuntimeInfo(null);
+        const message =
+          (error && typeof error.message === 'string' && error.message) ||
+          'Unable to contact Math Galaxy runtime. Check AI Settings.';
+        showToast({ level: 'error', message });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -64,6 +90,7 @@ function App() {
     const ModuleComponent = activeModule.component;
     return (
       <>
+        <ToastHost />
         <ModuleComponent
           learningPath={activePath}
           onExit={() => setActivePathId(null)}
@@ -79,11 +106,13 @@ function App() {
 
   return (
     <>
+      <ToastHost />
       <LearningPathDashboard
         operations={OPERATIONS}
         learningPaths={LEARNING_PATHS}
         aiOffline={aiOffline}
         onOpenAiSettings={openAiSettings}
+        runtimeInfo={runtimeInfo}
         onSelectPath={(path) => {
           if (!path) return;
           if (path.status !== 'available') return;

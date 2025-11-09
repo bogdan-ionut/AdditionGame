@@ -4,6 +4,16 @@ import { isAiProxyConfigured } from './aiEndpoints';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
 
+const LOCAL_FALLBACK_VOICES = [
+  {
+    id: 'local-default',
+    label: 'Local Narrator',
+    language: 'en-US',
+    gender: 'neutral',
+    tags: ['fallback'],
+  },
+];
+
 const normalizeError = (error) => {
   if (error instanceof MathGalaxyApiError) {
     return error;
@@ -51,8 +61,8 @@ export async function fetchTtsVoices({ lang, model } = {}) {
     const contentType = response.headers.get('content-type') || '';
     if (!response.ok) {
       const data = contentType.includes('application/json') ? await response.json() : null;
-      if (response.status === 404) {
-        return [];
+      if (response.status === 404 || response.status === 500) {
+        return LOCAL_FALLBACK_VOICES;
       }
       throw new MathGalaxyApiError(
         (data && data.error) || 'Failed to load TTS voices.',
@@ -60,10 +70,20 @@ export async function fetchTtsVoices({ lang, model } = {}) {
       );
     }
     if (!contentType.includes('application/json')) {
-      return [];
+      return LOCAL_FALLBACK_VOICES;
     }
-    return await response.json();
+    const payload = await response.json();
+    if (!payload || (Array.isArray(payload) && payload.length === 0)) {
+      return LOCAL_FALLBACK_VOICES;
+    }
+    return payload;
   } catch (error) {
+    if (
+      error instanceof MathGalaxyApiError &&
+      (error.status === 404 || error.status === 500 || error.message?.includes('Failed to fetch'))
+    ) {
+      return LOCAL_FALLBACK_VOICES;
+    }
     throw normalizeError(error);
   }
 }

@@ -4,6 +4,7 @@ import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices } from '../../services/au
 import { AUDIO_SETTINGS_EVENT, LS_AUDIO_SETTINGS, loadAudioSettings, saveAudioSettings, type AudioSettings } from './preferences';
 import { createObjectUrlFromBase64 } from './utils';
 import { speak, stopSpeaking } from '../tts';
+import { showToast } from '../ui/toast';
 import type { AiRuntimeState } from '../ai/runtime';
 import { playEncouragement, playLowStim, playSuccess } from '../sfx/synth';
 
@@ -344,6 +345,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
           pitch,
           volume,
           model,
+          allowBrowserFallback: settings.browserVoiceFallback === true,
         });
 
         if (result.mode === 'server') {
@@ -355,7 +357,15 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
         }
       } catch (error) {
         console.warn('[audio] Unable to speak text', error);
-        setNarrationNotice('Nu am putut reda vocea. Verifică setările audio.');
+        if (error instanceof Error && error.message === 'tts_unavailable') {
+          const message = 'TTS not available—check backend /v1/ai/tts/say';
+          setNarrationNotice(message);
+          showToast({ level: 'error', message });
+        } else {
+          const message = 'Nu am putut reda vocea. Verifică setările audio.';
+          setNarrationNotice(message);
+          showToast({ level: 'error', message: 'Unable to play narration audio. Check your connection.' });
+        }
       }
     },
     [
@@ -367,6 +377,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       settings.narrationVolume,
       settings.pitch,
       settings.speakingRate,
+      settings.browserVoiceFallback,
       stopNarration,
     ],
   );
