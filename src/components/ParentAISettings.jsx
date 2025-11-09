@@ -13,10 +13,10 @@ import {
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from '../services/audioCatalog';
 import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from '../lib/audio/utils';
-import { MathGalaxyAPI } from '../services/math-galaxy-api';
-import { getStoredApiBaseUrl, resolveApiBaseUrl } from '../lib/api/baseUrl';
+import { getStoredApiBaseUrl, resolveApiBaseUrl, isValidHttpsBase } from '../lib/api/baseUrl';
 import { playEncouragement, playLowStim, playSuccess } from '../lib/sfx/synth';
 import { showToast } from '../lib/ui/toast';
+import { updateAiFeaturesFromStatus } from '../services/aiFeatures';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -132,6 +132,7 @@ export default function ParentAISettings({ onClose }) {
   );
   const [health, setHealth] = useState(() => getMathGalaxyHealth());
   const [toast, setToast] = useState(null);
+  const [corsHelpOpen, setCorsHelpOpen] = useState(false);
   const [connectivity, setConnectivity] = useState({
     running: false,
     status: { state: 'idle', message: null },
@@ -143,9 +144,19 @@ export default function ParentAISettings({ onClose }) {
   const previewVoiceRef = useRef({ audio: null, revoke: null });
   const previewSfxRef = useRef({ audio: null, revoke: null });
   const aiProxyConfigured = useMemo(() => isAiProxyConfigured(), []);
+  const currentOrigin = useMemo(() => (typeof window !== 'undefined' ? window.location.origin : ''), []);
   const ttsAvailable = Boolean(currentBaseUrl && runtime.serverHasKey);
   const acceptsClientKey = runtime.acceptsClientKey === true;
-  const disableSaveKey = keyStatus.state === 'loading' || !acceptsClientKey;
+  const [lastSavedKey, setLastSavedKey] = useState('');
+  const trimmedKeyInput = keyInput.trim();
+  const baseCandidate = useMemo(() => {
+    const manual = (apiBase || '').trim();
+    return manual || currentBaseUrl || '';
+  }, [apiBase, currentBaseUrl]);
+  const baseIsHttps = useMemo(() => isValidHttpsBase(baseCandidate), [baseCandidate]);
+  const keyDirty = Boolean(trimmedKeyInput && trimmedKeyInput !== lastSavedKey);
+  const disableSaveKey =
+    keyStatus.state === 'loading' || !acceptsClientKey || !keyDirty || !baseIsHttps;
 
   const connectivityRows = useMemo(
     () => [
@@ -680,7 +691,7 @@ export default function ParentAISettings({ onClose }) {
         setSfxPreviewStatus({ state: 'error', message });
       }
     },
-    [audioSettings.sfxLowStimMode, audioSettings.sfxVolume, cleanupPreviewSfx, playSynthPreview, resolveSfxClip],
+    [audioSettings.sfxVolume, cleanupPreviewSfx, playSynthPreview, resolveSfxClip],
   );
 
   const handleSaveAudio = useCallback(() => {
@@ -820,7 +831,7 @@ export default function ParentAISettings({ onClose }) {
   }, [syncRuntime]);
 
   const runConnectivityDiagnostics = useCallback(async () => {
-    const candidate = (apiBase || '').trim() || currentBaseUrl;
+    const candidate = baseCandidate;
     if (!candidate) {
       const message = 'Set a Cloud API Base URL before testing connectivity.';
       setConnectivity((prev) => ({
@@ -848,6 +859,7 @@ export default function ParentAISettings({ onClose }) {
       {
         key: 'status',
         label: 'GET /v1/ai/status',
+        expectJson: true,
         request: () =>
           fetch(toUrl('/v1/ai/status'), {
             method: 'GET',
@@ -859,6 +871,7 @@ export default function ParentAISettings({ onClose }) {
       {
         key: 'voices',
         label: 'GET /v1/ai/tts/voices',
+        expectJson: true,
         request: () =>
           fetch(toUrl('/v1/ai/tts/voices'), {
             method: 'GET',
@@ -870,6 +883,7 @@ export default function ParentAISettings({ onClose }) {
       {
         key: 'sfx',
         label: 'GET /v1/ai/audio/sfx',
+        expectJson: true,
         request: () =>
           fetch(toUrl('/v1/ai/audio/sfx'), {
             method: 'GET',
@@ -881,6 +895,7 @@ export default function ParentAISettings({ onClose }) {
       {
         key: 'ttsOptions',
         label: 'OPTIONS /v1/ai/tts/say',
+        expectJson: false,
         request: () =>
           fetch(toUrl('/v1/ai/tts/say'), {
             method: 'OPTIONS',
@@ -895,6 +910,7 @@ export default function ParentAISettings({ onClose }) {
       {
         key: 'ttsPost',
         label: 'POST /v1/ai/tts/say',
+        expectJson: true,
         request: () =>
           fetch(toUrl('/v1/ai/tts/say'), {
             method: 'POST',
@@ -919,17 +935,38 @@ export default function ParentAISettings({ onClose }) {
       for (const endpoint of endpoints) {
         try {
           const response = await endpoint.request();
+          const contentType = response.headers.get('content-type') || '';
+          const body =
+            endpoint.expectJson && contentType.includes('application/json')
+              ? await response.json().catch(() => null)
+              : null;
+
+          if (endpoint.key === 'status' && body) {
+            updateAiFeaturesFromStatus(body);
+          }
+
+          let messageDetail = `HTTP ${response.status}`;
+          if (!response.ok) {
+            if (endpoint.key === 'ttsPost' && response.status === 503 && body?.message) {
+              messageDetail = String(body.message);
+            } else if (body?.message) {
+              messageDetail = `HTTP ${response.status} – ${body.message}`;
+            } else if (body?.error) {
+              messageDetail = `HTTP ${response.status} – ${body.error}`;
+            }
+          }
+
           setConnectivity((prev) => ({
             ...prev,
             [endpoint.key]: {
               state: response.ok ? 'success' : 'error',
-              message: `HTTP ${response.status}`,
+              message: messageDetail,
             },
           }));
           if (!response.ok) {
             showToast({
               level: 'error',
-              message: `${endpoint.label} returned HTTP ${response.status}`,
+              message: `${endpoint.label} returned ${messageDetail}`,
             });
           }
         } catch (error) {
@@ -944,15 +981,27 @@ export default function ParentAISettings({ onClose }) {
     } finally {
       setConnectivity((prev) => ({ ...prev, running: false }));
     }
-  }, [apiBase, currentBaseUrl]);
+  }, [baseCandidate]);
 
   useEffect(() => {
     syncRuntime();
   }, [syncRuntime]);
 
+  useEffect(() => {
+    if (health.cors_ok && corsHelpOpen) {
+      setCorsHelpOpen(false);
+    }
+  }, [health.cors_ok, corsHelpOpen]);
+
+  useEffect(() => {
+    if (!runtime.serverHasKey) {
+      setLastSavedKey('');
+    }
+  }, [runtime.serverHasKey]);
+
   const runHealthCheck = useCallback(
     async () => {
-      const candidateBase = (apiBase || '').trim() || currentBaseUrl || getConfiguredBaseUrl() || '';
+      const candidateBase = baseCandidate || getConfiguredBaseUrl() || '';
       if (!candidateBase) {
         setTestStatus({ state: 'error', ok: false, message: 'Set a Cloud API Base URL before testing the connection.' });
         return;
@@ -960,12 +1009,46 @@ export default function ParentAISettings({ onClose }) {
 
       setTestStatus({ state: 'loading', ok: null, message: null });
       try {
-        const client = new MathGalaxyAPI({ baseUrl: candidateBase });
-        const status = await client.aiStatus();
+        const url = (() => {
+          try {
+            return new URL('/v1/ai/status', candidateBase).toString();
+          } catch {
+            return `${candidateBase.replace(/\/+$/, '')}/v1/ai/status`;
+          }
+        })();
+
+        const response = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: { Accept: 'application/json' },
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const payload = contentType.includes('application/json')
+          ? await response.json().catch(() => null)
+          : null;
+
+        if (!response.ok) {
+          const message =
+            (payload?.message && String(payload.message)) ||
+            (payload?.error && String(payload.error)) ||
+            `Cloud AI status check failed with HTTP ${response.status}.`;
+          setTestStatus({ state: 'error', ok: false, message });
+          window.dispatchEvent(new CustomEvent('ai:offline', { detail: message }));
+          setKeyWarning(null);
+          await syncRuntime({ preserveAiAllowed: true });
+          return;
+        }
+
+        updateAiFeaturesFromStatus(payload);
+
         const infoParts = [];
-        if (status && typeof status === 'object') {
-          const statusText = typeof status.status === 'string' ? status.status : null;
-          const messageText = typeof status.message === 'string' ? status.message : null;
+        if (payload && typeof payload === 'object') {
+          const statusText = typeof payload.status === 'string' ? payload.status : null;
+          const messageText = typeof payload.message === 'string' ? payload.message : null;
+          const noteText = typeof payload.note === 'string' && payload.note.trim() ? payload.note.trim() : null;
+          setKeyWarning(noteText);
           if (statusText) {
             infoParts.push(statusText);
           }
@@ -990,7 +1073,7 @@ export default function ParentAISettings({ onClose }) {
         await syncRuntime({ preserveAiAllowed: true });
       }
     },
-    [apiBase, currentBaseUrl, syncRuntime],
+    [baseCandidate, syncRuntime],
   );
 
   const handleSaveKey = useCallback(async () => {
@@ -1001,24 +1084,31 @@ export default function ParentAISettings({ onClose }) {
       });
       return;
     }
-    if (!keyInput.trim()) {
+    if (!trimmedKeyInput) {
       setKeyStatus({ state: 'error', message: 'Please paste a valid Google Gemini API key.' });
+      return;
+    }
+    if (!baseIsHttps) {
+      setKeyStatus({ state: 'error', message: 'Provide a valid HTTPS Cloud API Base URL before saving.' });
       return;
     }
     setKeyStatus({ state: 'loading', message: null });
     try {
       const response = await saveGeminiKey(
-        keyInput.trim(),
+        trimmedKeyInput,
         planningModel.trim() || runtime.planningModel || '',
       );
       const message = response?.message
         || (response?.ok ? 'API key saved securely.' : null)
         || 'API key saved securely.';
-      setKeyStatus({ state: 'success', message });
+      const successMessage = message || 'Key saved on server.';
+      setKeyStatus({ state: 'success', message: successMessage });
       setKeyWarning(response?.note || null);
-      setKeyInput((prev) => prev.trim());
+      setKeyInput(() => trimmedKeyInput);
+      setLastSavedKey(trimmedKeyInput);
       const updatedRuntime = await syncRuntime({ fallbackNote: response?.note ?? undefined, preserveAiAllowed: true });
-      setToast({ type: 'success', message: 'Key saved' });
+      setToast({ type: 'success', message: 'Key saved on server' });
+      showToast({ level: 'success', message: 'Key saved on server' });
       if (response?.verified) {
         setRuntime((prev) => {
           const base = updatedRuntime || prev;
@@ -1044,7 +1134,7 @@ export default function ParentAISettings({ onClose }) {
       setKeyWarning(null);
       setToast({ type: 'error', message });
     }
-  }, [acceptsClientKey, aiAllowed, keyInput, planningModel, runtime.planningModel, spriteModel, syncRuntime]);
+  }, [acceptsClientKey, aiAllowed, baseIsHttps, trimmedKeyInput, planningModel, runtime.planningModel, spriteModel, syncRuntime]);
 
   const handleSaveModels = useCallback(async () => {
     const nextErrors = {
@@ -1132,9 +1222,39 @@ export default function ParentAISettings({ onClose }) {
                   <p>
                     AI enabled: <span className="font-semibold">{runtime.aiEnabled ? 'Yes' : 'No'}</span> (needs key + planning model + sprite model + toggle on)
                   </p>
-                  <p>
-                    CORS check: <span className="font-semibold">{health.cors_ok ? 'Allowed' : 'Blocked'}</span>
-                  </p>
+                  <div className="space-y-1">
+                    <p className="flex items-center gap-2">
+                      <span>
+                        CORS check: <span className="font-semibold">{health.cors_ok ? 'Allowed' : 'Blocked'}</span>
+                      </span>
+                      {!health.cors_ok && (
+                        <button
+                          type="button"
+                          onClick={() => setCorsHelpOpen((prev) => !prev)}
+                          className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-100"
+                        >
+                          Why?
+                        </button>
+                      )}
+                    </p>
+                    {!health.cors_ok && corsHelpOpen && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-700">
+                        <p className="font-semibold">Allow requests from <code>{currentOrigin || 'https://your-app'}</code>.</p>
+                        <p className="mt-1">Ensure the AI server returns these headers:</p>
+                        <ul className="mt-1 list-disc space-y-1 pl-4">
+                          <li>
+                            <code>Access-Control-Allow-Origin: {currentOrigin || '*'}</code>
+                          </li>
+                          <li>
+                            <code>Access-Control-Allow-Methods: GET, POST, OPTIONS</code>
+                          </li>
+                          <li>
+                            <code>Access-Control-Allow-Headers: Content-Type, Authorization</code>
+                          </li>
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                   {runtime.lastError && (
                     <p className="flex items-center gap-2 font-medium text-red-600">
                       <AlertCircle size={14} /> {runtime.lastError}
@@ -1271,7 +1391,10 @@ export default function ParentAISettings({ onClose }) {
               id="gemini-key"
               type="password"
               value={keyInput}
-              onChange={(event) => setKeyInput(event.target.value)}
+              onChange={(event) => {
+                setKeyInput(event.target.value);
+                setKeyStatus({ state: 'idle', message: null });
+              }}
               placeholder="AIzaSy..."
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
               autoComplete="off"
@@ -1283,7 +1406,13 @@ export default function ParentAISettings({ onClose }) {
                 title={
                   !acceptsClientKey
                     ? 'Server is not accepting client-supplied API keys right now.'
-                    : undefined
+                    : !trimmedKeyInput
+                      ? 'Paste a Google Gemini API key to enable saving.'
+                      : !keyDirty
+                        ? 'Key unchanged. Edit the field before saving.'
+                        : !baseIsHttps
+                          ? 'Set a HTTPS Cloud API Base URL before saving the key.'
+                          : undefined
                 }
                 className={`px-5 py-3 rounded-xl font-semibold text-white shadow ${
                   disableSaveKey ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'

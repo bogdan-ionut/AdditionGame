@@ -1,35 +1,10 @@
-const STORAGE_KEY = 'mathgalaxy.apiBase';
+import { requireApiBaseUrl } from '../lib/api/baseUrl';
 
 const DEFAULT_HEADERS: HeadersInit = {
   Accept: 'application/json',
 };
 
 const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
-
-const readStoredApiBase = (): string | null => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored && stored.trim()) {
-      return stripTrailingSlash(stored.trim());
-    }
-  } catch (error) {
-    console.warn('[api] Unable to read mathgalaxy.apiBase from localStorage', error);
-  }
-  return null;
-};
-
-export const API_BASE = readStoredApiBase() || '';
-
-export const requireApiBase = (): string => {
-  const base = readStoredApiBase() || API_BASE;
-  if (!base) {
-    throw new Error('Math Galaxy API base URL is not configured. Open AI Settings.');
-  }
-  return base;
-};
 
 export class ApiError extends Error {
   status?: number;
@@ -47,7 +22,7 @@ const buildUrl = (path: string) => {
   if (!path.startsWith('/')) {
     throw new Error(`API path must start with "/": ${path}`);
   }
-  const base = requireApiBase();
+  const base = stripTrailingSlash(requireApiBaseUrl());
   return `${base}${path}`;
 };
 
@@ -149,4 +124,3 @@ export const fetchVoices = async () => {
 };
 
 export const fetchSfx = () => getJson('/v1/ai/audio/sfx');
-

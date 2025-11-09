@@ -81,6 +81,14 @@ export function resolveApiBaseUrl(): string | null {
   return null;
 }
 
+export function requireApiBaseUrl(): string {
+  const resolved = resolveApiBaseUrl();
+  if (!resolved) {
+    throw new Error('Math Galaxy API base URL is not configured. Open AI Settings.');
+  }
+  return resolved;
+}
+
 export function clearApiBaseUrl() {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
@@ -138,5 +146,21 @@ export function setApiBaseUrl(url: string) {
 
 export function getStoredApiBaseUrl(): string | null {
   return readLocalStorage();
+}
+
+export function isValidHttpsBase(value: string | null | undefined): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'https:' && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
 }
 

@@ -4,7 +4,8 @@ import {
   postProcessJob,
   isAiProxyConfigured,
 } from './aiEndpoints';
-import mathGalaxyClient, { MathGalaxyApiError } from './mathGalaxyClient';
+import mathGalaxyClient, { MathGalaxyApiError, getConfiguredBaseUrl } from './mathGalaxyClient';
+import { resolveApiBaseUrl } from '../lib/api/baseUrl';
 import { deriveMotifsFromInterests } from '../lib/aiPersonalization';
 
 const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
@@ -64,19 +65,57 @@ export async function saveGeminiKey(key, model) {
   }
 
   const normalizedModel = typeof model === 'string' ? model.trim() : '';
-  const payload = {
-    key: trimmed,
-    apiKey: trimmed,
-    api_key: trimmed,
-  };
-  if (normalizedModel) {
-    payload.model = normalizedModel;
-    payload.planner = normalizedModel;
+  const base = (() => {
+    const candidate = resolveApiBaseUrl() || getConfiguredBaseUrl() || '';
+    return typeof candidate === 'string' ? candidate.trim().replace(/\/+$/, '') : '';
+  })();
+
+  if (!base) {
+    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
   }
 
+  const endpoint = (() => {
+    try {
+      return new URL('/v1/ai/runtime/key', base).toString();
+    } catch {
+      return `${base}/v1/ai/runtime/key`;
+    }
+  })();
+
+  const payload = { provider: 'google', api_key: trimmed };
+
   try {
-    const response = await mathGalaxyClient.saveAiKey(payload);
-    const data = response && typeof response === 'object' ? response : {};
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+      mode: 'cors',
+      credentials: 'omit',
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await response.json().catch(() => ({}))
+      : {};
+
+    if (!response.ok) {
+      const message =
+        readStringFrom(data, ['message', 'error', 'detail', 'reason']) ||
+        `Saving API key failed with status ${response.status}.`;
+      throw new MathGalaxyApiError(message, { status: response.status, data });
+    }
+
+    if (normalizedModel) {
+      try {
+        await mathGalaxyClient.aiRuntime({ planning_model: normalizedModel });
+      } catch (runtimeError) {
+        console.warn('[aiPlanner] Unable to hint planning model after saving key.', runtimeError);
+      }
+    }
+
     const verified =
       readBooleanFrom(data, ['verified', 'isVerified', 'is_verified']) ??
       readBooleanFrom(data, ['have_key', 'haveKey', 'server_has_key', 'serverHasKey', 'key_present', 'keyPresent']) ??

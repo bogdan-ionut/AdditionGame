@@ -185,7 +185,7 @@ export async function synthesizeSpeech(payload = {}) {
           ? payload.speaking_rate
           : undefined,
       pitch: typeof payload.pitch === 'number' ? payload.pitch : undefined,
-      languageCode:
+      language:
         payload.languageCode ||
         payload.language_code ||
         payload.language ||
