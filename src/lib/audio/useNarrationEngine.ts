@@ -5,6 +5,7 @@ import { AUDIO_SETTINGS_EVENT, LS_AUDIO_SETTINGS, loadAudioSettings, saveAudioSe
 import { createObjectUrlFromBase64 } from './utils';
 import { speak, stopSpeaking } from '../tts';
 import type { AiRuntimeState } from '../ai/runtime';
+import { playEncouragement, playLowStim, playSuccess } from '../sfx/synth';
 
 export type VoicePreset = {
   id: string;
@@ -453,11 +454,27 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     [catalog.defaultSfxPackId, catalog.sfxPacks, settings.sfxEnabled, settings.sfxPackId],
   );
 
+  const playSynthFallback = useCallback(
+    (category: 'success' | 'error' | 'progress') => {
+      if (settings.sfxLowStimMode) {
+        return playLowStim();
+      }
+      if (category === 'error') {
+        return playEncouragement();
+      }
+      return playSuccess();
+    },
+    [settings.sfxLowStimMode],
+  );
+
   const playSfx = useCallback(
     async (category: 'success' | 'error' | 'progress') => {
       if (!settings.sfxEnabled) return;
       const clip = resolveSfxClip(category);
-      if (!clip) return;
+      if (!clip) {
+        await playSynthFallback(category);
+        return;
+      }
       try {
         let audio: HTMLAudioElement | null = null;
         if (clip.url) {
@@ -468,7 +485,10 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
           audio.addEventListener('ended', () => playable.revoke(), { once: true });
           audio.addEventListener('error', () => playable.revoke(), { once: true });
         }
-        if (!audio) return;
+        if (!audio) {
+          await playSynthFallback(category);
+          return;
+        }
         const gain = clip.gain != null && Number.isFinite(clip.gain) ? Number(clip.gain) : 1;
         const baseVolume = settings.sfxLowStimMode
           ? Math.min(settings.sfxVolume, 0.2)
@@ -478,9 +498,10 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
         sfxPlayersRef.current.set(category, audio);
       } catch (error) {
         console.warn('[audio] Unable to play SFX clip', error);
+        await playSynthFallback(category);
       }
     },
-    [resolveSfxClip, settings.sfxEnabled, settings.sfxVolume],
+    [playSynthFallback, resolveSfxClip, settings.sfxEnabled, settings.sfxVolume],
   );
 
   return {
