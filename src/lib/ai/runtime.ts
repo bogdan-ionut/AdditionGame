@@ -79,6 +79,7 @@ export type AiRuntimeState = {
   allowedTtsModels?: string[];
   runtimeLabel?: string | null;
   note?: string | null;
+  acceptsClientKey?: boolean | null;
 };
 
 const readString = (value: unknown): string | null => {
@@ -134,6 +135,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       aiAllowed: cfg.aiAllowed,
       lastError: null,
       note: null,
+      acceptsClientKey: null,
     };
   }
 
@@ -150,6 +152,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
       aiAllowed: cfg.aiAllowed,
       lastError: 'Configure Math Galaxy API URL in AI Settings to enable AI features.',
       note: null,
+      acceptsClientKey: null,
     };
   }
 
@@ -314,6 +317,36 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     return [] as string[];
   })();
 
+  const acceptsClientKey =
+    readBooleanFrom(runtimePayload, [
+      'accepts_client_key',
+      'acceptsClientKey',
+      'accepts_client_keys',
+      'acceptsClientKeys',
+      'allow_client_key',
+      'allowClientKey',
+      'client_key_allowed',
+      'clientKeyAllowed',
+      'client_keys_allowed',
+      'clientKeysAllowed',
+    ]) ??
+    readBooleanFrom(payloadConfig, [
+      'accepts_client_key',
+      'acceptsClientKey',
+      'accepts_client_keys',
+      'acceptsClientKeys',
+      'allow_client_key',
+      'allowClientKey',
+      'client_key_allowed',
+      'clientKeyAllowed',
+      'client_keys_allowed',
+      'clientKeysAllowed',
+    ]) ??
+    readBooleanFrom(
+      (runtimePayload?.capabilities as Record<string, unknown> | null | undefined) ?? undefined,
+      ['accepts_client_key', 'acceptsClientKey', 'client_key', 'clientKey'],
+    );
+
   return {
     aiEnabled,
     serverHasKey,
@@ -326,5 +359,6 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     allowedTtsModels,
     runtimeLabel,
     note,
+    acceptsClientKey,
   };
 }
