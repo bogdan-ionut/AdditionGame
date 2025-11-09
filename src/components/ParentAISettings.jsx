@@ -15,6 +15,7 @@ import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices, synthesizeSpeech } from 
 import { createObjectUrlFromBase64, createObjectUrlFromBuffer } from '../lib/audio/utils';
 import { MathGalaxyAPI } from '../services/math-galaxy-api';
 import { getStoredApiBaseUrl, resolveApiBaseUrl } from '../lib/api/baseUrl';
+import { playEncouragement, playLowStim, playSuccess } from '../lib/sfx/synth';
 
 const PLANNING_MODEL_OPTIONS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
 const SPRITE_MODEL_OPTIONS = ['gemini-2.5-flash-image'];
@@ -552,6 +553,19 @@ export default function ParentAISettings({ onClose }) {
     [audioCatalog.defaultSfxPackId, audioCatalog.sfxPacks, audioSettings.sfxPackId],
   );
 
+  const playSynthPreview = useCallback(
+    (category) => {
+      if (audioSettings.sfxLowStimMode) {
+        return playLowStim();
+      }
+      if (category === 'error') {
+        return playEncouragement();
+      }
+      return playSuccess();
+    },
+    [audioSettings.sfxLowStimMode],
+  );
+
   const handlePreviewSfx = useCallback(
     async (category) => {
       cleanupPreviewSfx();
@@ -559,13 +573,18 @@ export default function ParentAISettings({ onClose }) {
       try {
         const resolved = resolveSfxClip(category);
         if (!resolved) {
-          setSfxPreviewStatus({ state: 'error', message: 'Nu există sunete pentru această categorie.' });
+          const played = await playSynthPreview(category);
+          if (played) {
+            setSfxPreviewStatus({ state: 'success', message: 'Redăm sunetul sintetic…' });
+          } else {
+            setSfxPreviewStatus({ state: 'error', message: 'Browserul nu poate reda sunetele sintetice.' });
+          }
           return;
         }
         const { clip, packId } = resolved;
         let audio = null;
         let revoke = null;
-        let missingRemote = false;
+        let synthHint = false;
         if (clip?.id && packId) {
           try {
             const remote = await fetchAudioSfx({ pack: packId, name: clip.id, category });
@@ -573,8 +592,12 @@ export default function ParentAISettings({ onClose }) {
               const playable = createObjectUrlFromBuffer(remote.buffer, remote.mimeType);
               audio = new Audio(playable.objectUrl);
               revoke = playable.revoke;
-            } else if (remote === null) {
-              missingRemote = true;
+            } else if (remote && remote.url) {
+              audio = new Audio(remote.url);
+            } else if (remote?.mode === 'synthesize' || remote === null || remote === undefined) {
+              synthHint = true;
+            } else if (remote && typeof remote === 'object' && Object.keys(remote).length === 0) {
+              synthHint = true;
             }
           } catch (remoteError) {
             console.warn('Unable to fetch remote SFX clip', remoteError);
@@ -590,12 +613,17 @@ export default function ParentAISettings({ onClose }) {
           }
         }
         if (!audio) {
-          setSfxPreviewStatus({
-            state: 'error',
-            message: missingRemote
-              ? 'Nu există sunete pentru această categorie.'
-              : 'Clipul SFX nu are date valide.',
-          });
+          const played = await playSynthPreview(category);
+          if (played) {
+            setSfxPreviewStatus({ state: 'success', message: 'Redăm sunetul sintetic…' });
+          } else {
+            setSfxPreviewStatus({
+              state: 'error',
+              message: synthHint
+                ? 'Browserul nu poate reda sunetele sintetice.'
+                : 'Clipul SFX nu are date valide.',
+            });
+          }
           return;
         }
         audio.volume = Math.min(1, Math.max(0, audioSettings.sfxVolume));
@@ -619,7 +647,7 @@ export default function ParentAISettings({ onClose }) {
         setSfxPreviewStatus({ state: 'error', message });
       }
     },
-    [audioSettings.sfxVolume, cleanupPreviewSfx, resolveSfxClip],
+    [audioSettings.sfxLowStimMode, audioSettings.sfxVolume, cleanupPreviewSfx, playSynthPreview, resolveSfxClip],
   );
 
   const handleSaveAudio = useCallback(() => {
