@@ -149,7 +149,14 @@ const QuickPathCard = ({ path, isActive, onPreview, onLaunch }) => {
   );
 };
 
-const LearningPathDashboard = ({ operations, learningPaths, onSelectPath, aiOffline = false, onOpenAiSettings }) => {
+const LearningPathDashboard = ({
+  operations,
+  learningPaths,
+  onSelectPath,
+  aiOffline = false,
+  onOpenAiSettings,
+  runtimeInfo = null,
+}) => {
   const groupedPaths = useMemo(() => groupPathsByOperation(learningPaths), [learningPaths]);
   const operationList = useMemo(() => Object.values(operations), [operations]);
   const [activeOperationId, setActiveOperationId] = useState(operationList[0]?.id ?? null);
@@ -213,6 +220,21 @@ const LearningPathDashboard = ({ operations, learningPaths, onSelectPath, aiOffl
     [filteredPaths, learningPaths, previewPathId],
   );
 
+  const runtimeBadges = useMemo(() => {
+    if (!runtimeInfo || typeof runtimeInfo !== 'object') {
+      return [];
+    }
+    const planning = runtimeInfo.planning_model || runtimeInfo.planningModel || null;
+    const sprite = runtimeInfo.sprite_model || runtimeInfo.spriteModel || null;
+    const tts = runtimeInfo.tts_model || runtimeInfo.ttsModel || null;
+    const badges = [
+      planning ? { key: 'planner', label: 'Planner', value: planning } : null,
+      sprite ? { key: 'sprites', label: 'Sprites', value: sprite } : null,
+      tts ? { key: 'tts', label: 'Voice', value: tts } : null,
+    ].filter(Boolean);
+    return badges;
+  }, [runtimeInfo]);
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-50">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-gradient-to-b from-sky-500/20 via-slate-900/40 to-slate-950 blur-3xl" />
@@ -243,6 +265,19 @@ const LearningPathDashboard = ({ operations, learningPaths, onSelectPath, aiOffl
                 <p className="max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
                   Explore story-driven modes, adaptive practice, and hands-on missions designed with educators for the 2025 classroom and home. Pick a mode to preview key beats, then launch instantly when your learner is ready.
                 </p>
+                {runtimeBadges.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {runtimeBadges.map((badge) => (
+                      <span
+                        key={badge.key}
+                        className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-100"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                        {badge.label}: {badge.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-col gap-3 text-sm text-slate-200 sm:flex-row">
                   <div className="inline-flex flex-1 items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/70 px-4 py-3">
                     <GraduationCap size={18} className="text-emerald-300" />

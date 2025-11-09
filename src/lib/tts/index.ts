@@ -1,4 +1,4 @@
-import { request } from "../../services/math-galaxy-api";
+import { ttsSay } from "../../services/api";
 
 export type SpeakMode = "server" | "webspeech" | "none";
 
@@ -10,6 +10,7 @@ export type SpeakOptions = {
   pitch?: number;
   volume?: number;
   model?: string | null;
+  allowBrowserFallback?: boolean;
 };
 
 export type SpeakResult = { ok: boolean; mode: SpeakMode };
@@ -58,7 +59,7 @@ function stopActiveServerPlayback() {
   }
 }
 
-async function playAudioBuffer(buffer: ArrayBuffer, mimeType: string): Promise<boolean> {
+async function playAudioBuffer(buffer: ArrayBuffer, mimeType: string, volume = 1): Promise<boolean> {
   if (typeof window === "undefined" || typeof Audio === "undefined") {
     return false;
   }
@@ -69,6 +70,7 @@ async function playAudioBuffer(buffer: ArrayBuffer, mimeType: string): Promise<b
   const objectUrl = URL.createObjectURL(blob);
   const audio = new Audio();
   audio.src = objectUrl;
+  audio.volume = clamp(volume, 0, 1);
 
   try {
     await audio.play();
@@ -194,36 +196,6 @@ async function speakWithWebSpeech(payload: WebSpeechPayload): Promise<boolean> {
   }
 }
 
-function buildServerPayload(options: Required<Pick<SpeakOptions, "text">> & SpeakOptions) {
-  const payload: Record<string, unknown> = {
-    text: options.text,
-  };
-  if (options.lang) {
-    payload.lang = options.lang;
-    payload.language = options.lang;
-  }
-  if (options.voiceName) {
-    payload.voice = options.voiceName;
-    payload.voiceId = options.voiceName;
-    payload.voiceName = options.voiceName;
-  }
-  if (typeof options.rate === "number") {
-    payload.rate = options.rate;
-    payload.speakingRate = options.rate;
-    payload.speaking_rate = options.rate;
-  }
-  if (typeof options.pitch === "number") {
-    payload.pitch = options.pitch;
-  }
-  if (typeof options.volume === "number") {
-    payload.volume = options.volume;
-  }
-  if (options.model) {
-    payload.model = options.model;
-  }
-  return payload;
-}
-
 async function fallbackToWebSpeech(payload: WebSpeechPayload): Promise<SpeakResult> {
   const ok = await speakWithWebSpeech(payload);
   return { ok, mode: ok ? "webspeech" : "none" };
@@ -237,6 +209,7 @@ export async function speak({
   pitch = 1,
   volume = 1,
   model = null,
+  allowBrowserFallback = false,
 }: SpeakOptions): Promise<SpeakResult> {
   const content = text?.trim();
   if (!content) {
@@ -252,53 +225,49 @@ export async function speak({
     volume: clamp(toFinite(volume, 1), 0, 1),
   };
 
-  const payload = buildServerPayload({ text: content, lang, voiceName, rate, pitch, volume, model });
-  const headers: HeadersInit = {
-    Accept: "audio/*,application/json",
-    "Content-Type": "application/json",
-  };
-
   try {
     stopActiveServerPlayback();
-    const response = await request("/v1/ai/tts/say", {
-      method: "POST",
-      body: JSON.stringify(payload),
-      headers,
+    const requestPayload: Record<string, unknown> = {
+      text: content,
+      speaking_rate: toFinite(rate, 1),
+      pitch: toFinite(pitch, 1),
+    };
+    if (voiceName) {
+      requestPayload.voice_id = voiceName;
+    }
+    if (lang) {
+      requestPayload.language = lang;
+    }
+    if (model) {
+      requestPayload.model = model;
+    }
+    const { buffer, contentType } = await ttsSay(requestPayload as {
+      text: string;
+      voice_id?: string;
+      speaking_rate?: number;
+      pitch?: number;
     });
-    const contentType = (response.headers.get("content-type") || "").toLowerCase();
-
-    if (response.ok && contentType.startsWith("audio/")) {
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength > 0) {
-        const played = await playAudioBuffer(buffer, contentType.split(";")[0] || contentType);
-        if (played) {
-          return { ok: true, mode: "server" };
-        }
+    if (buffer.byteLength > 0) {
+      const played = await playAudioBuffer(buffer, contentType || "audio/mpeg", clamp(volume, 0, 1));
+      if (played) {
+        return { ok: true, mode: "server" };
       }
     }
-
-    let data: any = null;
-    if (contentType.includes("application/json")) {
-      try {
-        data = await response.json();
-      } catch (error) {
-        console.warn("[tts] Failed to parse TTS JSON response", error);
-      }
-      if (data?.fallback_webspeech) {
-        return fallbackToWebSpeech(fallbackPayload);
-      }
-    }
-
-    if (!response.ok) {
-      console.warn("[tts] Server TTS request failed", { status: response.status, data });
+    if (allowBrowserFallback) {
       return fallbackToWebSpeech(fallbackPayload);
     }
-
-    // Unexpected response shape – fall back to Web Speech.
-    return fallbackToWebSpeech(fallbackPayload);
-  } catch (error) {
-    console.warn("[tts] Server TTS request error", error);
-    return fallbackToWebSpeech(fallbackPayload);
+    return { ok: false, mode: "none" };
+  } catch (error: any) {
+    if (error instanceof Error && error.message === "tts_unavailable") {
+      if (allowBrowserFallback) {
+        return fallbackToWebSpeech(fallbackPayload);
+      }
+      throw error;
+    }
+    if (allowBrowserFallback) {
+      return fallbackToWebSpeech(fallbackPayload);
+    }
+    throw error instanceof Error ? error : new Error(String(error));
   }
 }
 

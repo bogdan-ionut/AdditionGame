@@ -19,6 +19,7 @@ export type AudioSettings = {
   sfxPackId: string | null;
   sfxLowStimMode: boolean;
   sfxVolume: number;
+  browserVoiceFallback: boolean;
   updatedAt: string;
 };
 
@@ -40,6 +41,7 @@ const createDefaultAudioSettings = (): AudioSettings => {
     sfxPackId: null,
     sfxLowStimMode: false,
     sfxVolume: 0.6,
+    browserVoiceFallback: false,
     updatedAt: new Date().toISOString(),
   };
 };
@@ -75,6 +77,7 @@ export function loadAudioSettings(): AudioSettings {
       sfxPackId: typeof parsed?.sfxPackId === 'string' ? parsed.sfxPackId : null,
       sfxLowStimMode: parsed?.sfxLowStimMode === true,
       sfxVolume: Number.isFinite(parsed?.sfxVolume) ? Number(parsed.sfxVolume) : base.sfxVolume,
+      browserVoiceFallback: parsed?.browserVoiceFallback === true,
       updatedAt: typeof parsed?.updatedAt === 'string' ? parsed.updatedAt : base.updatedAt,
     };
 
@@ -117,6 +120,7 @@ export function saveAudioSettings(next: Partial<AudioSettings>): AudioSettings {
       next.sfxVolume != null && Number.isFinite(next.sfxVolume)
         ? Math.min(1, Math.max(0, Number(next.sfxVolume)))
         : current.sfxVolume,
+    browserVoiceFallback: next.browserVoiceFallback ?? current.browserVoiceFallback,
     updatedAt: new Date().toISOString(),
   };
 
