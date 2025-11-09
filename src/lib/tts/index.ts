@@ -232,7 +232,7 @@ export async function speak({
       voiceId: voiceName || undefined,
       speakingRate: toFinite(rate, 1),
       pitch: toFinite(pitch, 1),
-      languageCode: lang,
+      language: lang,
     });
     const buffer = await blob.arrayBuffer();
     if (buffer.byteLength > 0) {

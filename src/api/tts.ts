@@ -1,31 +1,39 @@
-import { requireApiBase } from '../services/api';
+import { requireApiBaseUrl } from '../lib/api/baseUrl';
+import { supportsTtsStream } from '../services/aiFeatures';
 
 export type TtsSynthesizeOptions = {
   voiceId?: string;
   speakingRate?: number;
   pitch?: number;
   language?: string;
-  languageCode?: string;
   signal?: AbortSignal;
 };
 
-type JsonTtsResponse = {
+export type TtsSayRequest = {
+  text: string;
+  voice_id?: string;
+  speaking_rate?: number;
+  pitch?: number;
+  language?: string;
+};
+
+export type TtsSayResponse = {
   ok?: boolean;
   content_type?: string | null;
   audio_b64?: string | null;
   error?: string | null;
   message?: string | null;
+  note?: string | null;
   code?: string | null;
   error_code?: string | null;
-  fallback_webspeech?: boolean;
   [key: string]: unknown;
 };
 
 class JsonEndpointUnavailableError extends Error {
   status: number;
-  body: JsonTtsResponse | null;
+  body: TtsSayResponse | null;
 
-  constructor(status: number, body: JsonTtsResponse | null) {
+  constructor(status: number, body: TtsSayResponse | null) {
     super('tts_json_endpoint_unavailable');
     this.name = 'JsonEndpointUnavailableError';
     this.status = status;
@@ -33,13 +41,13 @@ class JsonEndpointUnavailableError extends Error {
   }
 }
 
-class ExtraFieldsRejectedError extends Error {
-  body: JsonTtsResponse | null;
+class JsonEndpointNetworkError extends Error {
+  cause: unknown;
 
-  constructor(body: JsonTtsResponse | null) {
-    super('tts_extra_fields_rejected');
-    this.name = 'ExtraFieldsRejectedError';
-    this.body = body;
+  constructor(cause: unknown) {
+    super('tts_json_endpoint_network_error');
+    this.name = 'JsonEndpointNetworkError';
+    this.cause = cause;
   }
 }
 
@@ -65,85 +73,57 @@ function decodeBase64(value: string): Uint8Array {
   throw new Error('Base64 decoding is not supported in this environment.');
 }
 
-function includesExtraForbidden(body: JsonTtsResponse | null): boolean {
-  if (!body) return false;
-  try {
-    return JSON.stringify(body).includes('extra_forbidden');
-  } catch {
-    const values = [body.error, body.message, body.code, body.error_code];
-    return values.some((value) => typeof value === 'string' && value.includes('extra_forbidden'));
-  }
-}
-
-function sanitizeLanguageCode(language?: string | null): string | undefined {
-  if (!language) return undefined;
-  const trimmed = language.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-type JsonPayload = {
-  text: string;
-  voice_id?: string;
-  speaking_rate?: number;
-  pitch?: number;
-  language_code?: string;
-};
-
-type StreamPayload = {
-  text: string;
-  voice?: string;
-  speaking_rate?: number;
-  pitch?: number;
-  language_code?: string;
-  audio_mime_type: string;
-};
-
 const JSON_ENDPOINT = '/v1/ai/tts/say';
 const STREAM_ENDPOINT = '/v1/ai/tts/say/stream';
 
 async function requestJsonEndpoint(
   baseUrl: string,
-  payload: JsonPayload,
+  payload: TtsSayRequest,
   signal?: AbortSignal,
-  allowLanguageCode = true,
 ): Promise<Blob> {
-  const bodyPayload: JsonPayload = { text: payload.text };
-  if (payload.voice_id) bodyPayload.voice_id = payload.voice_id;
-  if (typeof payload.speaking_rate === 'number') bodyPayload.speaking_rate = payload.speaking_rate;
-  if (typeof payload.pitch === 'number') bodyPayload.pitch = payload.pitch;
-  if (allowLanguageCode && payload.language_code) bodyPayload.language_code = payload.language_code;
+  const url = `${baseUrl}${JSON_ENDPOINT}`;
+  const body: TtsSayRequest = { text: payload.text };
+  if (payload.voice_id) {
+    body.voice_id = payload.voice_id;
+  }
+  if (typeof payload.speaking_rate === 'number') {
+    body.speaking_rate = payload.speaking_rate;
+  }
+  if (typeof payload.pitch === 'number') {
+    body.pitch = payload.pitch;
+  }
+  if (payload.language) {
+    body.language = payload.language;
+  }
 
-  const response = await fetch(`${baseUrl}${JSON_ENDPOINT}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(bodyPayload),
-    mode: 'cors',
-    credentials: 'omit',
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+      mode: 'cors',
+      credentials: 'omit',
+      signal,
+    });
+  } catch (error) {
+    throw new JsonEndpointNetworkError(error);
+  }
 
   const contentType = response.headers.get('content-type') || '';
   if (response.ok && contentType.startsWith('audio/')) {
     return response.blob();
   }
 
-  let json: JsonTtsResponse | null = null;
+  let json: TtsSayResponse | null = null;
   if (contentType.includes('application/json')) {
     json = await response.json().catch(() => null);
   }
 
-  if (response.status === 422 && includesExtraForbidden(json)) {
-    throw new ExtraFieldsRejectedError(json);
-  }
-
-  if (response.status === 501 && json?.fallback_webspeech) {
-    throw new JsonEndpointUnavailableError(response.status, json);
-  }
-
-  if (response.status === 503) {
+  if (response.status === 501 || response.status === 503) {
     throw new JsonEndpointUnavailableError(response.status, json);
   }
 
@@ -165,6 +145,15 @@ async function requestJsonEndpoint(
   const mimeType = json.content_type && json.content_type.trim() ? json.content_type.trim() : 'audio/mpeg';
   return new Blob([bytes], { type: mimeType });
 }
+
+type StreamPayload = {
+  text: string;
+  voice?: string;
+  speaking_rate?: number;
+  pitch?: number;
+  language?: string;
+  audio_mime_type: string;
+};
 
 async function requestStreamEndpoint(
   baseUrl: string,
@@ -207,52 +196,63 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     throw new Error('Cannot synthesize empty text.');
   }
 
-  const baseUrl = requireApiBase();
-  const languageCode = sanitizeLanguageCode(opts.languageCode ?? opts.language ?? undefined);
-
-  const jsonPayload: JsonPayload = {
+  const baseUrl = requireApiBaseUrl();
+  const payload: TtsSayRequest = {
     text: normalized,
     voice_id: opts.voiceId?.trim() || undefined,
     speaking_rate: typeof opts.speakingRate === 'number' ? opts.speakingRate : undefined,
     pitch: typeof opts.pitch === 'number' ? opts.pitch : undefined,
-    language_code: languageCode,
+    language: opts.language?.trim() || undefined,
   };
 
-  let allowLanguageCode = Boolean(jsonPayload.language_code);
-  let hasRetriedWithoutLanguage = false;
-
   try {
-    while (true) {
-      try {
-        return await requestJsonEndpoint(baseUrl, jsonPayload, opts.signal, allowLanguageCode);
-      } catch (error) {
-        if (error instanceof ExtraFieldsRejectedError && allowLanguageCode && !hasRetriedWithoutLanguage) {
-          allowLanguageCode = false;
-          hasRetriedWithoutLanguage = true;
-          continue;
-        }
-        if (error instanceof JsonEndpointUnavailableError) {
-          const streamPayload: StreamPayload = {
-            text: normalized,
-            voice: jsonPayload.voice_id,
-            speaking_rate: jsonPayload.speaking_rate,
-            pitch: jsonPayload.pitch,
-            language_code: allowLanguageCode ? jsonPayload.language_code : undefined,
-            audio_mime_type: 'audio/mpeg',
-          };
+    return await requestJsonEndpoint(baseUrl, payload, opts.signal);
+  } catch (error) {
+    if (error instanceof JsonEndpointUnavailableError) {
+      if (!supportsTtsStream()) {
+        const message =
+          (error.body?.message && String(error.body.message)) ||
+          (error.body?.error && String(error.body.error)) ||
+          'Text-to-speech is temporarily unavailable. Please try again later.';
+        throw new Error(message);
+      }
 
-          try {
-            return await requestStreamEndpoint(baseUrl, streamPayload, opts.signal);
-          } catch (streamError) {
-            const friendlyError = new Error('Unable to synthesize speech right now. Please try again later.');
-            (friendlyError as any).cause = streamError;
-            throw friendlyError;
-          }
-        }
-        throw error;
+      try {
+        return await requestStreamEndpoint(baseUrl, {
+          text: normalized,
+          voice: payload.voice_id,
+          speaking_rate: payload.speaking_rate,
+          pitch: payload.pitch,
+          language: payload.language,
+          audio_mime_type: 'audio/mpeg',
+        }, opts.signal);
+      } catch (streamError) {
+        const friendly = new Error('Unable to synthesize speech right now. Please try again later.');
+        (friendly as any).cause = streamError;
+        throw friendly;
       }
     }
-  } catch (error) {
+
+    if (error instanceof JsonEndpointNetworkError) {
+      if (!supportsTtsStream()) {
+        throw new Error('Unable to reach the text-to-speech service. Please check your connection and try again.');
+      }
+      try {
+        return await requestStreamEndpoint(baseUrl, {
+          text: normalized,
+          voice: payload.voice_id,
+          speaking_rate: payload.speaking_rate,
+          pitch: payload.pitch,
+          language: payload.language,
+          audio_mime_type: 'audio/mpeg',
+        }, opts.signal);
+      } catch (streamError) {
+        const friendly = new Error('Unable to synthesize speech right now. Please try again later.');
+        (friendly as any).cause = streamError;
+        throw friendly;
+      }
+    }
+
     if (error instanceof Error) {
       throw error;
     }

@@ -2,6 +2,7 @@ import mathGalaxyClient, {
   MathGalaxyApiError,
   getConfiguredBaseUrl,
 } from '../../services/mathGalaxyClient';
+import { updateAiFeaturesFromStatus } from '../../services/aiFeatures';
 import { resolveApiBaseUrl } from '../env';
 
 export const LS_AI_CONFIG = 'ai.config.v1';
@@ -169,12 +170,16 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
   ];
 
   let statusFailed = false;
+  let statusPayload: Record<string, unknown> | null = null;
 
   for (const { name, fn } of fetchers) {
     try {
       const payload = await fn();
       if (payload && typeof payload === 'object') {
         Object.assign(aggregatedPayload, payload as Record<string, unknown>);
+        if (name === 'status') {
+          statusPayload = payload as Record<string, unknown>;
+        }
       }
     } catch (error) {
       const message =
@@ -195,6 +200,8 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
   if (statusFailed && !lastError) {
     lastError = offlineMessage;
   }
+
+  updateAiFeaturesFromStatus(statusPayload);
 
   const runtimePayload = Object.keys(aggregatedPayload).length ? aggregatedPayload : null;
   const payloadConfig = (runtimePayload?.config ?? runtimePayload?.settings) as
