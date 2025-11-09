@@ -8,6 +8,52 @@ export interface StatusResponse {
   accepts_client_key?: boolean
 }
 
+export type GradeLevel =
+  | 'preschool'
+  | 'grade1'
+  | 'grade2'
+  | 'grade3'
+  | 'grade4'
+  | 'grade5'
+  | 'grade6'
+
+export interface PlanBody {
+  userId?: string
+  grade?: GradeLevel
+  interests?: string[]
+  mastery?: Record<string, unknown>
+  target?: Record<string, unknown>
+  models?: { planner?: string }
+  text?: string
+  prompt?: string
+}
+
+export type PlanResponse =
+  | {
+      ok: true
+      plan: Record<string, unknown>
+    }
+  | {
+      ok: false
+      fallback_local: true
+      message?: string
+    }
+
+export interface SpriteImage {
+  mime: string
+  bytes_base64: string
+}
+
+export interface SpritesBody {
+  prompt: string
+  model?: string
+}
+
+export interface SpritesResponse {
+  ok: true
+  images: SpriteImage[]
+}
+
 export interface Voice {
   id: string
   name: string
@@ -116,6 +162,20 @@ export function listVoices(): Promise<VoicesResponse> {
 
 export function ttsSay(body: TtsSayBody): Promise<TtsSayResponse> {
   return http<TtsSayResponse>('/v1/ai/tts/say', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function plan(body: PlanBody): Promise<PlanResponse> {
+  return http<PlanResponse>('/v1/ai/plan', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function sprites(body: SpritesBody): Promise<SpritesResponse> {
+  return http<SpritesResponse>('/v1/ai/sprites', {
     method: 'POST',
     body: JSON.stringify(body),
   })
