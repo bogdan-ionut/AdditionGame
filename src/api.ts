@@ -8,6 +8,31 @@ export interface StatusResponse {
   accepts_client_key?: boolean
 }
 
+export interface Voice {
+  id: string
+  name: string
+  lang?: string
+  gender?: string
+  sample_url?: string
+}
+
+export interface VoicesResponse {
+  voices: Voice[]
+}
+
+export interface TtsSayBody {
+  text: string
+  voice_id?: string
+  speaking_rate?: number
+  pitch?: number
+}
+
+export interface TtsSayResponse {
+  ok: true
+  content_type: string
+  audio_b64: string
+}
+
 const trailingSlashPattern = /\/+$/
 
 export function apiBase(): string {
@@ -83,4 +108,15 @@ export async function http<T>(path: string, init: RequestInit = {}): Promise<T> 
 
 export function status(): Promise<StatusResponse> {
   return http<StatusResponse>('/v1/ai/status')
+}
+
+export function listVoices(): Promise<VoicesResponse> {
+  return http<VoicesResponse>('/v1/ai/tts/voices')
+}
+
+export function ttsSay(body: TtsSayBody): Promise<TtsSayResponse> {
+  return http<TtsSayResponse>('/v1/ai/tts/say', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
