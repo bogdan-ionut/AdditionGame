@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { status, type StatusResponse } from './api'
 import { Card } from './components/Card'
 import { LearningPlan } from './components/LearningPlan'
-import { SpriteGenerator } from './components/SpriteGenerator'
-import { TTSPlayground } from './components/TTSPlayground'
 
 export default function App() {
   const [data, setData] = useState<StatusResponse | null>(null)
@@ -143,9 +141,7 @@ export default function App() {
               )}
             </Card>
 
-            <TTSPlayground />
             <LearningPlan />
-            <SpriteGenerator />
           </div>
         </div>
       </main>
