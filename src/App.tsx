@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { status, type StatusResponse } from './api'
 import { Card } from './components/Card'
+import { TTSPlayground } from './components/TTSPlayground'
 
 export default function App() {
   const [data, setData] = useState<StatusResponse | null>(null)
@@ -66,8 +67,8 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-950">
-      <main className="flex flex-1 items-center justify-center px-4 py-16">
-        <div className="w-full max-w-3xl">
+      <main className="flex flex-1 justify-center px-4 py-16">
+        <div className="flex w-full max-w-3xl flex-col gap-10">
           <Card
             title="Runtime & Models"
             description="Live telemetry from the runtime status endpoint. Refresh any time to verify connectivity and model availability."
@@ -137,6 +138,8 @@ export default function App() {
               </dl>
             )}
           </Card>
+
+          <TTSPlayground />
         </div>
       </main>
     </div>
