@@ -149,7 +149,7 @@ export default function ParentAISettings({ onClose }) {
     });
     setLimitStatus({ state: 'idle', message: null });
     void refreshCacheEntries();
-  }, []);
+  }, [refreshCacheEntries, refreshCacheSummary]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -188,7 +188,7 @@ export default function ParentAISettings({ onClose }) {
       window.removeEventListener(CACHE_EVENT_NAME, refresh);
       window.removeEventListener(CACHE_LIMITS_EVENT, handleLimitsEvent);
     };
-  }, []);
+  }, [refreshCacheEntries, refreshCacheSummary]);
 
   useEffect(() => {
     saveAudioSettings(audioSettings);
@@ -251,7 +251,7 @@ export default function ParentAISettings({ onClose }) {
     };
   }, []);
 
-  const hasKey = useMemo(() => hasGeminiApiKey(), [apiKeyStatus, apiKeyInput]);
+  const hasKey = hasGeminiApiKey();
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -374,7 +374,7 @@ export default function ParentAISettings({ onClose }) {
     }
   };
 
-  const refreshCacheEntries = async () => {
+  const refreshCacheEntries = useCallback(async () => {
     if (!cacheSupported) {
       setCacheEntries([]);
       return;
@@ -391,11 +391,11 @@ export default function ParentAISettings({ onClose }) {
     } finally {
       setEntriesLoading(false);
     }
-  };
+  }, [cacheSupported]);
 
-  const refreshCacheSummary = () => {
+  const refreshCacheSummary = useCallback(() => {
     setCacheSummary(getAudioCacheSummary());
-  };
+  }, []);
 
   const handleRefreshCacheSummary = () => {
     refreshCacheSummary();
