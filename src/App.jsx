@@ -4,21 +4,14 @@ import LearningPathDashboard from './components/learning-path/LearningPathDashbo
 import ParentAISettings from './components/ParentAISettings.jsx';
 import { LEARNING_PATHS, OPERATIONS } from './lib/learningPaths.js';
 import { moduleRegistry } from './modules/index.js';
-import { flushMathGalaxyQueue, isMathGalaxyConfigured } from './services/mathGalaxyClient';
 import ToastHost from './components/ToastHost.jsx';
 import { fetchRuntime } from './services/api';
 import { showToast } from './lib/ui/toast';
 
 function App() {
   const [activePathId, setActivePathId] = useState(null);
-  const [aiOffline, setAiOffline] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [runtimeInfo, setRuntimeInfo] = useState(null);
-
-  useEffect(() => {
-    if (!isMathGalaxyConfigured()) return;
-    flushMathGalaxyQueue().catch(() => {});
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,24 +45,15 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handleOffline = () => {
-      setAiOffline(true);
-    };
-    const handleOnline = () => {
-      setAiOffline(false);
-    };
     const handleOpenSettings = () => {
       setAiSettingsOpen(true);
     };
-    window.addEventListener('ai:offline', handleOffline);
-    window.addEventListener('ai:online', handleOnline);
     window.addEventListener('ai:open-settings', handleOpenSettings);
     return () => {
-      window.removeEventListener('ai:offline', handleOffline);
-      window.removeEventListener('ai:online', handleOnline);
       window.removeEventListener('ai:open-settings', handleOpenSettings);
     };
   }, []);
+
 
   const openAiSettings = () => {
     setAiSettingsOpen(true);
@@ -95,7 +79,6 @@ function App() {
           learningPath={activePath}
           onExit={() => setActivePathId(null)}
           onOpenAiSettings={openAiSettings}
-          aiOffline={aiOffline}
         />
         {aiSettingsOpen && (
           <ParentAISettings onClose={closeAiSettings} />
@@ -110,7 +93,6 @@ function App() {
       <LearningPathDashboard
         operations={OPERATIONS}
         learningPaths={LEARNING_PATHS}
-        aiOffline={aiOffline}
         onOpenAiSettings={openAiSettings}
         runtimeInfo={runtimeInfo}
         onSelectPath={(path) => {

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info } from 'lucide-react';
-import AiOfflineBanner from '../../components/AiOfflineBanner.jsx';
 import NextUpCard from '../../components/NextUpCard';
 import {
   ensurePersonalization,
@@ -13,18 +12,9 @@ import {
 } from '../../lib/aiPersonalization';
 import { buildThemePacksForInterests, resolveMotifTheme } from '../../lib/interestThemes';
 import { requestGeminiPlan, requestInterestMotifs, requestRuntimeContent } from '../../services/aiPlanner';
-import { postProcessJob, getSpriteJobStatus } from '../../services/aiEndpoints';
 import { getAiRuntime } from '../../lib/ai/runtime';
 import { OPERATIONS } from '../../lib/learningPaths';
 import Register from '../../Register';
-import mathGalaxyApi, {
-  BASE_URL,
-  flushMathGalaxyQueue,
-  getMathGalaxyHealth,
-  MathGalaxyApiError,
-  isMathGalaxyConfigured,
-  refreshMathGalaxyHealth,
-} from '../../services/mathGalaxyClient';
 import { useNarrationEngine } from '../../lib/audio/useNarrationEngine';
 
 const DEFAULT_LEARNING_PATH_META = {
@@ -119,44 +109,6 @@ const sanitizeInterestList = (values = []) => {
       return true;
     })
     .slice(0, 12);
-};
-
-const normalizeApiHealth = (health) => {
-  if (!health || typeof health !== 'object') {
-    return {
-      ok: false,
-      has_key: false,
-      cors_ok: false,
-      tts_ok: false,
-      sprites_ok: false,
-      lastCheckedAt: null,
-    };
-  }
-
-  const keyValue =
-    health.has_key ??
-    health.hasKey ??
-    health.key_on_server ??
-    health.keyOnServer ??
-    health.key_configured ??
-    health.keyConfigured;
-
-  return {
-    ...health,
-    ok: Boolean(health.ok),
-    has_key: keyValue !== undefined ? Boolean(keyValue) : Boolean(health.has_key),
-    cors_ok: Boolean(health.cors_ok ?? health.corsOk),
-    tts_ok: Boolean(health.tts_ok ?? health.ttsOk),
-    sprites_ok: Boolean(health.sprites_ok ?? health.spritesOk ?? health.sprites_ready ?? health.spritesReady),
-    lastCheckedAt:
-      typeof health.lastCheckedAt === 'string'
-        ? health.lastCheckedAt
-        : typeof health.last_checked_at === 'string'
-          ? health.last_checked_at
-          : typeof health.last_checked === 'string'
-            ? health.last_checked
-            : null,
-  };
 };
 
 const toNumber = (value) => {
@@ -1282,8 +1234,6 @@ const ModeSelection = ({
   onRefreshPlan,
   aiRuntime,
   motifJobState,
-  motifRetrySeconds,
-  apiHealth,
   aiBadgeActive,
   narrationNotice,
 }) => {
@@ -1306,7 +1256,6 @@ const ModeSelection = ({
     .slice(0, 5);
 
   const safeMotifJobState = motifJobState || createDefaultMotifJobState();
-  const safeMotifRetrySeconds = typeof motifRetrySeconds === 'number' ? motifRetrySeconds : null;
 
   const modes = [
     { id: 'sequential', name: 'All Numbers', desc: 'Practice all additions 0-9 in order', icon: Hash, color: 'blue' },
@@ -1376,7 +1325,8 @@ const ModeSelection = ({
           >
             <span>{aiBadgeActive ? 'AI features enabled' : 'AI features disabled'}</span>
             <span className="text-xs font-normal text-gray-500">
-              Server key: {apiHealth?.has_key ? 'Yes' : 'No'} · CORS: {apiHealth?.cors_ok ? 'OK' : 'Blocked'}
+              Cheie Gemini: {aiRuntime?.serverHasKey ? 'Da' : 'Nu'} · Narațiune:{' '}
+              {aiRuntime?.aiEnabled ? 'Activă' : 'Oprită'}
             </span>
           </div>
         </div>
@@ -1651,9 +1601,6 @@ const ModeSelection = ({
                     {!safeMotifJobState.loading && safeMotifJobState.jobId && total > 0 && (
                       <div className="text-xs text-indigo-500">
                         Sprites ready: {ready} / {total}
-                        {safeMotifJobState.pending > 0 && safeMotifRetrySeconds != null && safeMotifRetrySeconds > 0 && (
-                          <span> — retrying in {safeMotifRetrySeconds}s</span>
-                        )}
                       </div>
                     )}
                     {safeMotifJobState.error && !safeMotifJobState.loading && (
@@ -1759,7 +1706,7 @@ const ModeSelection = ({
 };
 
 // --- Main App ---
-export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSettings, aiOffline = false }) {
+export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSettings }) {
   const activeLearningPath = useMemo(
     () => resolveActiveLearningPath(learningPath),
     [learningPath],
@@ -1808,11 +1755,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     allowedTtsModels: [],
     runtimeLabel: null,
   });
-  const [apiHealth, setApiHealth] = useState(() => normalizeApiHealth(getMathGalaxyHealth()));
   const [aiPlanStatus, setAiPlanStatus] = useState({ loading: false, error: null, source: null });
   const [motifJobState, setMotifJobState] = useState(() => createDefaultMotifJobState());
-  const motifPollingRef = useRef(null);
-  const [motifRetrySeconds, setMotifRetrySeconds] = useState(null);
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [interestDraft, setInterestDraft] = useState('');
   const [activeTheme, setActiveTheme] = useState(null);
@@ -1842,7 +1786,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const streakProgressRef = useRef(0);
   const checkpointStatusRef = useRef('idle');
   const spokenModeRef = useRef(null);
-  const aiBadgeActive = useMemo(() => Boolean(apiHealth.ok && apiHealth.has_key && apiHealth.cors_ok), [apiHealth]);
+  const aiBadgeActive = useMemo(() => Boolean(aiRuntime.aiEnabled), [aiRuntime.aiEnabled]);
 
   const openSettings = useCallback(() => {
     if (typeof onOpenAiSettings === 'function') {
@@ -1864,46 +1808,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     },
     [speakProblem],
   );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const handleHealthUpdate = (event) => {
-      const detail = event instanceof CustomEvent ? event.detail : null;
-      if (detail) {
-        setApiHealth(normalizeApiHealth(detail));
-      } else {
-        setApiHealth(normalizeApiHealth(getMathGalaxyHealth()));
-      }
-    };
-    window.addEventListener('mg:health:updated', handleHealthUpdate);
-    refreshMathGalaxyHealth()
-      .then((health) => {
-        setApiHealth(normalizeApiHealth(health));
-      })
-      .catch(() => {});
-    return () => {
-      window.removeEventListener('mg:health:updated', handleHealthUpdate);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isMathGalaxyConfigured()) return;
-    flushMathGalaxyQueue().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!isMathGalaxyConfigured()) return;
-    if (typeof document === 'undefined') return;
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushMathGalaxyQueue().catch(() => {});
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
   const { studentInfo } = gameState;
   const aiPersonalization = useMemo(
@@ -1953,44 +1857,18 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   }, [refreshAiRuntime]);
 
   useEffect(() => () => {
-    if (motifPollingRef.current?.cancel) {
-      motifPollingRef.current.cancel();
-      motifPollingRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => () => {
     stopNarration();
   }, [stopNarration]);
-
-  useEffect(() => {
-    if (!motifJobState.nextRetryAt) {
-      setMotifRetrySeconds(null);
-      return () => {};
-    }
-    const update = () => {
-      const remaining = Math.max(0, Math.ceil((motifJobState.nextRetryAt - Date.now()) / 1000));
-      setMotifRetrySeconds(remaining);
-    };
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [motifJobState.nextRetryAt]);
 
   const refreshInterestMotifs = useCallback(
     async (rawInterests) => {
       if (!Array.isArray(rawInterests)) return;
 
-      if (motifPollingRef.current?.cancel) {
-        motifPollingRef.current.cancel();
-        motifPollingRef.current = null;
-      }
-
       const interests = rawInterests
         .map((interest) => (typeof interest === 'string' ? interest.trim() : ''))
         .filter(Boolean);
 
-      if (interests.length === 0) {
+      const clearMotifs = () => {
         const now = Date.now();
         const resetState = { ...createDefaultMotifJobState(), lastUpdated: now };
         setGameState((prev) => {
@@ -2015,7 +1893,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           };
         });
         setMotifJobState(resetState);
-        setMotifRetrySeconds(null);
+      };
+
+      if (interests.length === 0) {
+        clearMotifs();
         return;
       }
 
@@ -2048,7 +1929,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           pending: 0,
           lastUpdated: now,
         });
-        setMotifRetrySeconds(null);
       };
 
       if (!aiRuntime.aiEnabled || !aiRuntime.spriteModel) {
@@ -2056,13 +1936,11 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         return;
       }
 
-      const startState = {
+      setMotifJobState({
         ...createDefaultMotifJobState(),
         loading: true,
         lastUpdated: Date.now(),
-      };
-      setMotifJobState(startState);
-      setMotifRetrySeconds(null);
+      });
 
       try {
         const result = await requestInterestMotifs(interests, aiRuntime.spriteModel, {
@@ -2072,17 +1950,16 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           batchLimit: 1,
         });
 
-        const now = Date.now();
+        const resolvedAt = Date.now();
         const spriteUrls = Array.isArray(result?.urls)
           ? result.urls.filter((url) => typeof url === 'string' && url.trim())
           : [];
-        const pending = Number.isFinite(result?.pending) ? Math.max(0, result.pending) : 0;
-        const done = Number.isFinite(result?.done) ? Math.max(0, result.done) : spriteUrls.length;
-        const nextRetryAt = result?.nextRetryAt || null;
-        const cacheKey = result?.cacheKey || null;
         const fallbackMotifs = Array.isArray(result?.motifs) && result.motifs.length
           ? result.motifs
           : fallbackTokens;
+        const cacheKey = result?.cacheKey || null;
+        const pending = Number.isFinite(result?.pending) ? Math.max(0, result.pending) : 0;
+        const done = Number.isFinite(result?.done) ? Math.max(0, result.done) : spriteUrls.length;
 
         setGameState((prev) => {
           const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
@@ -2093,16 +1970,16 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
               learnerProfile: {
                 ...ai.learnerProfile,
                 interestMotifs: fallbackMotifs,
-                motifsUpdatedAt: now,
+                motifsUpdatedAt: resolvedAt,
                 motifSprites: spriteUrls,
-                motifSpritesUpdatedAt: now,
+                motifSpritesUpdatedAt: resolvedAt,
                 motifSpriteCacheKey: cacheKey,
                 motifJob: {
-                  jobId: result?.jobId || null,
+                  jobId: null,
                   pending,
                   done,
-                  lastUpdated: now,
-                  nextRetryAt,
+                  lastUpdated: resolvedAt,
+                  nextRetryAt: null,
                   cacheKey,
                 },
               },
@@ -2111,186 +1988,32 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         });
 
         setMotifJobState({
-          jobId: result?.jobId || null,
+          jobId: null,
           loading: false,
           error: result?.source === 'fallback' && !spriteUrls.length ? 'AI motifs unavailable' : null,
           done,
           pending,
-          lastUpdated: now,
-          nextRetryAt,
-          rateLimited: Boolean(nextRetryAt && nextRetryAt > now),
+          lastUpdated: resolvedAt,
+          nextRetryAt: null,
+          rateLimited: false,
           cacheKey,
         });
-
-        setMotifRetrySeconds(
-          nextRetryAt ? Math.max(0, Math.ceil((nextRetryAt - now) / 1000)) : null,
-        );
 
         if (cacheKey) {
           updateSpriteCacheEntryFromUi(cacheKey, () => ({
             urls: spriteUrls,
-            jobId: result?.jobId || null,
+            jobId: null,
             pending,
             done,
           }));
         }
-
-        if (result?.source !== 'ai' || !result?.jobId || pending <= 0) {
-          return;
-        }
-
-        const controller = {
-          cancelled: false,
-          cancel() {
-            this.cancelled = true;
-          },
-        };
-        motifPollingRef.current = controller;
-
-        const backgroundFallback = fallbackMotifs;
-        const initialUrls = spriteUrls;
-        const jobId = result.jobId;
-        const maxDuration = 45000;
-        const startedAt = Date.now();
-        let backoffUntil = nextRetryAt || null;
-        let currentPending = pending;
-        let currentDone = done;
-        let readySet = new Set(initialUrls);
-
-        (async () => {
-          while (!controller.cancelled && currentPending > 0 && Date.now() - startedAt < maxDuration) {
-            const nowTick = Date.now();
-            if (backoffUntil && backoffUntil > nowTick) {
-              await sleep(Math.min(backoffUntil - nowTick, 2000));
-              continue;
-            }
-
-            const process = await postProcessJob({ jobId, limit: 1, model: aiRuntime.spriteModel });
-            if (controller.cancelled) return;
-
-            if (!process.ok) {
-              if (process.status === 429 && process.retryAfter) {
-                backoffUntil = Date.now() + process.retryAfter;
-                setMotifJobState((prev) => ({
-                  ...prev,
-                  nextRetryAt: backoffUntil,
-                  rateLimited: true,
-                }));
-                setMotifRetrySeconds(Math.max(0, Math.ceil(process.retryAfter / 1000)));
-                continue;
-              }
-              break;
-            }
-
-            if (process.retryAfter) {
-              backoffUntil = Date.now() + process.retryAfter;
-            }
-
-            const status = await getSpriteJobStatus(jobId);
-            if (controller.cancelled) return;
-
-            if (!status.ok) {
-              if (status.status === 429 && status.retryAfter) {
-                backoffUntil = Date.now() + status.retryAfter;
-                setMotifJobState((prev) => ({
-                  ...prev,
-                  nextRetryAt: backoffUntil,
-                  rateLimited: true,
-                }));
-                setMotifRetrySeconds(Math.max(0, Math.ceil(status.retryAfter / 1000)));
-                continue;
-              }
-              break;
-            }
-
-            const parsed = parseSpriteJobStatusForUi(status.data || {});
-            const spriteUrls = new Set(collectSpriteUrlsForUi(parsed.items));
-            const directSprites = [
-              ...(Array.isArray(status.data?.sprites) ? status.data.sprites : []),
-              ...(Array.isArray(status.data?.urls) ? status.data.urls : []),
-              ...(Array.isArray(status.data?.sprite_urls) ? status.data.sprite_urls : []),
-            ];
-            directSprites.forEach((url) => {
-              if (typeof url === 'string' && url.trim()) {
-                spriteUrls.add(url.trim());
-              }
-            });
-            readySet = new Set([...readySet, ...spriteUrls]);
-            currentPending = Math.max(0, parsed.pending);
-            currentDone = Math.max(parsed.done, readySet.size);
-
-            const updateTs = Date.now();
-            const urls = [...readySet];
-            const updatedNextRetry = backoffUntil && backoffUntil > updateTs ? backoffUntil : null;
-
-            setGameState((prev) => {
-              const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-              return {
-                ...prev,
-                aiPersonalization: {
-                  ...ai,
-                  learnerProfile: {
-                    ...ai.learnerProfile,
-                    interestMotifs: backgroundFallback,
-                    motifsUpdatedAt: updateTs,
-                    motifSprites: urls,
-                    motifSpritesUpdatedAt: updateTs,
-                    motifSpriteCacheKey: cacheKey,
-                    motifJob: {
-                      jobId,
-                      pending: currentPending,
-                      done: currentDone,
-                      lastUpdated: updateTs,
-                      nextRetryAt: updatedNextRetry,
-                      cacheKey,
-                    },
-                  },
-                },
-              };
-            });
-
-            setMotifJobState({
-              jobId,
-              loading: false,
-              error: null,
-              done: currentDone,
-              pending: currentPending,
-              lastUpdated: updateTs,
-              nextRetryAt: updatedNextRetry,
-              rateLimited: Boolean(updatedNextRetry),
-              cacheKey,
-            });
-
-            setMotifRetrySeconds(
-              updatedNextRetry ? Math.max(0, Math.ceil((updatedNextRetry - updateTs) / 1000)) : null,
-            );
-
-            if (cacheKey) {
-              updateSpriteCacheEntryFromUi(cacheKey, (prev = {}) => ({
-                ...prev,
-                urls,
-                jobId,
-                pending: currentPending,
-                done: currentDone,
-              }));
-            }
-
-            if (currentPending <= 0) {
-              break;
-            }
-
-            await sleep(2000);
-          }
-        })().catch((error) => {
-          console.warn('Background motif polling failed', error);
-        });
       } catch (error) {
         console.warn('Interest motif request failed, using fallback motifs.', error);
         const message = error instanceof Error ? error.message : String(error);
         applyFallback(message);
       }
     },
-    [aiRuntime.aiEnabled, aiRuntime.spriteModel, motifPollingRef, setGameState],
+    [aiRuntime.aiEnabled, aiRuntime.spriteModel, setGameState],
   );
 
   const collectMotifHintsForProfile = useCallback((profile) => {
@@ -3307,49 +3030,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     updateMasteryTracking(card.a, correct);
     updateMasteryTracking(card.b, correct);
 
-    if (isMathGalaxyConfigured()) {
-      const meta = {
-        mode: gameMode || 'unknown',
-        focusNumber: focusNumber ?? null,
-        deckSize,
-        cardIndex: activeCardIndex,
-        difficulty: difficultyBefore,
-        attemptTimestamp,
-        review: Boolean(card.review),
-      };
-      if (sessionStartedAt) {
-        meta.sessionStartedAt = sessionStartedAt;
-      }
-      if (checkpointSnapshot) {
-        meta.checkpoint = {
-          pending: Boolean(checkpointSnapshot.pending),
-          inProgress: Boolean(checkpointSnapshot.inProgress),
-        };
-      }
-      if (card.aiPlanItem?.id) meta.aiPlanItemId = card.aiPlanItem.id;
-      if (card.aiPlanItem?.source) meta.aiPlanSource = card.aiPlanItem.source;
-      if (typeof card.deckId === 'string') meta.deckId = card.deckId;
-
-      if (isMathGalaxyConfigured() && mathGalaxyApi) {
-        mathGalaxyApi
-          .recordAdditionAttempt({
-            userId: userIdForApi,
-            a: card.a,
-            b: card.b,
-            answer: answerForApi,
-            correct,
-            elapsedMs: timeSpent,
-            seconds: Number((timeSpent / 1000).toFixed(3)),
-            game: 'addition-within-10',
-            meta,
-          })
-          .catch((error) => {
-            if (import.meta.env.DEV) {
-              console.warn('[MathGalaxyAPI] Failed to record attempt', error);
-            }
-          });
-      }
-    }
   };
 
   const handleModeSelect = (mode, number = null) => {
@@ -3536,10 +3216,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     : 0;
   const checkpointCleared = Object.values(checkpointState.cardsData || {}).filter(entry => entry.correct > 0).length;
 
-  const normalizedBaseUrl = typeof BASE_URL === 'string' ? BASE_URL.trim() : '';
-  const apiOfflineMessage = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
-  const statusFailed = aiRuntime.lastError === apiOfflineMessage;
-  const showApiWarning = aiOffline || !normalizedBaseUrl || statusFailed;
+  const showSetupReminder = Boolean(aiRuntime.lastError);
+  const setupReminderMessage = aiRuntime.lastError;
 
   if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
     return <Register onRegister={handleRegister} onImport={importGameState} />;
@@ -3575,8 +3253,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         onRefreshPlan={() => ensureAiPlan(true)}
         aiRuntime={aiRuntime}
         motifJobState={motifJobState}
-        motifRetrySeconds={motifRetrySeconds}
-        apiHealth={apiHealth}
         aiBadgeActive={aiBadgeActive}
         narrationNotice={narrationNotice}
       />
@@ -3618,8 +3294,19 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     <>
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex flex-col items-center justify-center">
       <div className="w-full max-w-4xl mb-6">
-        {showApiWarning && (
-          <AiOfflineBanner onOpenSettings={openSettings} />
+        {showSetupReminder && (
+          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm font-medium">
+              {setupReminderMessage || 'Configurează cheia Gemini în AI Settings pentru a activa vocea și funcțiile personalizate.'}
+            </span>
+            <button
+              type="button"
+              onClick={openSettings}
+              className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
+            >
+              Deschide AI Settings
+            </button>
+          </div>
         )}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <button

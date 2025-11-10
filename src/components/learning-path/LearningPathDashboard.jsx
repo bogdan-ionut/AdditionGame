@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import LearningPathCard from './LearningPathCard.jsx';
 import { groupPathsByOperation, LEARNING_PATH_STATUS } from '../../lib/learningPaths.js';
-import AiOfflineBanner from '../AiOfflineBanner.jsx';
 
 const OPERATION_ICONS = {
   addition: Plus,
@@ -153,7 +152,6 @@ const LearningPathDashboard = ({
   operations,
   learningPaths,
   onSelectPath,
-  aiOffline = false,
   onOpenAiSettings,
   runtimeInfo = null,
 }) => {
@@ -242,8 +240,19 @@ const LearningPathDashboard = ({
       <div className="pointer-events-none absolute -right-40 top-20 h-64 w-64 rounded-full bg-indigo-500/10 blur-[120px]" />
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-16 px-4 pb-20 pt-12 sm:px-6 lg:px-8">
-        {aiOffline && (
-          <AiOfflineBanner onOpenSettings={onOpenAiSettings} />
+        {!runtimeInfo?.ok && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm font-medium">
+              {runtimeInfo?.note || 'Configurează cheia Gemini în AI Settings pentru a activa vocea și planificarea personalizată.'}
+            </span>
+            <button
+              type="button"
+              onClick={onOpenAiSettings}
+              className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
+            >
+              Deschide AI Settings
+            </button>
+          </div>
         )}
         <header className="space-y-12">
           <div className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_30px_120px_-60px_rgba(56,189,248,0.45)] backdrop-blur">
