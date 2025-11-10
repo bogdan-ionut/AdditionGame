@@ -10,6 +10,7 @@ export type SpeakOptions = {
   pitch?: number;
   volume?: number;
   model?: string | null;
+  kind?: string | null;
   allowBrowserFallback?: boolean;
 };
 
@@ -225,10 +226,10 @@ export async function speak({
   rate = 1,
   pitch = 1,
   volume = 1,
-  model: _model = null,
+  model = null,
+  kind = null,
   allowBrowserFallback = false,
 }: SpeakOptions): Promise<SpeakResult> {
-  void _model;
   const content = text?.trim();
   if (!content) {
     return { ok: false, mode: "none" };
@@ -250,6 +251,8 @@ export async function speak({
       speakingRate: toFinite(rate, 1),
       pitch: toFinite(pitch, 1),
       language: lang,
+      model,
+      kind,
     });
     const buffer = await blob.arrayBuffer();
     if (buffer.byteLength > 0) {

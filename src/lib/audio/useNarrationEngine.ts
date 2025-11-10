@@ -6,6 +6,19 @@ import { speak, stopSpeaking } from '../tts';
 import { showToast } from '../ui/toast';
 import type { AiRuntimeState } from '../ai/runtime';
 import { playEncouragement, playLowStim, playSuccess } from '../sfx/synth';
+import {
+  ENCOURAGE_LINES_EN,
+  ENCOURAGE_LINES_RO,
+  MINI_LESSONS_EN,
+  MINI_LESSONS_RO,
+  OFFLINE_MESSAGE,
+  PRAISE_LINES_EN,
+  PRAISE_LINES_RO,
+  UI_TEXT,
+  buildCountingPrompt,
+  buildProblemPrompt,
+} from './phrases';
+import { warmupNarrationCache } from './warmup';
 
 export type VoicePreset = {
   id: string;
@@ -86,42 +99,6 @@ const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
   success: ['success', 'celebration', 'correct', 'victory'],
   error: ['error', 'incorrect', 'retry', 'try-again'],
   progress: ['progress', 'streak', 'level-up', 'checkpoint'],
-};
-
-const PRAISE_LINES_RO = [
-  'Bravo, ai reușit! Ești o stea strălucitoare!',
-  'Excelent! Îmi place cât de atent ai fost.',
-  'Felicitări! Continuă tot așa!',
-];
-
-const PRAISE_LINES_EN = [
-  'Great job, you did it!',
-  'Excellent work! I love how focused you were.',
-  'Fantastic! Keep shining!',
-];
-
-const ENCOURAGE_LINES_RO = [
-  'Nu-i nimic, mai încearcă! Știu că poți!',
-  'Respirăm adânc și încercăm din nou. Eu cred în tine!',
-  'Aproape! Împreună găsim răspunsul corect.',
-];
-
-const ENCOURAGE_LINES_EN = [
-  "That's okay, try again! I know you can do it!",
-  'Take a breath and give it another go. I believe in you!',
-  'So close! Together we will get it right.',
-];
-
-const MINI_LESSONS_RO: Record<string, string> = {
-  'count-on': 'Hai să numărăm împreună. Începem de la primul număr și mai adăugăm pașii pe rând.',
-  'make-10': 'Gândește-te la numărul 10 ca la un prieten. Poți împărți al doilea număr ca să ajungi la 10 și apoi adaugi restul.',
-  commutativity: 'Ordinea termenilor nu schimbă suma. Poți schimba numerele între ele pentru a calcula mai ușor.',
-};
-
-const MINI_LESSONS_EN: Record<string, string> = {
-  'count-on': 'Let’s count on together. Start at the first number and add the steps one by one.',
-  'make-10': 'Think of 10 as a friendly helper. Break the second number to make 10, then add the rest.',
-  commutativity: 'Switching the order does not change the sum. Swap the numbers to make it easier.',
 };
 
 const randomFrom = (list: string[]): string | null => {
@@ -207,6 +184,28 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       return saveAudioSettings({ narrationModel: runtime.audioModel });
     });
   }, [runtime?.audioModel]);
+
+  useEffect(() => {
+    if (!settings.narrationEnabled) return undefined;
+    const controller = new AbortController();
+    warmupNarrationCache({
+      language: settings.narrationLanguage || null,
+      voiceId: settings.narrationVoiceId || null,
+      speakingRate: settings.speakingRate ?? null,
+      pitch: settings.pitch ?? null,
+      model: effectiveModel,
+      additionMax: 9,
+      signal: controller.signal,
+    });
+    return () => controller.abort();
+  }, [
+    effectiveModel,
+    settings.narrationEnabled,
+    settings.narrationLanguage,
+    settings.narrationVoiceId,
+    settings.pitch,
+    settings.speakingRate,
+  ]);
 
   const updateSettings = useCallback(
     (next: Partial<AudioSettings>) => {
@@ -392,24 +391,25 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
           pitch,
           volume,
           model,
+          kind: options.type || null,
           allowBrowserFallback: settings.browserVoiceFallback === true,
         });
 
         if (result.mode === 'server') {
           setNarrationNotice(null);
         } else if (result.mode === 'webspeech') {
-          setNarrationNotice('Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.');
+          setNarrationNotice(UI_TEXT.webSpeechFallback);
         } else {
-          setNarrationNotice('Vocea dispozitivului nu este disponibilă pe acest browser.');
+          setNarrationNotice(UI_TEXT.deviceVoiceUnavailable);
         }
       } catch (error) {
         console.warn('[audio] Unable to speak text', error);
         if (error instanceof Error && error.message === 'tts_unavailable') {
-          const message = 'TTS not available—check backend /v1/ai/tts/say';
+          const message = UI_TEXT.ttsUnavailable;
           setNarrationNotice(message);
           showToast({ level: 'error', message });
         } else {
-          const message = 'Nu am putut reda vocea. Verifică setările audio.';
+          const message = UI_TEXT.genericPlaybackError;
           setNarrationNotice(message);
           showToast({ level: 'error', message: 'Unable to play narration audio. Check your connection.' });
         }
@@ -444,10 +444,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     async (card: ProblemCard, meta: { theme?: string | null; story?: string | null } = {}) => {
       if (!settings.narrationEnabled) return;
       const languageKey = toLanguageKey(settings.narrationLanguage);
-      const question =
-        languageKey === 'ro'
-          ? `Cât face ${card.a} + ${card.b}?`
-          : `What is ${card.a} + ${card.b}?`;
+      const question = buildProblemPrompt(card.a, card.b, settings.narrationLanguage);
       const storyLine = meta.story
         ? languageKey === 'ro'
           ? ` Povestea spune: ${meta.story}`
@@ -456,6 +453,8 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       const intro = `${question}${storyLine}`;
       await speakText({ text: intro, type: 'problem' });
       if (settings.repeatNumbers) {
+        const followup = buildCountingPrompt(card.a, card.b, settings.narrationLanguage);
+        await speakText({ text: followup, type: 'counting', speakingRate: settings.speakingRate * 0.95 });
         await speakCountOn(card, { includeFinal: false, mode: 'prompt' });
       }
     },

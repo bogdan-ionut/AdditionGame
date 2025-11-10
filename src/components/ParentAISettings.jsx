@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Loader2, CheckCircle2, Volume2, KeyRound } from 'lucide-react';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
+import {
+  CACHE_EVENT_NAME,
+  CACHE_SUMMARY_STORAGE_KEY,
+  clearAudioCache,
+  formatCacheSize,
+  getAudioCacheSummary,
+  isAudioCacheAvailable,
+} from '../lib/audio/cache';
 import { synthesizeSpeech, fetchTtsVoices } from '../services/audioCatalog';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
@@ -24,6 +32,9 @@ export default function ParentAISettings({ onClose }) {
   const [apiKeyInput, setApiKeyInput] = useState(() => getGeminiApiKey() || '');
   const [apiKeyStatus, setApiKeyStatus] = useState({ state: 'idle', message: null });
   const [sampleText, setSampleText] = useState(DEFAULT_SAMPLE_TEXT);
+  const [cacheSupported, setCacheSupported] = useState(() => isAudioCacheAvailable());
+  const [cacheSummary, setCacheSummary] = useState(() => getAudioCacheSummary());
+  const [cacheStatus, setCacheStatus] = useState({ state: 'idle', message: null });
   const previewRef = useRef({ audio: null, revoke: null });
 
   useEffect(() => {
@@ -39,6 +50,29 @@ export default function ParentAISettings({ onClose }) {
         setVoiceStatus({ state: 'error', message: 'Nu am putut încărca vocile implicite.' });
       });
   }, [audioSettings.narrationLanguage]);
+
+  useEffect(() => {
+    setCacheSupported(isAudioCacheAvailable());
+    setCacheSummary(getAudioCacheSummary());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const refresh = () => {
+      setCacheSummary(getAudioCacheSummary());
+    };
+    const handleStorage = (event) => {
+      if (event.key === CACHE_SUMMARY_STORAGE_KEY) {
+        refresh();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(CACHE_EVENT_NAME, refresh);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(CACHE_EVENT_NAME, refresh);
+    };
+  }, []);
 
   useEffect(() => {
     saveAudioSettings(audioSettings);
@@ -130,6 +164,32 @@ export default function ParentAISettings({ onClose }) {
       setPreviewStatus({ state: 'error', message: 'Nu am putut genera vocea. Verifică cheia Gemini.' });
       showToast({ level: 'error', message: 'Previzualizarea vocii a eșuat.' });
       cleanupPreview();
+    }
+  };
+
+  const handleRefreshCacheSummary = () => {
+    setCacheSummary(getAudioCacheSummary());
+    setCacheStatus({ state: 'idle', message: null });
+  };
+
+  const handleClearCache = async () => {
+    if (!cacheSupported) {
+      showToast({ level: 'warning', message: 'Cache-ul audio necesită suport IndexedDB în browser.' });
+      return;
+    }
+    setCacheStatus({ state: 'loading', message: null });
+    try {
+      await clearAudioCache();
+      const summary = getAudioCacheSummary();
+      setCacheSummary(summary);
+      const message = 'Cache-ul audio a fost golit.';
+      setCacheStatus({ state: 'success', message });
+      showToast({ level: 'success', message });
+    } catch (error) {
+      console.error('Unable to clear audio cache', error);
+      const message = 'Nu am putut șterge cache-ul audio.';
+      setCacheStatus({ state: 'error', message });
+      showToast({ level: 'error', message });
     }
   };
 
@@ -373,6 +433,62 @@ export default function ParentAISettings({ onClose }) {
               )}
               {previewStatus.state === 'error' && previewStatus.message && (
                 <span className="text-sm font-medium text-rose-600">{previewStatus.message}</span>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-900">Cache audio local</h4>
+                  <p className="text-xs text-slate-500">
+                    Clipurile Gemini TTS sunt salvate în browser pentru a fi redate instant la următoarea utilizare.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRefreshCacheSummary}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                  >
+                    Actualizează
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearCache}
+                    disabled={!cacheSupported || cacheStatus.state === 'loading'}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold text-white shadow transition ${
+                      !cacheSupported || cacheStatus.state === 'loading'
+                        ? 'cursor-not-allowed bg-slate-300 text-slate-500'
+                        : 'bg-rose-500 hover:bg-rose-600'
+                    }`}
+                  >
+                    Șterge cache-ul
+                  </button>
+                </div>
+              </div>
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dimensiune</dt>
+                  <dd className="text-base font-semibold text-slate-900">{formatCacheSize(cacheSummary.totalBytes)}</dd>
+                </div>
+                <div className="space-y-1">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clipuri</dt>
+                  <dd className="text-base font-semibold text-slate-900">{cacheSummary.entryCount}</dd>
+                </div>
+              </dl>
+              {!cacheSupported && (
+                <p className="text-xs text-amber-600">
+                  Cache-ul audio este dezactivat deoarece browserul nu oferă IndexedDB.
+                </p>
+              )}
+              {cacheStatus.message && (
+                <p
+                  className={`text-xs ${
+                    cacheStatus.state === 'error' ? 'text-rose-600' : 'text-emerald-600'
+                  }`}
+                >
+                  {cacheStatus.message}
+                </p>
               )}
             </div>
           </section>
