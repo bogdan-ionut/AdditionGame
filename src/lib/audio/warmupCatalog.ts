@@ -12,10 +12,12 @@ export type WarmupCategoryId =
   | 'addition-0-9'
   | 'counting';
 
+export type WarmupPromptLanguage = 'ro';
+
 export type WarmupPrompt = {
   id: string;
   text: string;
-  language: 'ro' | 'en' | null;
+  language: WarmupPromptLanguage | null;
   kind: WarmupPromptKind;
   source: 'default' | 'custom';
 };
@@ -32,9 +34,8 @@ export type WarmupCategoryDefinition = {
 
 export type WarmupPromptSelection = Partial<Record<WarmupCategoryId, string[]>>;
 
-export const LANGUAGE_TAGS: Array<{ value: 'ro' | 'en'; label: string }> = [
+export const LANGUAGE_TAGS: Array<{ value: WarmupPromptLanguage; label: string }> = [
   { value: 'ro', label: 'Română (ro)' },
-  { value: 'en', label: 'English (en)' },
 ];
 
 export const WARMUP_CATEGORIES: WarmupCategoryDefinition[] = [
@@ -99,7 +100,7 @@ const COUNTING_LIMIT = 9;
 type StoredPrompt = {
   id: string;
   text: string;
-  language: 'ro' | 'en' | null;
+  language: string | null;
   kind?: WarmupPromptKind;
   source?: 'default' | 'custom';
 };
@@ -111,8 +112,10 @@ type PersistedPayload = {
   library: StoredLibrary;
 };
 
-const toLanguageKey = (value: string | null | undefined): 'ro' | 'en' =>
-  value && value.toLowerCase().startsWith('ro') ? 'ro' : 'en';
+const toLanguageKey = (
+  value: string | null | undefined,
+): WarmupPromptLanguage | null =>
+  value && value.toLowerCase().startsWith('ro') ? 'ro' : null;
 
 const createHashId = (categoryId: string, language: string | null, text: string): string => {
   const normalized = `${categoryId}::${language || 'any'}::${text}`.trim().toLowerCase();
@@ -127,7 +130,7 @@ const createDefaultPrompt = (
   categoryId: WarmupCategoryId,
   kind: WarmupPromptKind,
   text: string,
-  language: 'ro' | 'en',
+  language: WarmupPromptLanguage,
 ): WarmupPrompt => ({
   id: createHashId(categoryId, language, text),
   text,
@@ -145,8 +148,6 @@ const createCountingDefaults = (
     for (let steps = 1; steps <= COUNTING_LIMIT; steps += 1) {
       const ro = buildCountingPrompt(start, steps, 'ro-RO');
       prompts.push(createDefaultPrompt(categoryId, kind, ro, 'ro'));
-      const en = buildCountingPrompt(start, steps, 'en-US');
-      prompts.push(createDefaultPrompt(categoryId, kind, en, 'en'));
     }
   }
   return prompts;
@@ -160,9 +161,6 @@ const createAdditionDefaults = (
   const prompts: WarmupPrompt[] = [];
   getAdditionPrompts('ro-RO', max).forEach((text) => {
     prompts.push(createDefaultPrompt(categoryId, kind, text, 'ro'));
-  });
-  getAdditionPrompts('en-US', max).forEach((text) => {
-    prompts.push(createDefaultPrompt(categoryId, kind, text, 'en'));
   });
   return prompts;
 };
@@ -183,22 +181,13 @@ const buildDefaultLibrary = (): WarmupLibrary => {
   feedback.praise.ro.forEach((text) => {
     library.praise?.push(createDefaultPrompt('praise', 'praise', text, 'ro'));
   });
-  feedback.praise.en.forEach((text) => {
-    library.praise?.push(createDefaultPrompt('praise', 'praise', text, 'en'));
-  });
 
   feedback.encouragement.ro.forEach((text) => {
     library.encouragement?.push(createDefaultPrompt('encouragement', 'encouragement', text, 'ro'));
   });
-  feedback.encouragement.en.forEach((text) => {
-    library.encouragement?.push(createDefaultPrompt('encouragement', 'encouragement', text, 'en'));
-  });
 
   Object.values(feedback.miniLessons.ro).forEach((text) => {
     library['mini-lesson']?.push(createDefaultPrompt('mini-lesson', 'mini-lesson', text, 'ro'));
-  });
-  Object.values(feedback.miniLessons.en).forEach((text) => {
-    library['mini-lesson']?.push(createDefaultPrompt('mini-lesson', 'mini-lesson', text, 'en'));
   });
 
   return library as WarmupLibrary;
@@ -227,7 +216,10 @@ const sanitizePrompt = (
   if (!text) {
     return null;
   }
-  const language: 'ro' | 'en' | null = prompt.language ? toLanguageKey(prompt.language) : null;
+  const language = prompt.language ? toLanguageKey(prompt.language) : null;
+  if (prompt.language && language !== 'ro') {
+    return null;
+  }
   const kind = prompt.kind || category.kind;
   return {
     id: prompt.id || createHashId(category.id, language, text),
@@ -323,7 +315,7 @@ export const createCustomPrompt = (
   categoryId: WarmupCategoryId,
   kind: WarmupPromptKind,
   text: string,
-  language: 'ro' | 'en' | null,
+  language: WarmupPromptLanguage | null,
 ): WarmupPrompt => ({
   id: randomId(categoryId),
   text: text.trim(),
