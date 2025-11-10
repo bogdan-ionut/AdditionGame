@@ -21,8 +21,11 @@ export type TtsSynthesizeOptions = {
 const DEFAULT_MODEL = 'gemini-2.5-flash-preview-tts';
 const DEFAULT_MIME = 'audio/mpeg';
 const RATE_LIMIT_STORAGE_KEY = 'addition-game.tts.daily.v1';
+const RATE_LIMIT_COOLDOWN_STORAGE_KEY = 'addition-game.tts.cooldown.v1';
 const MAX_REQUESTS_PER_MINUTE = 10;
 const MAX_REQUESTS_PER_DAY = 100;
+const MIN_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const MAX_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
 
 type DailyCounterState = { dateKey: string; count: number };
 
@@ -46,6 +49,17 @@ const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.floor(ms))));
 
 let dailyCounter: DailyCounterState = { dateKey: getPacificDateKey(), count: 0 };
+
+const clampNumber = (value: number, min: number, max: number): number => {
+  if (Number.isNaN(value)) {
+    return min;
+  }
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+};
+
+let rateLimitCooldownUntil = 0;
 
 const readDailyCounter = (): DailyCounterState => {
   if (typeof window === 'undefined') {
@@ -89,6 +103,74 @@ const ensureDailyAllowance = (): void => {
   writeDailyCounter(normalized);
 };
 
+const readRateLimitCooldownUntil = (): number => {
+  if (typeof window === 'undefined') {
+    return rateLimitCooldownUntil;
+  }
+  try {
+    const raw = window.localStorage.getItem(RATE_LIMIT_COOLDOWN_STORAGE_KEY);
+    if (!raw) {
+      return rateLimitCooldownUntil;
+    }
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      rateLimitCooldownUntil = parsed;
+    }
+  } catch (error) {
+    console.warn('[Gemini TTS] Unable to read rate limit cooldown state', error);
+  }
+  return rateLimitCooldownUntil;
+};
+
+const writeRateLimitCooldownUntil = (until: number): void => {
+  rateLimitCooldownUntil = until;
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    if (until > 0) {
+      window.localStorage.setItem(RATE_LIMIT_COOLDOWN_STORAGE_KEY, String(until));
+    } else {
+      window.localStorage.removeItem(RATE_LIMIT_COOLDOWN_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn('[Gemini TTS] Unable to persist rate limit cooldown state', error);
+  }
+};
+
+const getRateLimitCooldownUntil = (): number => {
+  const stored = readRateLimitCooldownUntil();
+  if (stored > 0 && stored <= Date.now()) {
+    writeRateLimitCooldownUntil(0);
+    return 0;
+  }
+  return stored;
+};
+
+const getRateLimitCooldownRemainingMs = (): number => {
+  const until = getRateLimitCooldownUntil();
+  if (until <= 0) {
+    return 0;
+  }
+  return Math.max(0, until - Date.now());
+};
+
+const beginRateLimitCooldown = (durationMs?: number | null): void => {
+  const numericDuration = Number(durationMs);
+  let effectiveDuration = Number.isFinite(numericDuration) ? (numericDuration as number) : 0;
+  if (effectiveDuration <= 0) {
+    effectiveDuration = MIN_RATE_LIMIT_COOLDOWN_MS;
+  }
+  effectiveDuration = clampNumber(effectiveDuration, MIN_RATE_LIMIT_COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS);
+  const now = Date.now();
+  const currentUntil = getRateLimitCooldownUntil();
+  const proposedUntil = now + effectiveDuration;
+  if (proposedUntil <= currentUntil) {
+    return;
+  }
+  writeRateLimitCooldownUntil(proposedUntil);
+};
+
 type TokenBucket = { tokens: number; lastRefill: number };
 
 const bucket: TokenBucket = {
@@ -120,6 +202,9 @@ const takeToken = (): void => {
 };
 
 const enforceRateLimits = (): void => {
+  if (getRateLimitCooldownRemainingMs() > 0) {
+    throw new Error('tts_ratelimited');
+  }
   takeToken();
   try {
     ensureDailyAllowance();
@@ -419,10 +504,13 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
         const status = error?.status ?? error?.code ?? error?.response?.status;
         const is429 = status === 429;
         if (is429 && attempt < maxAttempts) {
-          await delay(resolveRetryDelayMs(error, attempt));
+          const retryDelay = resolveRetryDelayMs(error, attempt);
+          await delay(retryDelay);
           continue;
         }
         if (is429) {
+          const retryDelay = resolveRetryDelayMs(error, attempt);
+          beginRateLimitCooldown(retryDelay);
           throw new Error('tts_ratelimited');
         }
         throw error;

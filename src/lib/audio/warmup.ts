@@ -98,9 +98,12 @@ export const warmupNarrationCache = (options: WarmupOptions): void => {
 
   const queue = [...tasks];
 
+  let abortedByRateLimit = false;
+
   const processNext = () => {
     if (!queue.length) return;
     if (options.signal?.aborted) return;
+    if (abortedByRateLimit) return;
     const task = queue.shift();
     if (!task) return;
 
@@ -116,13 +119,21 @@ export const warmupNarrationCache = (options: WarmupOptions): void => {
       signal: options.signal,
     })
       .catch((error) => {
-        if (error instanceof Error && error.message === 'tts_unavailable') {
-          return;
+        if (error instanceof Error) {
+          if (error.message === 'tts_unavailable') {
+            return;
+          }
+          if (error.message === 'tts_ratelimited') {
+            abortedByRateLimit = true;
+            queue.length = 0;
+            console.warn('[audio-warmup] Rate limit reached during warmup; stopping precompute queue.');
+            return;
+          }
         }
         console.warn('[audio-warmup] Unable to precompute clip', task, error);
       })
       .finally(() => {
-        if (queue.length && !options.signal?.aborted) {
+        if (queue.length && !options.signal?.aborted && !abortedByRateLimit) {
           runWhenIdle(processNext);
         }
       });
