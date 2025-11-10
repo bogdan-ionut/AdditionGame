@@ -16,10 +16,12 @@ import {
   listAudioCacheEntries,
   pruneAudioCache,
   setAudioCacheLimits,
+  hasCachedAudioClip,
 } from '../lib/audio/cache';
 import { exportAudioCacheZip, importAudioCacheZip } from '../lib/audio/cacheIO';
 import { synthesizeSpeech, fetchTtsVoices, fetchTtsModels } from '../services/audioCatalog';
 import { collectWarmupTasks, precomputeNarrationClips } from '../lib/audio/warmup';
+import { DEFAULT_TTS_MODEL } from '../api/tts';
 import {
   WARMUP_CATEGORIES,
   loadWarmupLibrary,
@@ -85,9 +87,13 @@ export default function ParentAISettings({ onClose }) {
   const [warmupStatus, setWarmupStatus] = useState({ state: 'idle', message: null, progress: null });
   const [isWarmupRunning, setIsWarmupRunning] = useState(false);
   const [activeWarmupCategory, setActiveWarmupCategory] = useState(null);
+  const [warmupPromptStatuses, setWarmupPromptStatuses] = useState({});
+  const [warmupStatusLoadingMap, setWarmupStatusLoadingMap] = useState({});
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
   const warmupControllerRef = useRef(null);
+  const warmupStatusRequestsRef = useRef({});
+  const warmupActiveCategoriesRef = useRef(new Set());
   const importInputRef = useRef(null);
 
   useEffect(() => {
@@ -263,17 +269,40 @@ export default function ParentAISettings({ onClose }) {
     }
   };
 
-  const applyWarmupLibraryUpdate = useCallback((updater) => {
-    setWarmupLibrary((currentLibrary) => {
-      const nextLibrary = updater(currentLibrary);
-      if (!nextLibrary || nextLibrary === currentLibrary) {
-        return currentLibrary;
-      }
-      saveWarmupLibrary(nextLibrary);
-      setWarmupSelection((prevSelection) => pruneWarmupSelection(prevSelection, nextLibrary));
-      return nextLibrary;
-    });
-  }, []);
+  const applyWarmupLibraryUpdate = useCallback(
+    (updater) => {
+      setWarmupLibrary((currentLibrary) => {
+        const nextLibrary = updater(currentLibrary);
+        if (!nextLibrary || nextLibrary === currentLibrary) {
+          return currentLibrary;
+        }
+        saveWarmupLibrary(nextLibrary);
+        setWarmupSelection((prevSelection) => pruneWarmupSelection(prevSelection, nextLibrary));
+        setWarmupPromptStatuses((prevStatuses) => {
+          const sanitized = {};
+          Object.entries(prevStatuses || {}).forEach(([categoryId, statusMap]) => {
+            const prompts = nextLibrary[categoryId] || [];
+            if (!prompts.length) {
+              return;
+            }
+            const allowedIds = new Set(prompts.map((prompt) => prompt.id));
+            const filtered = {};
+            Object.entries(statusMap || {}).forEach(([promptId, state]) => {
+              if (allowedIds.has(promptId)) {
+                filtered[promptId] = state;
+              }
+            });
+            if (Object.keys(filtered).length > 0) {
+              sanitized[categoryId] = filtered;
+            }
+          });
+          return sanitized;
+        });
+        return nextLibrary;
+      });
+    },
+    [],
+  );
 
   const updateWarmupSelection = useCallback((updater) => {
     setWarmupSelection((prevSelection) => {
@@ -503,6 +532,7 @@ export default function ParentAISettings({ onClose }) {
 
   const handleOpenWarmupCategory = (categoryId) => {
     setActiveWarmupCategory(categoryId);
+    void refreshWarmupCategoryStatus(categoryId);
   };
 
   const handleCloseWarmupCategory = () => {
@@ -605,6 +635,140 @@ export default function ParentAISettings({ onClose }) {
     ? isCategoryModified(warmupLibrary, activeWarmupCategory)
     : false;
 
+  const warmupClipConfig = useMemo(
+    () => ({
+      language: audioSettings.narrationLanguage || null,
+      voiceId: audioSettings.narrationVoiceId || null,
+      speakingRate: Number.isFinite(audioSettings.speakingRate)
+        ? Number(audioSettings.speakingRate)
+        : null,
+      pitch: Number.isFinite(audioSettings.pitch) ? Number(audioSettings.pitch) : null,
+      model: audioSettings.narrationModel?.trim() || DEFAULT_TTS_MODEL,
+      preferredMime: audioSettings.narrationMimeType || null,
+      sampleRateHz: Number.isFinite(audioSettings.narrationSampleRate)
+        ? Number(audioSettings.narrationSampleRate)
+        : null,
+    }),
+    [
+      audioSettings.narrationLanguage,
+      audioSettings.narrationVoiceId,
+      audioSettings.speakingRate,
+      audioSettings.pitch,
+      audioSettings.narrationModel,
+      audioSettings.narrationMimeType,
+      audioSettings.narrationSampleRate,
+    ],
+  );
+
+  const warmupClipConfigKey = useMemo(
+    () =>
+      [
+        warmupClipConfig.language || '',
+        warmupClipConfig.voiceId || '',
+        warmupClipConfig.speakingRate ?? '',
+        warmupClipConfig.pitch ?? '',
+        warmupClipConfig.model || '',
+        warmupClipConfig.preferredMime || '',
+        warmupClipConfig.sampleRateHz ?? '',
+      ].join('|'),
+    [
+      warmupClipConfig.language,
+      warmupClipConfig.voiceId,
+      warmupClipConfig.speakingRate,
+      warmupClipConfig.pitch,
+      warmupClipConfig.model,
+      warmupClipConfig.preferredMime,
+      warmupClipConfig.sampleRateHz,
+    ],
+  );
+
+  const buildWarmupDescriptor = useCallback(
+    (prompt) => ({
+      text: prompt.text,
+      language: warmupClipConfig.language,
+      voiceId: warmupClipConfig.voiceId,
+      speakingRate: warmupClipConfig.speakingRate,
+      pitch: warmupClipConfig.pitch,
+      model: warmupClipConfig.model,
+      preferredMime: warmupClipConfig.preferredMime,
+      sampleRateHz: warmupClipConfig.sampleRateHz,
+      type: prompt.kind || null,
+    }),
+    [warmupClipConfig],
+  );
+
+  const refreshWarmupCategoryStatus = useCallback(
+    async (categoryId) => {
+      const prompts = warmupLibrary[categoryId] || [];
+      const requestToken = Symbol('warmup-status');
+      const signature = warmupClipConfigKey;
+      warmupStatusRequestsRef.current[categoryId] = { token: requestToken, signature };
+      setWarmupStatusLoadingMap((prev) => ({ ...prev, [categoryId]: true }));
+      if (prompts.length === 0) {
+        setWarmupPromptStatuses((prev) => ({ ...prev, [categoryId]: {} }));
+        setWarmupStatusLoadingMap((prev) => ({ ...prev, [categoryId]: false }));
+        delete warmupStatusRequestsRef.current[categoryId];
+        return;
+      }
+
+      try {
+        const results = await Promise.all(
+          prompts.map(async (prompt) => {
+            const descriptor = buildWarmupDescriptor(prompt);
+            const exists = await hasCachedAudioClip(descriptor);
+            return { promptId: prompt.id, exists };
+          }),
+        );
+
+        const currentRequest = warmupStatusRequestsRef.current[categoryId];
+        if (
+          !currentRequest ||
+          currentRequest.token !== requestToken ||
+          currentRequest.signature !== signature ||
+          warmupClipConfigKey !== signature
+        ) {
+          return;
+        }
+
+        setWarmupPromptStatuses((prev) => {
+          const previous = prev?.[categoryId] || {};
+          const nextCategory = {};
+          results.forEach(({ promptId, exists }) => {
+            if (exists) {
+              nextCategory[promptId] = 'cached';
+            } else if (previous[promptId] === 'error' || previous[promptId] === 'skipped') {
+              nextCategory[promptId] = previous[promptId];
+            } else {
+              nextCategory[promptId] = 'missing';
+            }
+          });
+          return { ...prev, [categoryId]: nextCategory };
+        });
+      } catch (error) {
+        console.warn('Unable to refresh warmup status', error);
+      } finally {
+        const currentRequest = warmupStatusRequestsRef.current[categoryId];
+        if (currentRequest && currentRequest.token === requestToken) {
+          setWarmupStatusLoadingMap((prev) => ({ ...prev, [categoryId]: false }));
+          delete warmupStatusRequestsRef.current[categoryId];
+        }
+      }
+    },
+    [buildWarmupDescriptor, warmupClipConfigKey, warmupLibrary],
+  );
+
+  useEffect(() => {
+    setWarmupPromptStatuses({});
+    setWarmupStatusLoadingMap({});
+  }, [warmupClipConfigKey]);
+
+  useEffect(() => {
+    if (!activeWarmupCategory) {
+      return;
+    }
+    void refreshWarmupCategoryStatus(activeWarmupCategory);
+  }, [activeWarmupCategory, refreshWarmupCategoryStatus]);
+
   const describeWarmupProgress = (progress) => {
     if (!progress) return 'Generăm clipuri audio…';
     const { completed, total, status } = progress;
@@ -649,7 +813,34 @@ export default function ParentAISettings({ onClose }) {
       const message = 'Nu există nimic de generat pentru selecția curentă.';
       setWarmupStatus({ state: 'idle', message, progress: null });
       showToast({ level: 'info', message });
+      warmupActiveCategoriesRef.current = new Set();
       return;
+    }
+
+    const affectedCategories = new Map();
+    pendingTasks.forEach((task) => {
+      (task.prompts || []).forEach(({ categoryId, promptId }) => {
+        if (!affectedCategories.has(categoryId)) {
+          affectedCategories.set(categoryId, new Set());
+        }
+        affectedCategories.get(categoryId).add(promptId);
+      });
+    });
+
+    warmupActiveCategoriesRef.current = new Set(affectedCategories.keys());
+
+    if (affectedCategories.size > 0) {
+      setWarmupPromptStatuses((prev) => {
+        const next = { ...prev };
+        affectedCategories.forEach((promptIds, categoryId) => {
+          const categoryStatuses = { ...(next[categoryId] || {}) };
+          promptIds.forEach((promptId) => {
+            categoryStatuses[promptId] = 'pending';
+          });
+          next[categoryId] = categoryStatuses;
+        });
+        return next;
+      });
     }
 
     const controller = new AbortController();
@@ -675,6 +866,25 @@ export default function ParentAISettings({ onClose }) {
         includeFallbackLanguage: true,
         signal: controller.signal,
         onProgress: (progress) => {
+          if (progress?.task?.prompts?.length) {
+            setWarmupPromptStatuses((prev) => {
+              const next = { ...prev };
+              progress.task.prompts.forEach(({ categoryId, promptId }) => {
+                const categoryStatuses = { ...(next[categoryId] || {}) };
+                if (progress.status === 'success') {
+                  categoryStatuses[promptId] = 'cached';
+                } else if (progress.status === 'skipped') {
+                  categoryStatuses[promptId] = 'skipped';
+                } else if (progress.status === 'error') {
+                  categoryStatuses[promptId] = 'error';
+                } else {
+                  categoryStatuses[promptId] = 'pending';
+                }
+                next[categoryId] = categoryStatuses;
+              });
+              return next;
+            });
+          }
           setWarmupStatus({ state: 'loading', message: describeWarmupProgress(progress), progress });
         },
       });
@@ -707,9 +917,14 @@ export default function ParentAISettings({ onClose }) {
       if (warmupControllerRef.current === controller) {
         warmupControllerRef.current = null;
       }
+      const categoriesToRefresh = Array.from(warmupActiveCategoriesRef.current);
+      warmupActiveCategoriesRef.current = new Set();
       setIsWarmupRunning(false);
       refreshCacheSummary();
       await refreshCacheEntries();
+      if (categoriesToRefresh.length > 0) {
+        await Promise.all(categoriesToRefresh.map((categoryId) => refreshWarmupCategoryStatus(categoryId)));
+      }
     }
   };
 
@@ -1208,6 +1423,50 @@ export default function ParentAISettings({ onClose }) {
                   const isFullySelected = totalPrompts > 0 && selectedCount === totalPrompts;
                   const isIndeterminate = selectedCount > 0 && selectedCount < totalPrompts;
                   const isActive = selectedCount > 0;
+                  const categoryStatusMap = warmupPromptStatuses[category.id] || {};
+                  const hasStatusData = Object.keys(categoryStatusMap).length > 0;
+                  const categoryStatusLoading = Boolean(warmupStatusLoadingMap[category.id]);
+                  const statusCounts = prompts.reduce(
+                    (acc, prompt) => {
+                      const status = categoryStatusMap[prompt.id];
+                      if (status === 'cached') {
+                        acc.cached += 1;
+                      } else if (status === 'pending') {
+                        acc.pending += 1;
+                      } else if (status === 'error') {
+                        acc.error += 1;
+                      } else if (status === 'skipped') {
+                        acc.skipped += 1;
+                      } else {
+                        acc.missing += 1;
+                      }
+                      return acc;
+                    },
+                    { cached: 0, pending: 0, error: 0, skipped: 0, missing: 0 },
+                  );
+                  let statusLabel = '';
+                  if (categoryStatusLoading) {
+                    statusLabel = 'Verificăm statusul clipurilor…';
+                  } else if (hasStatusData && totalPrompts > 0) {
+                    const generatedText = `Clipuri generate: ${statusCounts.cached}/${totalPrompts}`;
+                    const extras = [];
+                    if (statusCounts.pending > 0) {
+                      extras.push(`${statusCounts.pending} în curs`);
+                    }
+                    if (statusCounts.error > 0) {
+                      extras.push(`${statusCounts.error} cu erori`);
+                    }
+                    if (statusCounts.skipped > 0) {
+                      extras.push(`${statusCounts.skipped} omise`);
+                    }
+                    if (statusCounts.cached === 0 && extras.length === 0) {
+                      statusLabel = 'Nu există clipuri generate încă.';
+                    } else if (extras.length > 0) {
+                      statusLabel = `${generatedText} (${extras.join(', ')}).`;
+                    } else {
+                      statusLabel = `${generatedText}.`;
+                    }
+                  }
                   return (
                     <div
                       key={category.id}
@@ -1222,11 +1481,14 @@ export default function ParentAISettings({ onClose }) {
                         onClick={() => handleOpenWarmupCategory(category.id)}
                         className="flex w-full flex-col items-start gap-2 text-left"
                       >
-                        <div className="flex w-full items-start justify-between gap-2">
-                          <div>
-                            <span className="text-sm font-semibold">{category.label}</span>
-                            <p className="mt-1 text-xs text-slate-500">{category.description}</p>
-                          </div>
+                          <div className="flex w-full items-start justify-between gap-2">
+                            <div>
+                              <span className="text-sm font-semibold">{category.label}</span>
+                              <p className="mt-1 text-xs text-slate-500">{category.description}</p>
+                              {statusLabel ? (
+                                <p className="mt-1 text-[11px] text-slate-500">{statusLabel}</p>
+                              ) : null}
+                            </div>
                           <span className="inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase text-indigo-600 shadow-sm">
                             Detalii
                           </span>
@@ -1587,6 +1849,9 @@ export default function ParentAISettings({ onClose }) {
           onResetCategory={() => handleResetPromptCategory(activeCategoryDefinition.id)}
           isModified={activeCategoryModified}
           disabled={isWarmupRunning}
+          promptStatuses={warmupPromptStatuses[activeCategoryDefinition.id] || {}}
+          onRefreshStatus={() => refreshWarmupCategoryStatus(activeCategoryDefinition.id)}
+          isStatusLoading={Boolean(warmupStatusLoadingMap[activeCategoryDefinition.id])}
         />
       )}
     </div>

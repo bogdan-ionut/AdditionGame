@@ -205,6 +205,19 @@ export const getCachedAudioClip = async (descriptor: AudioCacheDescriptor): Prom
   }
 };
 
+export const hasCachedAudioClip = async (descriptor: AudioCacheDescriptor): Promise<boolean> => {
+  if (!descriptor?.text?.trim()) {
+    return false;
+  }
+  try {
+    const key = await getCacheKey(descriptor);
+    return await hasAudioCacheEntry(key);
+  } catch (error) {
+    console.warn('[audio-cache] Unable to determine clip status', error);
+    return false;
+  }
+};
+
 export const storeAudioClip = async (
   descriptor: AudioCacheDescriptor,
   blob: Blob,

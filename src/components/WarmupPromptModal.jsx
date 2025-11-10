@@ -1,6 +1,57 @@
 import { useMemo, useState } from 'react';
-import { X, Plus, Pencil, Trash2, Check, XCircle, RotateCcw } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Pencil,
+  Trash2,
+  Check,
+  XCircle,
+  RotateCcw,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  CircleSlash2,
+} from 'lucide-react';
 import { LANGUAGE_TAGS } from '../lib/audio/warmupCatalog';
+
+const STATUS_CONFIG = {
+  cached: {
+    label: 'Generat',
+    className: 'bg-emerald-100 text-emerald-700',
+    icon: CheckCircle2,
+    iconClassName: '',
+  },
+  pending: {
+    label: 'În curs',
+    className: 'bg-indigo-100 text-indigo-700',
+    icon: Loader2,
+    iconClassName: 'animate-spin',
+  },
+  error: {
+    label: 'Eroare',
+    className: 'bg-rose-100 text-rose-700',
+    icon: XCircle,
+    iconClassName: '',
+  },
+  skipped: {
+    label: 'Omis',
+    className: 'bg-amber-100 text-amber-700',
+    icon: AlertTriangle,
+    iconClassName: '',
+  },
+  missing: {
+    label: 'Necesită generare',
+    className: 'bg-slate-200 text-slate-600',
+    icon: CircleSlash2,
+    iconClassName: '',
+  },
+  checking: {
+    label: 'Verificăm…',
+    className: 'bg-slate-200 text-slate-600',
+    icon: Loader2,
+    iconClassName: 'animate-spin',
+  },
+};
 
 function PromptLanguageBadge({ language }) {
   if (!language) {
@@ -30,6 +81,9 @@ export default function WarmupPromptModal({
   onResetCategory,
   isModified,
   disabled = false,
+  promptStatuses = {},
+  onRefreshStatus,
+  isStatusLoading = false,
 }) {
   const sortedPrompts = useMemo(() => {
     return [...prompts].sort((a, b) => {
@@ -51,6 +105,38 @@ export default function WarmupPromptModal({
   const selectedSet = useMemo(() => new Set(selectedPromptIds || []), [selectedPromptIds]);
   const selectedCount = selectedSet.size;
   const totalPrompts = sortedPrompts.length;
+
+  const statusMap = promptStatuses || {};
+
+  const resolvePromptStatus = (promptId) => {
+    const raw = statusMap[promptId];
+    if (typeof raw === 'string' && STATUS_CONFIG[raw]) {
+      return raw;
+    }
+    return isStatusLoading ? 'checking' : 'missing';
+  };
+
+  const statusSummary = sortedPrompts.reduce(
+    (acc, prompt) => {
+      const status = resolvePromptStatus(prompt.id);
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    },
+    { cached: 0, pending: 0, error: 0, skipped: 0, missing: 0, checking: 0 },
+  );
+
+  const renderStatusBadge = (status) => {
+    const config = STATUS_CONFIG[status] || STATUS_CONFIG.missing;
+    const Icon = config.icon;
+    return (
+      <span
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${config.className}`}
+      >
+        <Icon className={`h-3 w-3 ${config.iconClassName}`} />
+        {config.label}
+      </span>
+    );
+  };
 
   const handleStartAdd = () => {
     setIsAdding(true);
@@ -130,21 +216,71 @@ export default function WarmupPromptModal({
         </div>
 
         <div className="space-y-4 px-6 py-5">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-            <span className="rounded-full bg-indigo-50 px-3 py-1 font-semibold text-indigo-700">
-              {selectedCount}/{totalPrompts} prompturi selectate
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+          <span className="rounded-full bg-indigo-50 px-3 py-1 font-semibold text-indigo-700">
+            {selectedCount}/{totalPrompts} prompturi selectate
+          </span>
+          {isModified ? (
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+              Listă personalizată
             </span>
-            {isModified ? (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                Listă personalizată
-              </span>
-            ) : null}
-          </div>
+          ) : null}
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
+            <CheckCircle2 className="h-3 w-3" /> {statusSummary.cached}/{totalPrompts} clipuri generate
+          </span>
+          {statusSummary.pending > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 font-semibold text-indigo-700">
+              <Loader2 className="h-3 w-3 animate-spin" /> În curs: {statusSummary.pending}
+            </span>
+          ) : null}
+          {statusSummary.error > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700">
+              <XCircle className="h-3 w-3" /> Erori: {statusSummary.error}
+            </span>
+          ) : null}
+          {statusSummary.skipped > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700">
+              <AlertTriangle className="h-3 w-3" /> Omise: {statusSummary.skipped}
+            </span>
+          ) : null}
+          {statusSummary.missing > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 font-semibold text-slate-700">
+              <CircleSlash2 className="h-3 w-3" /> Necesită generare: {statusSummary.missing}
+            </span>
+          ) : null}
+          {statusSummary.checking > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 font-semibold text-slate-600">
+              <Loader2 className="h-3 w-3 animate-spin" /> Verificăm {statusSummary.checking}
+            </span>
+          ) : null}
+          {typeof onRefreshStatus === 'function' ? (
             <button
               type="button"
-              onClick={onSelectAll}
+              onClick={onRefreshStatus}
+              disabled={isStatusLoading}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 font-semibold transition ${
+                isStatusLoading
+                  ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                  : 'bg-slate-900 text-white hover:bg-slate-700'
+              }`}
+            >
+              {isStatusLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3 w-3" />
+              )}
+              {isStatusLoading ? 'Actualizăm…' : 'Actualizează statusul'}
+            </button>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            type="button"
+            onClick={onSelectAll}
               disabled={disabled}
               className={`inline-flex items-center gap-2 rounded-full px-4 py-2 font-semibold transition ${
                 disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -178,72 +314,81 @@ export default function WarmupPromptModal({
             </button>
           </div>
 
-          <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
-            {sortedPrompts.map((prompt) => {
-              const isEditing = editingId === prompt.id;
-              const isSelected = selectedSet.has(prompt.id);
-              return (
-                <div
-                  key={prompt.id}
-                  className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition ${
-                    isSelected ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    checked={isSelected}
-                    onChange={() => onTogglePrompt(prompt.id)}
-                    disabled={disabled}
-                  />
-                  <div className="flex-1 space-y-3">
+        <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+          {sortedPrompts.map((prompt) => {
+            const isEditing = editingId === prompt.id;
+            const isSelected = selectedSet.has(prompt.id);
+            const status = resolvePromptStatus(prompt.id);
+            const statusBadge = renderStatusBadge(status);
+            return (
+              <div
+                key={prompt.id}
+                className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                  isSelected ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={isSelected}
+                  onChange={() => onTogglePrompt(prompt.id)}
+                  disabled={disabled}
+                />
+                <div className="flex-1 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     {isEditing ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={editText}
-                          onChange={(event) => setEditText(event.target.value)}
-                          rows={3}
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                          disabled={disabled}
-                        />
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                          <label className="font-semibold" htmlFor={`edit-language-${prompt.id}`}>
-                            Limbă
-                          </label>
-                          <select
-                            id={`edit-language-${prompt.id}`}
-                            value={editLanguage}
-                            onChange={(event) => setEditLanguage(event.target.value)}
-                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                            disabled={disabled}
-                          >
-                            {LANGUAGE_TAGS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Editezi promptul
+                      </span>
                     ) : (
-                      <div className="space-y-2">
-                        <p className="text-sm text-slate-800">{prompt.text}</p>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <PromptLanguageBadge language={prompt.language} />
-                          {prompt.source === 'custom' ? (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                              Personalizat
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
+                      <p className="text-sm text-slate-800">{prompt.text}</p>
                     )}
+                    {statusBadge}
                   </div>
-                  <div className="flex flex-col gap-2">
-                    {isEditing ? (
-                      <>
-                        <button
-                          type="button"
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editText}
+                        onChange={(event) => setEditText(event.target.value)}
+                        rows={3}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                        disabled={disabled}
+                      />
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                        <label className="font-semibold" htmlFor={`edit-language-${prompt.id}`}>
+                          Limbă
+                        </label>
+                        <select
+                          id={`edit-language-${prompt.id}`}
+                          value={editLanguage}
+                          onChange={(event) => setEditLanguage(event.target.value)}
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                          disabled={disabled}
+                        >
+                          {LANGUAGE_TAGS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <PromptLanguageBadge language={prompt.language} />
+                      {prompt.source === 'custom' ? (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          Personalizat
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
                           onClick={handleSubmitEdit}
                           disabled={disabled}
                           className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-emerald-600"
