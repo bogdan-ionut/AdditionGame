@@ -21,9 +21,15 @@ export type WarmupOptions = {
   signal?: AbortSignal;
 };
 
+export type WarmupTaskPrompt = {
+  categoryId: WarmupCategoryId;
+  promptId: string;
+};
+
 export type WarmupTask = {
   text: string;
   kind: WarmupPromptKind | null;
+  prompts: WarmupTaskPrompt[];
 };
 
 export type WarmupProgress = {
@@ -74,16 +80,27 @@ const STATIC_UI_PHRASES_LOOKUP = new Set(
   STATIC_UI_PHRASES.map((phrase) => phrase.trim().toLowerCase()).filter(Boolean),
 );
 
-const addTask = (tasks: WarmupTask[], seen: Set<string>, text: string, kind: WarmupPromptKind | null) => {
-  const normalized = text?.trim();
+const addTask = (
+  tasks: WarmupTask[],
+  taskIndex: Map<string, WarmupTask>,
+  prompt: { id: string; text: string; kind: WarmupPromptKind | null },
+  categoryId: WarmupCategoryId,
+) => {
+  const normalized = prompt?.text?.trim();
   if (!normalized) return;
   if (STATIC_UI_PHRASES_LOOKUP.has(normalized.toLowerCase())) {
     return;
   }
-  const key = `${kind || 'default'}::${normalized.toLowerCase()}`;
-  if (seen.has(key)) return;
-  seen.add(key);
-  tasks.push({ text: normalized, kind });
+  const key = `${prompt.kind || 'default'}::${normalized.toLowerCase()}`;
+  let task = taskIndex.get(key);
+  if (!task) {
+    task = { text: normalized, kind: prompt.kind ?? null, prompts: [] };
+    taskIndex.set(key, task);
+    tasks.push(task);
+  }
+  if (!task.prompts.some((item) => item.promptId === prompt.id && item.categoryId === categoryId)) {
+    task.prompts.push({ categoryId, promptId: prompt.id });
+  }
 };
 
 const waitForIdle = async () =>
@@ -108,7 +125,7 @@ export const collectWarmupTasks = ({
   const fallbackLang: 'ro' | 'en' = languageKey === 'ro' ? 'en' : 'ro';
 
   const tasks: WarmupTask[] = [];
-  const seen = new Set<string>();
+  const index = new Map<string, WarmupTask>();
 
   (Object.entries(selection) as Array<[WarmupCategoryId, string[]]>).forEach(([categoryId, promptIds]) => {
     if (!Array.isArray(promptIds) || promptIds.length === 0) {
@@ -129,7 +146,7 @@ export const collectWarmupTasks = ({
           return;
         }
       }
-      addTask(tasks, seen, prompt.text, prompt.kind);
+      addTask(tasks, index, prompt, categoryId);
     });
   });
 
