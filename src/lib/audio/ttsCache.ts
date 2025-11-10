@@ -402,6 +402,11 @@ export async function storeAudioClip(descriptor: TtsDescriptor, blob: Blob): Pro
   const tx = db.transaction(STORE_NAME, 'readwrite');
   const store = tx.store;
   const existing = (await store.get(key)) as TtsClipRecord | undefined;
+  const duplicates: TtsClipRecord[] = [];
+  const normalizedText = normalized.text.trim().toLowerCase();
+  const normalizedLang = normalized.lang.trim().toLowerCase();
+  const normalizedVoice = normalized.voice.trim().toLowerCase();
+  const normalizedModel = normalized.model.trim().toLowerCase();
   const record: TtsClipRecord = {
     key,
     bytes: blob.size,
@@ -420,9 +425,38 @@ export async function storeAudioClip(descriptor: TtsDescriptor, blob: Blob): Pro
     },
   };
   await store.put(record);
+
+  let cursor = await store.openCursor();
+  while (cursor) {
+    const value = cursor.value as TtsClipRecord;
+    if (value.key !== key) {
+      const valueText = value.meta?.text?.trim().toLowerCase() || '';
+      const valueLang = value.meta?.lang?.trim().toLowerCase() || '';
+      const valueVoice = value.meta?.voice?.trim().toLowerCase() || '';
+      const valueModel = value.meta?.model?.trim().toLowerCase() || '';
+      if (
+        valueText === normalizedText &&
+        valueLang === normalizedLang &&
+        valueVoice === normalizedVoice &&
+        valueModel === normalizedModel
+      ) {
+        duplicates.push(value);
+        await cursor.delete();
+      }
+    }
+    cursor = await cursor.continue();
+  }
+
   await tx.done;
 
   updateSummaryAfterPut(existing, record, now);
+
+  if (duplicates.length) {
+    const updatedAt = Date.now();
+    for (const duplicate of duplicates) {
+      updateSummaryAfterDelete(duplicate, updatedAt);
+    }
+  }
 
   schedulePrune();
 }
