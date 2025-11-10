@@ -96,6 +96,29 @@ export default function ParentAISettings({ onClose }) {
   const warmupActiveCategoriesRef = useRef(new Set());
   const importInputRef = useRef(null);
 
+  const refreshCacheEntries = useCallback(async () => {
+    if (!cacheSupported) {
+      setCacheEntries([]);
+      return;
+    }
+    setEntriesLoading(true);
+    setEntriesError(null);
+    try {
+      const entries = await listAudioCacheEntries();
+      setCacheEntries(entries);
+    } catch (error) {
+      console.error('Unable to load cache entries', error);
+      setEntriesError('Nu am putut încărca lista clipurilor.');
+      setCacheEntries([]);
+    } finally {
+      setEntriesLoading(false);
+    }
+  }, [cacheSupported]);
+
+  const refreshCacheSummary = useCallback(() => {
+    setCacheSummary(getAudioCacheSummary());
+  }, []);
+
   useEffect(() => {
     setVoiceStatus({ state: 'loading', message: null });
     fetchTtsVoices({ lang: audioSettings.narrationLanguage })
@@ -373,29 +396,6 @@ export default function ParentAISettings({ onClose }) {
       cleanupPreview();
     }
   };
-
-  const refreshCacheEntries = useCallback(async () => {
-    if (!cacheSupported) {
-      setCacheEntries([]);
-      return;
-    }
-    setEntriesLoading(true);
-    setEntriesError(null);
-    try {
-      const entries = await listAudioCacheEntries();
-      setCacheEntries(entries);
-    } catch (error) {
-      console.error('Unable to load cache entries', error);
-      setEntriesError('Nu am putut încărca lista clipurilor.');
-      setCacheEntries([]);
-    } finally {
-      setEntriesLoading(false);
-    }
-  }, [cacheSupported]);
-
-  const refreshCacheSummary = useCallback(() => {
-    setCacheSummary(getAudioCacheSummary());
-  }, []);
 
   const handleRefreshCacheSummary = () => {
     refreshCacheSummary();
