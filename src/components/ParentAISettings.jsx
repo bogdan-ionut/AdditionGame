@@ -19,6 +19,7 @@ import {
 } from '../lib/audio/cache';
 import { exportAudioCacheZip, importAudioCacheZip } from '../lib/audio/cacheIO';
 import { synthesizeSpeech, fetchTtsVoices, fetchTtsModels } from '../services/audioCatalog';
+import { collectWarmupTasks, precomputeNarrationClips } from '../lib/audio/warmup';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
 
@@ -41,6 +42,36 @@ const SAMPLE_RATE_OPTIONS = [
 
 const DEFAULT_SAMPLE_TEXT =
   'Salut! Sunt Kore, ghidul tău de matematică. Hai să rezolvăm problemele împreună!';
+
+const WARMUP_OPTIONS = [
+  {
+    id: 'praise',
+    label: 'Mesaje de felicitare',
+    description: 'Pregătește în avans replicile pozitive folosite după răspunsuri corecte.',
+  },
+  {
+    id: 'encouragement',
+    label: 'Mesaje de încurajare',
+    description: 'Generează clipuri pentru situațiile în care copilul are nevoie de motivație suplimentară.',
+  },
+  {
+    id: 'mini-lesson',
+    label: 'Mini-lecții și explicații',
+    description: 'Precomputează explicațiile audio folosite în lecții și hint-uri.',
+  },
+  {
+    id: 'problem',
+    label: 'Probleme de adunare (0–9)',
+    description: 'Generează întrebările standard pentru exercițiile de adunare.',
+  },
+  {
+    id: 'counting',
+    label: 'Exerciții de numărare',
+    description: 'Pregătește promt-urile pentru numărat înainte/înapoi folosite în joc.',
+  },
+];
+
+const DEFAULT_WARMUP_LIMIT = 9;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -69,8 +100,12 @@ export default function ParentAISettings({ onClose }) {
   const [exportStatus, setExportStatus] = useState({ state: 'idle', message: null });
   const [importStatus, setImportStatus] = useState({ state: 'idle', message: null, progress: null });
   const [playingKey, setPlayingKey] = useState(null);
+  const [warmupSelection, setWarmupSelection] = useState([]);
+  const [warmupStatus, setWarmupStatus] = useState({ state: 'idle', message: null, progress: null });
+  const [isWarmupRunning, setIsWarmupRunning] = useState(false);
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
+  const warmupControllerRef = useRef(null);
   const importInputRef = useRef(null);
 
   useEffect(() => {
@@ -171,6 +206,9 @@ export default function ParentAISettings({ onClose }) {
     saveAudioSettings(audioSettings);
   }, [audioSettings]);
 
+  const warmupSelectionSet = useMemo(() => new Set(warmupSelection), [warmupSelection]);
+  const warmupSelectionCount = warmupSelectionSet.size;
+
   const cleanupPreview = () => {
     if (previewRef.current.revoke) {
       previewRef.current.revoke();
@@ -207,6 +245,9 @@ export default function ParentAISettings({ onClose }) {
     return () => {
       cleanupPreview();
       cleanupEntryPreview();
+      if (warmupControllerRef.current) {
+        warmupControllerRef.current.abort();
+      }
     };
   }, []);
 
@@ -400,6 +441,148 @@ export default function ParentAISettings({ onClose }) {
         event.target.value = '';
       }
     }
+  };
+
+  const handleToggleWarmupOption = (optionId) => {
+    if (isWarmupRunning) return;
+    setWarmupSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(optionId)) {
+        next.delete(optionId);
+      } else {
+        next.add(optionId);
+      }
+      return Array.from(next);
+    });
+    setWarmupStatus({ state: 'idle', message: null, progress: null });
+  };
+
+  const handleSelectAllWarmup = () => {
+    if (isWarmupRunning) return;
+    setWarmupSelection(WARMUP_OPTIONS.map((option) => option.id));
+    setWarmupStatus({ state: 'idle', message: null, progress: null });
+  };
+
+  const handleClearWarmupSelection = () => {
+    if (isWarmupRunning) return;
+    setWarmupSelection([]);
+    setWarmupStatus({ state: 'idle', message: null, progress: null });
+  };
+
+  const describeWarmupProgress = (progress) => {
+    if (!progress) return 'Generăm clipuri audio…';
+    const { completed, total, status } = progress;
+    const base = `${completed}/${total} clipuri procesate`;
+    if (status === 'skipped') {
+      return `${base}. Am omis un clip indisponibil.`;
+    }
+    if (status === 'error') {
+      return `${base}. A apărut o eroare; continuăm cu restul.`;
+    }
+    return `Generăm clipuri audio… ${base}.`;
+  };
+
+  const handleStartWarmup = async () => {
+    if (isWarmupRunning) return;
+    if (!hasGeminiApiKey()) {
+      const message = 'Adaugă cheia Gemini înainte de a genera clipuri.';
+      setWarmupStatus({ state: 'error', message, progress: null });
+      showToast({ level: 'warning', message });
+      return;
+    }
+
+    const categories = Array.from(warmupSelectionSet);
+    if (!categories.length) {
+      const message = 'Selectează cel puțin o categorie de clipuri pentru generare.';
+      setWarmupStatus({ state: 'error', message, progress: null });
+      showToast({ level: 'info', message });
+      return;
+    }
+
+    const pendingTasks = collectWarmupTasks({
+      categories,
+      language: audioSettings.narrationLanguage || null,
+      additionMax: DEFAULT_WARMUP_LIMIT,
+      includeFallbackLanguage: true,
+    });
+
+    if (!pendingTasks.length) {
+      const message = 'Nu există nimic de generat pentru selecția curentă.';
+      setWarmupStatus({ state: 'idle', message, progress: null });
+      showToast({ level: 'info', message });
+      return;
+    }
+
+    const controller = new AbortController();
+    warmupControllerRef.current = controller;
+    setIsWarmupRunning(true);
+    setWarmupStatus({
+      state: 'loading',
+      message: `Generăm ${pendingTasks.length} clipuri…`,
+      progress: { completed: 0, total: pendingTasks.length, task: null, status: 'success' },
+    });
+
+    try {
+      const result = await precomputeNarrationClips({
+        categories,
+        language: audioSettings.narrationLanguage || null,
+        voiceId: audioSettings.narrationVoiceId || null,
+        speakingRate: audioSettings.speakingRate ?? null,
+        pitch: audioSettings.pitch ?? null,
+        model: audioSettings.narrationModel || null,
+        preferredMime: audioSettings.narrationMimeType || null,
+        sampleRateHz: audioSettings.narrationSampleRate ?? null,
+        additionMax: DEFAULT_WARMUP_LIMIT,
+        includeFallbackLanguage: true,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          setWarmupStatus({ state: 'loading', message: describeWarmupProgress(progress), progress });
+        },
+      });
+
+      if (controller.signal.aborted || result.aborted) {
+        const message = 'Generarea manuală a fost oprită.';
+        setWarmupStatus({ state: 'idle', message, progress: null });
+        showToast({ level: 'info', message });
+      } else if (result.rateLimited) {
+        const message = 'Gemini a limitat generarea. Unele clipuri nu au fost create.';
+        setWarmupStatus({ state: 'error', message, progress: null });
+        showToast({ level: 'warning', message });
+      } else if (result.errors > 0) {
+        const message = `Am terminat cu ${result.errors} erori și ${result.skipped} clipuri omise (${result.processed}/${result.total} reușite).`;
+        setWarmupStatus({ state: 'error', message, progress: null });
+        showToast({ level: 'warning', message });
+      } else {
+        const message = result.skipped
+          ? `Am generat ${result.processed}/${result.total} clipuri (am omis ${result.skipped}).`
+          : `Am generat toate cele ${result.processed} clipuri selectate.`;
+        setWarmupStatus({ state: 'success', message, progress: null });
+        showToast({ level: 'success', message });
+      }
+    } catch (error) {
+      console.error('Manual warmup failed', error);
+      const message = 'Generarea manuală a eșuat. Încearcă din nou.';
+      setWarmupStatus({ state: 'error', message, progress: null });
+      showToast({ level: 'error', message });
+    } finally {
+      if (warmupControllerRef.current === controller) {
+        warmupControllerRef.current = null;
+      }
+      setIsWarmupRunning(false);
+      refreshCacheSummary();
+      await refreshCacheEntries();
+    }
+  };
+
+  const handleCancelWarmup = () => {
+    if (!warmupControllerRef.current) return;
+    warmupControllerRef.current.abort();
+    warmupControllerRef.current = null;
+    setWarmupStatus((prev) => ({
+      state: 'loading',
+      message: 'Oprim generarea clipurilor…',
+      progress: prev.progress,
+    }));
   };
 
   const limitsChanged =
@@ -842,6 +1025,120 @@ export default function ParentAISettings({ onClose }) {
                 <span className="text-sm font-medium text-rose-600">{previewStatus.message}</span>
               )}
             </div>
+
+            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Generare manuală clipuri TTS</h3>
+                  <p className="text-sm text-slate-500">
+                    Selectează ce tipuri de clipuri vrei să pregătim în avans. Generarea pornește doar când apeși butonul de mai jos.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllWarmup}
+                    disabled={isWarmupRunning}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                      isWarmupRunning ? 'cursor-not-allowed border-slate-200 text-slate-400' : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Selectează tot
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearWarmupSelection}
+                    disabled={isWarmupRunning || warmupSelectionCount === 0}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                      isWarmupRunning || warmupSelectionCount === 0
+                        ? 'cursor-not-allowed border-slate-200 text-slate-400'
+                        : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Resetează selecția
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {WARMUP_OPTIONS.map((option) => (
+                  <label
+                    key={option.id}
+                    className={`flex cursor-pointer flex-col gap-2 rounded-xl border px-4 py-3 transition ${
+                      warmupSelectionSet.has(option.id)
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-sm font-semibold">{option.label}</span>
+                        <p className="mt-1 text-xs text-slate-500">{option.description}</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={warmupSelectionSet.has(option.id)}
+                        onChange={() => handleToggleWarmupOption(option.id)}
+                        disabled={isWarmupRunning}
+                        className="mt-1 h-4 w-4 accent-indigo-600"
+                      />
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1 text-xs text-slate-500">
+                  <p>{warmupSelectionCount === 0 ? 'Nicio categorie selectată momentan.' : `${warmupSelectionCount} categorii selectate.`}</p>
+                  {isWarmupRunning && warmupStatus.progress && (
+                    <p>{warmupStatus.message}</p>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleStartWarmup}
+                    disabled={isWarmupRunning || warmupSelectionCount === 0}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow transition ${
+                      isWarmupRunning || warmupSelectionCount === 0
+                        ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                  >
+                    {isWarmupRunning ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Generăm clipuri…
+                      </>
+                    ) : (
+                      'Generează clipurile selectate'
+                    )}
+                  </button>
+                  {isWarmupRunning && (
+                    <button
+                      type="button"
+                      onClick={handleCancelWarmup}
+                      className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
+                    >
+                      Oprește generarea
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {warmupStatus.message && !isWarmupRunning && (
+                <p
+                  className={`text-xs ${
+                    warmupStatus.state === 'error'
+                      ? 'text-rose-600'
+                      : warmupStatus.state === 'success'
+                        ? 'text-emerald-600'
+                        : 'text-slate-500'
+                  }`}
+                >
+                  {warmupStatus.message}
+                </p>
+              )}
+            </section>
 
             <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
