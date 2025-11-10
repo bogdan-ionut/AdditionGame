@@ -1,8 +1,12 @@
 import { synthesize } from '../../api/tts';
 import { hasGeminiApiKey } from '../gemini/apiKey';
-import { FEEDBACK_MESSAGES, STATIC_UI_PHRASES, buildCountingPrompt, getAdditionPrompts } from './phrases';
-
-export type WarmupCategory = 'praise' | 'encouragement' | 'mini-lesson' | 'problem' | 'counting';
+import { STATIC_UI_PHRASES } from './phrases';
+import type {
+  WarmupLibrary,
+  WarmupPromptSelection,
+  WarmupPromptKind,
+  WarmupCategoryId,
+} from './warmupCatalog';
 
 export type WarmupOptions = {
   language?: string | null;
@@ -19,7 +23,7 @@ export type WarmupOptions = {
 
 export type WarmupTask = {
   text: string;
-  type: WarmupCategory | null;
+  kind: WarmupPromptKind | null;
 };
 
 export type WarmupProgress = {
@@ -40,7 +44,8 @@ export type WarmupResult = {
 };
 
 export type WarmupPlan = WarmupOptions & {
-  categories: WarmupCategory[];
+  selection: WarmupPromptSelection;
+  library: WarmupLibrary;
   onProgress?: (progress: WarmupProgress) => void;
 };
 
@@ -69,40 +74,16 @@ const STATIC_UI_PHRASES_LOOKUP = new Set(
   STATIC_UI_PHRASES.map((phrase) => phrase.trim().toLowerCase()).filter(Boolean),
 );
 
-const addTask = (tasks: WarmupTask[], seen: Set<string>, text: string, type: WarmupCategory | null) => {
+const addTask = (tasks: WarmupTask[], seen: Set<string>, text: string, kind: WarmupPromptKind | null) => {
   const normalized = text?.trim();
   if (!normalized) return;
   if (STATIC_UI_PHRASES_LOOKUP.has(normalized.toLowerCase())) {
     return;
   }
-  const key = `${type || 'default'}::${normalized.toLowerCase()}`;
+  const key = `${kind || 'default'}::${normalized.toLowerCase()}`;
   if (seen.has(key)) return;
   seen.add(key);
-  tasks.push({ text: normalized, type });
-};
-
-const addFeedbackTasks = (
-  tasks: WarmupTask[],
-  seen: Set<string>,
-  language: 'ro' | 'en',
-  categories: Set<WarmupCategory>,
-) => {
-  const feedback = FEEDBACK_MESSAGES;
-  if (categories.has('praise')) {
-    feedback.praise[language]?.forEach((text) => {
-      addTask(tasks, seen, text, 'praise');
-    });
-  }
-  if (categories.has('encouragement')) {
-    feedback.encouragement[language]?.forEach((text) => {
-      addTask(tasks, seen, text, 'encouragement');
-    });
-  }
-  if (categories.has('mini-lesson')) {
-    Object.values(feedback.miniLessons[language] || {}).forEach((text) => {
-      addTask(tasks, seen, text, 'mini-lesson');
-    });
-  }
+  tasks.push({ text: normalized, kind });
 };
 
 const waitForIdle = async () =>
@@ -111,45 +92,53 @@ const waitForIdle = async () =>
   });
 
 export const collectWarmupTasks = ({
-  categories,
+  selection,
+  library,
   language,
-  additionMax,
   includeFallbackLanguage = true,
-}: Pick<WarmupPlan, 'categories' | 'language' | 'additionMax' | 'includeFallbackLanguage'>): WarmupTask[] => {
-  const uniqueCategories = new Set(categories?.filter(Boolean) as WarmupCategory[]);
-  if (!uniqueCategories.size) return [];
+}: {
+  selection: WarmupPromptSelection;
+  library: WarmupLibrary;
+  language?: string | null;
+  includeFallbackLanguage?: boolean;
+}): WarmupTask[] => {
+  if (!selection) return [];
 
-  const additionLimit = Number.isFinite(additionMax) ? Number(additionMax) : 9;
   const languageKey = normalizeLanguageKey(language);
   const fallbackLang: 'ro' | 'en' = languageKey === 'ro' ? 'en' : 'ro';
 
   const tasks: WarmupTask[] = [];
   const seen = new Set<string>();
 
-  addFeedbackTasks(tasks, seen, languageKey, uniqueCategories);
-  if (includeFallbackLanguage && fallbackLang !== languageKey) {
-    addFeedbackTasks(tasks, seen, fallbackLang, uniqueCategories);
-  }
-
-  if (uniqueCategories.has('problem')) {
-    getAdditionPrompts(language, additionLimit).forEach((prompt) => {
-      addTask(tasks, seen, prompt, 'problem');
-    });
-  }
-
-  if (uniqueCategories.has('counting')) {
-    for (let a = 0; a <= additionLimit; a += 1) {
-      for (let b = 1; b <= additionLimit; b += 1) {
-        addTask(tasks, seen, buildCountingPrompt(a, b, language), 'counting');
-      }
+  (Object.entries(selection) as Array<[WarmupCategoryId, string[]]>).forEach(([categoryId, promptIds]) => {
+    if (!Array.isArray(promptIds) || promptIds.length === 0) {
+      return;
     }
-  }
+    const prompts = library?.[categoryId] || [];
+    if (!prompts.length) {
+      return;
+    }
+    const selected = new Set(promptIds);
+    prompts.forEach((prompt) => {
+      if (!selected.has(prompt.id)) {
+        return;
+      }
+      const promptLanguage = prompt.language;
+      if (promptLanguage && promptLanguage !== languageKey) {
+        if (!includeFallbackLanguage || promptLanguage !== fallbackLang) {
+          return;
+        }
+      }
+      addTask(tasks, seen, prompt.text, prompt.kind);
+    });
+  });
 
   return tasks;
 };
 
 export const precomputeNarrationClips = async ({
-  categories,
+  selection,
+  library,
   language,
   voiceId,
   speakingRate,
@@ -157,7 +146,6 @@ export const precomputeNarrationClips = async ({
   model,
   preferredMime,
   sampleRateHz,
-  additionMax,
   includeFallbackLanguage,
   signal,
   onProgress,
@@ -172,9 +160,9 @@ export const precomputeNarrationClips = async ({
   }
 
   const tasks = collectWarmupTasks({
-    categories,
+    selection,
+    library,
     language,
-    additionMax,
     includeFallbackLanguage,
   });
 
@@ -207,7 +195,7 @@ export const precomputeNarrationClips = async ({
         model: model || undefined,
         preferredMime: preferredMime || undefined,
         sampleRateHz: sampleRateHz ?? undefined,
-        kind: task.type,
+        kind: task.kind,
         signal,
       });
       processed += 1;

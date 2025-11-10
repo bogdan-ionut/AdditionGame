@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Loader2, CheckCircle2, Volume2, KeyRound } from 'lucide-react';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import {
@@ -20,6 +20,16 @@ import {
 import { exportAudioCacheZip, importAudioCacheZip } from '../lib/audio/cacheIO';
 import { synthesizeSpeech, fetchTtsVoices, fetchTtsModels } from '../services/audioCatalog';
 import { collectWarmupTasks, precomputeNarrationClips } from '../lib/audio/warmup';
+import {
+  WARMUP_CATEGORIES,
+  loadWarmupLibrary,
+  saveWarmupLibrary,
+  createCustomPrompt,
+  pruneSelection as pruneWarmupSelection,
+  isCategoryModified,
+  resetCategoryToDefaults,
+} from '../lib/audio/warmupCatalog';
+import WarmupPromptModal from './WarmupPromptModal';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
 
@@ -42,36 +52,6 @@ const SAMPLE_RATE_OPTIONS = [
 
 const DEFAULT_SAMPLE_TEXT =
   'Salut! Sunt Kore, ghidul tău de matematică. Hai să rezolvăm problemele împreună!';
-
-const WARMUP_OPTIONS = [
-  {
-    id: 'praise',
-    label: 'Mesaje de felicitare',
-    description: 'Pregătește în avans replicile pozitive folosite după răspunsuri corecte.',
-  },
-  {
-    id: 'encouragement',
-    label: 'Mesaje de încurajare',
-    description: 'Generează clipuri pentru situațiile în care copilul are nevoie de motivație suplimentară.',
-  },
-  {
-    id: 'mini-lesson',
-    label: 'Mini-lecții și explicații',
-    description: 'Precomputează explicațiile audio folosite în lecții și hint-uri.',
-  },
-  {
-    id: 'problem',
-    label: 'Probleme de adunare (0–9)',
-    description: 'Generează întrebările standard pentru exercițiile de adunare.',
-  },
-  {
-    id: 'counting',
-    label: 'Exerciții de numărare',
-    description: 'Pregătește promt-urile pentru numărat înainte/înapoi folosite în joc.',
-  },
-];
-
-const DEFAULT_WARMUP_LIMIT = 9;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -100,9 +80,11 @@ export default function ParentAISettings({ onClose }) {
   const [exportStatus, setExportStatus] = useState({ state: 'idle', message: null });
   const [importStatus, setImportStatus] = useState({ state: 'idle', message: null, progress: null });
   const [playingKey, setPlayingKey] = useState(null);
-  const [warmupSelection, setWarmupSelection] = useState([]);
+  const [warmupLibrary, setWarmupLibrary] = useState(() => loadWarmupLibrary());
+  const [warmupSelection, setWarmupSelection] = useState({});
   const [warmupStatus, setWarmupStatus] = useState({ state: 'idle', message: null, progress: null });
   const [isWarmupRunning, setIsWarmupRunning] = useState(false);
+  const [activeWarmupCategory, setActiveWarmupCategory] = useState(null);
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
   const warmupControllerRef = useRef(null);
@@ -206,8 +188,20 @@ export default function ParentAISettings({ onClose }) {
     saveAudioSettings(audioSettings);
   }, [audioSettings]);
 
-  const warmupSelectionSet = useMemo(() => new Set(warmupSelection), [warmupSelection]);
-  const warmupSelectionCount = warmupSelectionSet.size;
+  const warmupSelectionSummary = useMemo(() => {
+    const categories = [];
+    let totalPrompts = 0;
+    Object.entries(warmupSelection).forEach(([categoryId, ids]) => {
+      if (Array.isArray(ids) && ids.length > 0) {
+        categories.push(categoryId);
+        totalPrompts += ids.length;
+      }
+    });
+    return { categories, totalPrompts };
+  }, [warmupSelection]);
+
+  const warmupSelectionCount = warmupSelectionSummary.categories.length;
+  const warmupSelectedPrompts = warmupSelectionSummary.totalPrompts;
 
   const cleanupPreview = () => {
     if (previewRef.current.revoke) {
@@ -268,6 +262,34 @@ export default function ParentAISettings({ onClose }) {
       onClose?.();
     }
   };
+
+  const applyWarmupLibraryUpdate = useCallback((updater) => {
+    setWarmupLibrary((currentLibrary) => {
+      const nextLibrary = updater(currentLibrary);
+      if (!nextLibrary || nextLibrary === currentLibrary) {
+        return currentLibrary;
+      }
+      saveWarmupLibrary(nextLibrary);
+      setWarmupSelection((prevSelection) => pruneWarmupSelection(prevSelection, nextLibrary));
+      return nextLibrary;
+    });
+  }, []);
+
+  const updateWarmupSelection = useCallback((updater) => {
+    setWarmupSelection((prevSelection) => {
+      const draft = updater(prevSelection);
+      const sanitized = {};
+      Object.entries(draft || {}).forEach(([categoryId, ids]) => {
+        if (!Array.isArray(ids)) return;
+        const unique = Array.from(new Set(ids.filter(Boolean)));
+        if (unique.length > 0) {
+          sanitized[categoryId] = unique;
+        }
+      });
+      return sanitized;
+    });
+    setWarmupStatus({ state: 'idle', message: null, progress: null });
+  }, [setWarmupStatus]);
 
   const handleSaveKey = async () => {
     const trimmed = apiKeyInput.trim();
@@ -443,31 +465,145 @@ export default function ParentAISettings({ onClose }) {
     }
   };
 
-  const handleToggleWarmupOption = (optionId) => {
+  const handleToggleWarmupOption = (categoryId) => {
     if (isWarmupRunning) return;
-    setWarmupSelection((prev) => {
-      const next = new Set(prev);
-      if (next.has(optionId)) {
-        next.delete(optionId);
+    const prompts = warmupLibrary[categoryId] || [];
+    updateWarmupSelection((prev) => {
+      const next = { ...prev };
+      const current = new Set(prev?.[categoryId] || []);
+      if (current.size > 0 && current.size === prompts.length) {
+        delete next[categoryId];
+      } else if (prompts.length > 0) {
+        next[categoryId] = prompts.map((prompt) => prompt.id);
       } else {
-        next.add(optionId);
+        delete next[categoryId];
       }
-      return Array.from(next);
+      return next;
     });
-    setWarmupStatus({ state: 'idle', message: null, progress: null });
   };
 
   const handleSelectAllWarmup = () => {
     if (isWarmupRunning) return;
-    setWarmupSelection(WARMUP_OPTIONS.map((option) => option.id));
-    setWarmupStatus({ state: 'idle', message: null, progress: null });
+    updateWarmupSelection(() => {
+      const next = {};
+      WARMUP_CATEGORIES.forEach((category) => {
+        const prompts = warmupLibrary[category.id] || [];
+        if (prompts.length > 0) {
+          next[category.id] = prompts.map((prompt) => prompt.id);
+        }
+      });
+      return next;
+    });
   };
 
   const handleClearWarmupSelection = () => {
     if (isWarmupRunning) return;
-    setWarmupSelection([]);
-    setWarmupStatus({ state: 'idle', message: null, progress: null });
+    updateWarmupSelection(() => ({}));
   };
+
+  const handleOpenWarmupCategory = (categoryId) => {
+    setActiveWarmupCategory(categoryId);
+  };
+
+  const handleCloseWarmupCategory = () => {
+    setActiveWarmupCategory(null);
+  };
+
+  const handleTogglePromptSelection = (categoryId, promptId) => {
+    if (isWarmupRunning) return;
+    updateWarmupSelection((prev) => {
+      const next = { ...prev };
+      const current = new Set(prev?.[categoryId] || []);
+      if (current.has(promptId)) {
+        current.delete(promptId);
+      } else {
+        current.add(promptId);
+      }
+      if (current.size > 0) {
+        next[categoryId] = Array.from(current);
+      } else {
+        delete next[categoryId];
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllPrompts = (categoryId) => {
+    if (isWarmupRunning) return;
+    const prompts = warmupLibrary[categoryId] || [];
+    updateWarmupSelection((prev) => {
+      const next = { ...prev };
+      if (prompts.length > 0) {
+        next[categoryId] = prompts.map((prompt) => prompt.id);
+      } else {
+        delete next[categoryId];
+      }
+      return next;
+    });
+  };
+
+  const handleClearPromptSelection = (categoryId) => {
+    if (isWarmupRunning) return;
+    updateWarmupSelection((prev) => {
+      const next = { ...prev };
+      delete next[categoryId];
+      return next;
+    });
+  };
+
+  const handleAddPromptToCategory = (categoryId, { text, language }) => {
+    const definition = WARMUP_CATEGORIES.find((category) => category.id === categoryId);
+    if (!definition) return;
+    applyWarmupLibraryUpdate((library) => {
+      const prompts = library[categoryId] || [];
+      const nextPrompts = [...prompts, createCustomPrompt(categoryId, definition.kind, text, language || null)];
+      return { ...library, [categoryId]: nextPrompts };
+    });
+  };
+
+  const handleUpdatePromptInCategory = (categoryId, promptId, { text, language }) => {
+    applyWarmupLibraryUpdate((library) => {
+      const prompts = library[categoryId] || [];
+      const index = prompts.findIndex((prompt) => prompt.id === promptId);
+      if (index === -1) {
+        return library;
+      }
+      const nextPrompts = [...prompts];
+      nextPrompts[index] = {
+        ...nextPrompts[index],
+        text: text.trim(),
+        language: language || null,
+        source: 'custom',
+      };
+      return { ...library, [categoryId]: nextPrompts };
+    });
+  };
+
+  const handleDeletePromptFromCategory = (categoryId, promptId) => {
+    applyWarmupLibraryUpdate((library) => {
+      const prompts = library[categoryId] || [];
+      const nextPrompts = prompts.filter((prompt) => prompt.id !== promptId);
+      if (nextPrompts.length === prompts.length) {
+        return library;
+      }
+      return { ...library, [categoryId]: nextPrompts };
+    });
+  };
+
+  const handleResetPromptCategory = (categoryId) => {
+    applyWarmupLibraryUpdate((library) => resetCategoryToDefaults(library, categoryId));
+  };
+
+  const activeCategoryDefinition = useMemo(
+    () => WARMUP_CATEGORIES.find((category) => category.id === activeWarmupCategory) || null,
+    [activeWarmupCategory],
+  );
+
+  const activeCategoryPrompts = activeWarmupCategory ? warmupLibrary[activeWarmupCategory] || [] : [];
+  const activeCategorySelection = activeWarmupCategory ? warmupSelection[activeWarmupCategory] || [] : [];
+  const activeCategoryModified = activeWarmupCategory
+    ? isCategoryModified(warmupLibrary, activeWarmupCategory)
+    : false;
 
   const describeWarmupProgress = (progress) => {
     if (!progress) return 'Generăm clipuri audio…';
@@ -491,18 +627,21 @@ export default function ParentAISettings({ onClose }) {
       return;
     }
 
-    const categories = Array.from(warmupSelectionSet);
-    if (!categories.length) {
-      const message = 'Selectează cel puțin o categorie de clipuri pentru generare.';
+    if (!warmupSelectionCount || warmupSelectedPrompts === 0) {
+      const message = 'Selectează cel puțin un prompt pentru generare.';
       setWarmupStatus({ state: 'error', message, progress: null });
       showToast({ level: 'info', message });
       return;
     }
 
+    const selectionSnapshot = Object.fromEntries(
+      Object.entries(warmupSelection).map(([categoryId, ids]) => [categoryId, [...ids]]),
+    );
+
     const pendingTasks = collectWarmupTasks({
-      categories,
+      selection: selectionSnapshot,
+      library: warmupLibrary,
       language: audioSettings.narrationLanguage || null,
-      additionMax: DEFAULT_WARMUP_LIMIT,
       includeFallbackLanguage: true,
     });
 
@@ -524,7 +663,8 @@ export default function ParentAISettings({ onClose }) {
 
     try {
       const result = await precomputeNarrationClips({
-        categories,
+        selection: selectionSnapshot,
+        library: warmupLibrary,
         language: audioSettings.narrationLanguage || null,
         voiceId: audioSettings.narrationVoiceId || null,
         speakingRate: audioSettings.speakingRate ?? null,
@@ -532,7 +672,6 @@ export default function ParentAISettings({ onClose }) {
         model: audioSettings.narrationModel || null,
         preferredMime: audioSettings.narrationMimeType || null,
         sampleRateHz: audioSettings.narrationSampleRate ?? null,
-        additionMax: DEFAULT_WARMUP_LIMIT,
         includeFallbackLanguage: true,
         signal: controller.signal,
         onProgress: (progress) => {
@@ -1048,9 +1187,9 @@ export default function ParentAISettings({ onClose }) {
                   <button
                     type="button"
                     onClick={handleClearWarmupSelection}
-                    disabled={isWarmupRunning || warmupSelectionCount === 0}
+                    disabled={isWarmupRunning || warmupSelectedPrompts === 0}
                     className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                      isWarmupRunning || warmupSelectionCount === 0
+                      isWarmupRunning || warmupSelectedPrompts === 0
                         ? 'cursor-not-allowed border-slate-200 text-slate-400'
                         : 'border-slate-300 text-slate-600 hover:bg-slate-100'
                     }`}
@@ -1061,35 +1200,75 @@ export default function ParentAISettings({ onClose }) {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                {WARMUP_OPTIONS.map((option) => (
-                  <label
-                    key={option.id}
-                    className={`flex cursor-pointer flex-col gap-2 rounded-xl border px-4 py-3 transition ${
-                      warmupSelectionSet.has(option.id)
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
-                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-sm font-semibold">{option.label}</span>
-                        <p className="mt-1 text-xs text-slate-500">{option.description}</p>
+                {WARMUP_CATEGORIES.map((category) => {
+                  const prompts = warmupLibrary[category.id] || [];
+                  const selectedIds = warmupSelection[category.id] || [];
+                  const totalPrompts = prompts.length;
+                  const selectedCount = selectedIds.length;
+                  const isFullySelected = totalPrompts > 0 && selectedCount === totalPrompts;
+                  const isIndeterminate = selectedCount > 0 && selectedCount < totalPrompts;
+                  const isActive = selectedCount > 0;
+                  return (
+                    <div
+                      key={category.id}
+                      className={`flex flex-col gap-3 rounded-2xl border px-4 py-4 transition ${
+                        isActive
+                          ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-200'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleOpenWarmupCategory(category.id)}
+                        className="flex w-full flex-col items-start gap-2 text-left"
+                      >
+                        <div className="flex w-full items-start justify-between gap-2">
+                          <div>
+                            <span className="text-sm font-semibold">{category.label}</span>
+                            <p className="mt-1 text-xs text-slate-500">{category.description}</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase text-indigo-600 shadow-sm">
+                            Detalii
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {selectedCount > 0
+                            ? `${selectedCount}/${totalPrompts} prompturi selectate`
+                            : `${totalPrompts} prompturi disponibile`}
+                        </p>
+                      </button>
+                      <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                          <input
+                            type="checkbox"
+                            ref={(element) => {
+                              if (element) {
+                                element.indeterminate = isIndeterminate;
+                              }
+                            }}
+                            checked={isFullySelected}
+                            onChange={() => handleToggleWarmupOption(category.id)}
+                            disabled={isWarmupRunning || totalPrompts === 0}
+                            className="h-4 w-4 accent-indigo-600"
+                          />
+                          Generează toate
+                        </label>
+                        {selectedCount > 0 && selectedCount < totalPrompts ? (
+                          <span className="text-[11px] font-semibold text-indigo-600">Selecție parțială</span>
+                        ) : null}
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={warmupSelectionSet.has(option.id)}
-                        onChange={() => handleToggleWarmupOption(option.id)}
-                        disabled={isWarmupRunning}
-                        className="mt-1 h-4 w-4 accent-indigo-600"
-                      />
                     </div>
-                  </label>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1 text-xs text-slate-500">
-                  <p>{warmupSelectionCount === 0 ? 'Nicio categorie selectată momentan.' : `${warmupSelectionCount} categorii selectate.`}</p>
+                  <p>
+                    {warmupSelectionCount === 0
+                      ? 'Niciun prompt selectat momentan.'
+                      : `${warmupSelectedPrompts} prompturi din ${warmupSelectionCount} categorii selectate.`}
+                  </p>
                   {isWarmupRunning && warmupStatus.progress && (
                     <p>{warmupStatus.message}</p>
                   )}
@@ -1098,9 +1277,9 @@ export default function ParentAISettings({ onClose }) {
                   <button
                     type="button"
                     onClick={handleStartWarmup}
-                    disabled={isWarmupRunning || warmupSelectionCount === 0}
+                    disabled={isWarmupRunning || warmupSelectedPrompts === 0}
                     className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow transition ${
-                      isWarmupRunning || warmupSelectionCount === 0
+                      isWarmupRunning || warmupSelectedPrompts === 0
                         ? 'cursor-not-allowed bg-slate-200 text-slate-500'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700'
                     }`}
@@ -1384,6 +1563,32 @@ export default function ParentAISettings({ onClose }) {
           </section>
         </div>
       </div>
+      {activeCategoryDefinition && (
+        <WarmupPromptModal
+          category={activeCategoryDefinition.id}
+          definition={activeCategoryDefinition}
+          prompts={activeCategoryPrompts}
+          selectedPromptIds={activeCategorySelection}
+          onClose={handleCloseWarmupCategory}
+          onTogglePrompt={(promptId) =>
+            handleTogglePromptSelection(activeCategoryDefinition.id, promptId)
+          }
+          onSelectAll={() => handleSelectAllPrompts(activeCategoryDefinition.id)}
+          onClearSelection={() => handleClearPromptSelection(activeCategoryDefinition.id)}
+          onAddPrompt={({ text, language }) =>
+            handleAddPromptToCategory(activeCategoryDefinition.id, { text, language })
+          }
+          onUpdatePrompt={(promptId, updates) =>
+            handleUpdatePromptInCategory(activeCategoryDefinition.id, promptId, updates)
+          }
+          onDeletePrompt={(promptId) =>
+            handleDeletePromptFromCategory(activeCategoryDefinition.id, promptId)
+          }
+          onResetCategory={() => handleResetPromptCategory(activeCategoryDefinition.id)}
+          isModified={activeCategoryModified}
+          disabled={isWarmupRunning}
+        />
+      )}
     </div>
   );
 }
