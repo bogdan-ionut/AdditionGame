@@ -1,11 +1,6 @@
 import { synthesize } from '../../api/tts';
 import { hasGeminiApiKey } from '../gemini/apiKey';
-import {
-  FEEDBACK_MESSAGES,
-  STATIC_UI_PHRASES,
-  buildCountingPrompt,
-  getAdditionPrompts,
-} from './phrases';
+import { FEEDBACK_MESSAGES, buildCountingPrompt, getAdditionPrompts } from './phrases';
 
 export type WarmupOptions = {
   language?: string | null;
@@ -78,7 +73,6 @@ export const warmupNarrationCache = (options: WarmupOptions): void => {
   const tasks: WarmupTask[] = [];
   const seen = new Set<string>();
 
-  STATIC_UI_PHRASES.forEach((text) => addTask(tasks, seen, text, 'ui'));
   addFeedbackTasks(tasks, seen, languageKey);
   if (fallbackLang !== languageKey) {
     addFeedbackTasks(tasks, seen, fallbackLang);
