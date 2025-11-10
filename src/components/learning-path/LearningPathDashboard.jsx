@@ -6,13 +6,8 @@ import {
   Divide,
   X as Multiply,
   Sparkles,
-  Compass,
-  Clock,
-  ChevronRight,
-  ArrowUpRight,
   MousePointerClick,
-  Layers,
-  Gauge,
+  ArrowUpRight,
   X,
 } from 'lucide-react';
 import LearningPathCard from './LearningPathCard.jsx';
@@ -26,16 +21,16 @@ const OPERATION_ICONS = {
 };
 
 const QUICK_CARD_STATUS_STYLES = {
-  emerald: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
-  amber: 'border-amber-400/40 bg-amber-500/10 text-amber-200',
-  indigo: 'border-indigo-400/40 bg-indigo-500/10 text-indigo-200',
-  slate: 'border-slate-500/30 bg-slate-600/10 text-slate-200',
-  sky: 'border-sky-400/40 bg-sky-500/10 text-sky-200',
+  emerald: 'bg-emerald-50 text-emerald-700',
+  amber: 'bg-amber-50 text-amber-700',
+  indigo: 'bg-indigo-50 text-indigo-700',
+  slate: 'bg-slate-100 text-slate-700',
+  sky: 'bg-sky-50 text-sky-700',
 };
 
 const getStatusMeta = (statusKey) => {
   const meta = LEARNING_PATH_STATUS[statusKey] || {
-    label: 'Coming Soon',
+    label: 'În curând',
     tone: 'slate',
   };
 
@@ -67,55 +62,52 @@ const QuickPathCard = ({ path, isActive, onPreview, onLaunch }) => {
           handlePreview();
         }
       }}
-      className={`group relative overflow-hidden rounded-3xl border bg-slate-900/70 p-6 text-left transition duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
-        isActive ? 'border-emerald-400/60 shadow-[0_20px_60px_-30px_rgba(16,185,129,0.6)]' : 'border-slate-800/80'
+      className={`rounded-xl border bg-white px-4 py-5 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
+        isActive ? 'border-slate-900 ring-2 ring-slate-200' : 'border-slate-200 hover:border-slate-300'
       }`}
     >
-      <div className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-        <div className="absolute inset-x-6 top-6 h-32 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-sky-500/5 to-transparent blur-xl" />
-      </div>
-
-      <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-1 flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusMeta.toneStyles}`}>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusMeta.toneStyles}`}
+            >
               <Sparkles size={14} />
               {statusMeta.label}
-            </div>
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{path.recommendedAges}</span>
+            </span>
+            {path.recommendedAges ? (
+              <span className="text-xs font-medium text-slate-500">{path.recommendedAges}</span>
+            ) : null}
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-white md:text-xl">{path.title}</h3>
-            <p className="text-sm text-slate-300/90 md:text-base md:leading-relaxed">{path.description}</p>
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold text-slate-900">{path.title}</h3>
+            {path.description && <p className="text-sm text-slate-600">{path.description}</p>}
           </div>
 
           {keyPoints.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
               {keyPoints.map((point) => (
-                <div
-                  key={point}
-                  className="flex items-start gap-2 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-3 text-sm text-slate-300/80"
-                >
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <li key={point} className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
                   <span>{point}</span>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
 
-        <div className="flex shrink-0 flex-col items-start gap-4 md:items-end">
+        <div className="flex flex-col items-start gap-2 md:items-end">
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
               handlePreview();
             }}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-emerald-400/60 hover:text-emerald-200"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
           >
             <MousePointerClick size={14} />
-            Peek flow
+            Vezi detalii
           </button>
 
           {isAvailable ? (
@@ -125,23 +117,16 @@ const QuickPathCard = ({ path, isActive, onPreview, onLaunch }) => {
                 event.stopPropagation();
                 onLaunch(path);
               }}
-              className="inline-flex items-center gap-2 rounded-2xl bg-emerald-400/90 px-4 py-2 text-sm font-semibold text-emerald-950 shadow-sm transition hover:bg-emerald-300"
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
-              Launch now
+              Pornește
               <ArrowUpRight size={16} />
             </button>
           ) : (
-            <div className="max-w-[220px] text-left text-xs text-slate-400">
-              {statusMeta.message}
-            </div>
+            statusMeta.message && (
+              <p className="max-w-[220px] text-left text-xs text-slate-500">{statusMeta.message}</p>
+            )
           )}
-
-          <ChevronRight
-            size={18}
-            className={`self-end transition-transform duration-300 ${
-              isActive ? 'translate-x-0 text-emerald-300' : 'translate-x-1 text-slate-500 group-hover:translate-x-2 group-hover:text-emerald-200'
-            }`}
-          />
         </div>
       </div>
     </div>
@@ -174,26 +159,26 @@ const LearningPathDashboard = ({
     const sections = [
       {
         id: 'ready',
-        title: 'Ready to Play',
-        description: 'Launch these adventures instantly with adaptive guidance and reporting.',
+        title: 'Disponibile acum',
+        description: 'Trasee gata de lansat pentru sesiunea de astăzi.',
         statuses: ['available'],
       },
       {
         id: 'pilot',
-        title: 'In Pilot & Research',
-        description: 'Educators are actively shaping these missions. Follow along and share feedback.',
+        title: 'În testare',
+        description: 'Suntem încă în lucru pe baza feedback-ului profesorilor.',
         statuses: ['research'],
       },
       {
         id: 'in-design',
-        title: 'In Design',
-        description: 'Storyboards, manipulatives, and AI scaffolds are being crafted with experts.',
+        title: 'În lucru',
+        description: 'Pregătim materiale și jocuri noi pentru acest modul.',
         statuses: ['in-design'],
       },
       {
         id: 'coming-soon',
-        title: 'Coming Soon',
-        description: 'Sneak a peek at the larger worlds we’re building next for confident learners.',
+        title: 'În curând',
+        description: 'Primești un preview al etapelor la care lucrăm.',
         statuses: ['coming-soon'],
       },
     ];
@@ -234,111 +219,55 @@ const LearningPathDashboard = ({
   }, [runtimeInfo]);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-50">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-gradient-to-b from-sky-500/20 via-slate-900/40 to-slate-950 blur-3xl" />
-      <div className="pointer-events-none absolute -left-48 top-40 h-72 w-72 rounded-full bg-emerald-500/10 blur-[120px]" />
-      <div className="pointer-events-none absolute -right-40 top-20 h-64 w-64 rounded-full bg-indigo-500/10 blur-[120px]" />
-
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-16 px-4 pb-20 pt-12 sm:px-6 lg:px-8">
-        {!runtimeInfo?.ok && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-sm font-medium">
-              {runtimeInfo?.note || 'Configurează cheia Gemini în AI Settings pentru a activa vocea și planificarea personalizată.'}
-            </span>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-3xl font-semibold">Alege aventura de exersare</h1>
             <button
               type="button"
               onClick={onOpenAiSettings}
-              className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+            >
+              Setări AI
+            </button>
+          </div>
+          <p className="max-w-3xl text-base text-slate-600">
+            Explorează traseele disponibile și pornește rapid exercițiile potrivite pentru copilul tău. Menținem designul simplu
+            și familiar cu restul aplicației pentru a putea ajunge mai repede în joc.
+          </p>
+          {runtimeBadges.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {runtimeBadges.map((badge) => (
+                <span
+                  key={badge.key}
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-200/60 px-3 py-1 text-xs font-semibold text-slate-700"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                  {badge.label}: {badge.value}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {!runtimeInfo?.ok && (
+          <div className="mt-8 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+            <span>{runtimeInfo?.note || 'Configurează cheia Gemini în AI Settings pentru a activa vocea și planificarea personalizată.'}</span>
+            <button
+              type="button"
+              onClick={onOpenAiSettings}
+              className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
             >
               Deschide AI Settings
             </button>
           </div>
         )}
-        <header className="space-y-12">
-          <div className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_30px_120px_-60px_rgba(56,189,248,0.45)] backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200">
-                <Sparkles size={14} className="text-amber-300" />
-                Personalized Math Galaxy · 2025 Edition
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-emerald-200">
-                <Gauge size={16} />
-                Adaptive in under 3 minutes
-              </div>
-            </div>
-            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
-              <div className="space-y-6">
-                <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-                  Chart a Math Adventure That Learners Love to Replay
-                </h1>
-                <p className="max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
-                  Explore story-driven modes, adaptive practice, and hands-on missions designed with educators for the 2025 classroom and home. Pick a mode to preview key beats, then launch instantly when your learner is ready.
-                </p>
-                {runtimeBadges.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {runtimeBadges.map((badge) => (
-                      <span
-                        key={badge.key}
-                        className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-100"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                        {badge.label}: {badge.value}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex flex-col gap-3 text-sm text-slate-200 sm:flex-row">
-                  <div className="inline-flex flex-1 items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/70 px-4 py-3">
-                    <GraduationCap size={18} className="text-emerald-300" />
-                    Mastery mapped to ages 3-14 and core standards.
-                  </div>
-                  <div className="inline-flex flex-1 items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/70 px-4 py-3">
-                    <Compass size={18} className="text-sky-300" />
-                    Narrative quests + AI planners keep practice joyful.
-                  </div>
-                  <div className="inline-flex flex-1 items-center gap-3 rounded-2xl border border-slate-700/80 bg-slate-900/70 px-4 py-3">
-                    <Clock size={18} className="text-amber-300" />
-                    Built for focused 10-minute learning bursts.
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-emerald-400/30 bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-950 p-6 shadow-[0_25px_80px_-50px_rgba(16,185,129,0.8)]">
-                <div className="space-y-4">
-                  <h2 className="text-lg font-semibold text-emerald-100">Live Spotlight</h2>
-                  <p className="text-sm leading-relaxed text-slate-200">
-                    Addition • 0-9 Sums is fully playable today. Parents and educators can monitor mastery, assign quests, and celebrate streaks in real time.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const livePath = learningPaths.find((path) => path.status === 'available');
-                      if (!livePath) return;
-                      setActiveOperationId(livePath.operation);
-                      setPreviewPathId(livePath.id);
-                      onSelectPath?.(livePath);
-                    }}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-400/90 px-4 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-300"
-                  >
-                    Jump into the live mode
-                    <ArrowUpRight size={18} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <div className="grid gap-6 rounded-3xl border border-white/10 bg-white/[0.02] p-6 backdrop-blur">
-            <div className="flex items-center gap-3 text-slate-200">
-              <Layers size={18} className="text-sky-300" />
-              Every mode is organized into stages with measurable wins. Hover or tap a tile to preview its flow.
-            </div>
-          </div>
-        </header>
-
-        <section className="grid gap-12 lg:grid-cols-[minmax(0,260px)_1fr] lg:items-start">
-          <aside className="space-y-6">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Operations</div>
-            <div className="grid gap-4">
+        <div className="mt-12 grid gap-10 lg:grid-cols-[220px_1fr]">
+          <aside className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operații</p>
+            <div className="flex flex-col gap-2">
               {operationList.map((operation) => {
                 const OperationIcon = OPERATION_ICONS[operation.id] || GraduationCap;
                 const isActive = operation.id === activeOperation?.id;
@@ -349,33 +278,19 @@ const LearningPathDashboard = ({
                     onClick={() => {
                       setActiveOperationId(operation.id);
                     }}
-                    className={`group relative overflow-hidden rounded-3xl border px-5 py-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+                    className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
                       isActive
-                        ? 'border-sky-400/50 bg-sky-500/10 text-white shadow-[0_18px_60px_-40px_rgba(56,189,248,0.8)]'
-                        : 'border-slate-800/80 bg-slate-900/70 text-slate-300 hover:border-sky-400/40 hover:bg-slate-900'
+                        ? 'border-slate-900 bg-white text-slate-900 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800'
                     }`}
                   >
-                    <div className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                      <div className="absolute inset-x-4 top-4 h-24 rounded-3xl bg-gradient-to-br from-sky-500/20 via-transparent to-transparent blur-xl" />
-                    </div>
-                    <div className="relative space-y-3">
-                      <div className="inline-flex items-center gap-3">
-                        <div className="rounded-2xl bg-slate-950/40 p-3 text-slate-200">
-                          <OperationIcon size={22} />
-                        </div>
-                        <span className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-                          {operation.focusAges}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        <h2 className="text-lg font-semibold text-white">{operation.label}</h2>
-                        <p className="text-sm leading-relaxed text-slate-300/90">{operation.description}</p>
-                      </div>
-                      <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-200">
-                        {operation.highlight}
-                        <ArrowUpRight size={14} />
-                      </div>
-                    </div>
+                    <span className="flex items-center gap-3">
+                      <span className="rounded-md bg-slate-100 p-2 text-slate-700">
+                        <OperationIcon size={18} />
+                      </span>
+                      <span className="text-sm font-semibold">{operation.label}</span>
+                    </span>
+                    <span className="text-xs text-slate-500">{operation.focusAges}</span>
                   </button>
                 );
               })}
@@ -383,29 +298,27 @@ const LearningPathDashboard = ({
           </aside>
 
           <div className="space-y-8">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400">Modes inside</div>
-                <h3 className="text-2xl font-semibold text-white sm:text-3xl">
-                  {activeOperation?.label ?? 'Learning Modes'}
-                </h3>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trasee de învățare</p>
+                <h2 className="text-xl font-semibold text-slate-900">
+                  {activeOperation?.label ?? 'Trasee disponibile'}
+                </h2>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Tap to preview · Launch instantly when ready
-              </div>
+              <span className="text-xs text-slate-500">Alege un card pentru a vedea detalii și pentru a porni modulul.</span>
             </div>
 
             {filteredPaths.length === 0 ? (
-              <div className="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-10 text-center text-sm text-slate-300">
-                More adventures for this operation are on the roadmap.
+              <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
+                Lucrăm la conținut nou pentru această operație. Revino în curând!
               </div>
             ) : (
               <div className="space-y-8">
                 {categorizedPaths.map((section) => (
-                  <div key={section.id} className="space-y-4">
+                  <div key={section.id} className="space-y-3">
                     <div>
-                      <h4 className="text-lg font-semibold text-white">{section.title}</h4>
-                      <p className="text-sm text-slate-300/80">{section.description}</p>
+                      <h3 className="text-lg font-semibold text-slate-900">{section.title}</h3>
+                      <p className="text-sm text-slate-600">{section.description}</p>
                     </div>
                     <div className="space-y-4">
                       {section.paths.map((path) => (
@@ -423,50 +336,29 @@ const LearningPathDashboard = ({
               </div>
             )}
           </div>
-        </section>
+        </div>
 
         {previewPath && (
-          <section className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+          <section className="mt-12 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400">Deep dive</div>
-                <h3 className="text-2xl font-semibold text-white sm:text-3xl">{previewPath.title}</h3>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detalii traseu</p>
+                <h3 className="text-2xl font-semibold text-slate-900">{previewPath.title}</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setPreviewPathId(null)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500 hover:text-white"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
               >
                 <X size={14} />
-                Collapse preview
+                Ascunde preview
               </button>
             </div>
-            <div className="overflow-hidden rounded-[2.25rem] border border-slate-800/80 bg-slate-900/70 p-1">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
               <LearningPathCard path={previewPath} onSelect={onSelectPath} />
             </div>
           </section>
         )}
-
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-white/[0.02] p-8 text-slate-200 backdrop-blur lg:grid-cols-3">
-          <div className="space-y-3">
-            <h4 className="text-lg font-semibold text-white">Evidence-based flow</h4>
-            <p className="text-sm leading-relaxed text-slate-300/90">
-              Every mission is co-designed with classroom educators and aligned to the science of learning—balancing spaced retrieval, storytelling, and feedback loops.
-            </p>
-          </div>
-          <div className="space-y-3">
-            <h4 className="text-lg font-semibold text-white">Unified family dashboard</h4>
-            <p className="text-sm leading-relaxed text-slate-300/90">
-              Track streaks, celebrate achievements, and assign the next quest from a single view that works seamlessly across desktop, tablet, and mobile.
-            </p>
-          </div>
-          <div className="space-y-3">
-            <h4 className="text-lg font-semibold text-white">Built for neurodiverse learners</h4>
-            <p className="text-sm leading-relaxed text-slate-300/90">
-              Choose between narration styles, movement breaks, and sensory-friendly themes so every learner feels seen and supported.
-            </p>
-          </div>
-        </section>
       </div>
     </div>
   );
