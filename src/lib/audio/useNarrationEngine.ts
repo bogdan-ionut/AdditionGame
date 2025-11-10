@@ -69,7 +69,7 @@ type PlayTextOptions = {
   volume?: number;
 };
 
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
+const OFFLINE_MESSAGE = 'Vocea AI nu este disponibilă. Adaugă cheia Gemini în AI Settings pentru a folosi narațiunea.';
 
 const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
   success: ['success', 'celebration', 'correct', 'victory'],
