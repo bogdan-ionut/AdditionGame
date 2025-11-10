@@ -7,6 +7,11 @@ const DEFAULT_TTS_MODEL = {
   label: 'Gemini Flash TTS',
 };
 
+const PRO_TTS_MODEL = {
+  id: 'gemini-1.5-pro-tts',
+  label: 'Gemini Pro TTS',
+};
+
 const GEMINI_VOICES = [
   {
     id: 'Kore',
@@ -53,7 +58,8 @@ const resolveLocalSfx = ({ pack, category, mode } = {}) => {
 };
 
 export async function fetchTtsModels() {
-  return [DEFAULT_TTS_MODEL];
+  const models = [DEFAULT_TTS_MODEL, PRO_TTS_MODEL];
+  return { models: models.map((model) => model.id), options: models };
 }
 
 export async function fetchTtsVoices({ lang } = {}) {
@@ -81,6 +87,21 @@ export async function synthesizeSpeech(payload = {}) {
     throw new Error('Introduceți text pentru sintetizare.');
   }
 
+  const resolvePreferredMime = (value) => {
+    if (value === 'audio/wav' || value === 'audio/mpeg') {
+      return value;
+    }
+    return undefined;
+  };
+
+  const resolveSampleRate = (value) => {
+    const numeric = Number(value);
+    if ([16000, 22050, 24000, 44100].includes(numeric)) {
+      return numeric;
+    }
+    return undefined;
+  };
+
   const blob = await synthesize(text, {
     voiceId: payload.voiceId || payload.voice || undefined,
     speakingRate:
@@ -97,7 +118,14 @@ export async function synthesizeSpeech(payload = {}) {
       payload.lang ||
       undefined,
     model: payload.model || payload.ttsModel || undefined,
-    preferredMime: payload.mime || payload.preferredMime || undefined,
+    preferredMime:
+      resolvePreferredMime(
+        payload.format || payload.mime || payload.preferredMime || payload.responseMimeType,
+      ) || undefined,
+    sampleRateHz:
+      resolveSampleRate(
+        payload.sampleRateHz || payload.sample_rate_hz || payload.sampleRate || payload.sample_rate,
+      ) || undefined,
   });
   const buffer = await blob.arrayBuffer();
   return { buffer, mimeType: blob.type || 'audio/mpeg' };

@@ -194,6 +194,8 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       speakingRate: settings.speakingRate ?? null,
       pitch: settings.pitch ?? null,
       model: effectiveModel,
+      preferredMime: settings.narrationMimeType || null,
+      sampleRateHz: settings.narrationSampleRate ?? null,
       additionMax: 9,
       signal: controller.signal,
     });
@@ -205,6 +207,8 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     settings.narrationVoiceId,
     settings.pitch,
     settings.speakingRate,
+    settings.narrationMimeType,
+    settings.narrationSampleRate,
   ]);
 
   const updateSettings = useCallback(
@@ -381,6 +385,8 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       const pitch = options.pitch ?? settings.pitch ?? 1;
       const volume = normalizeVolume(options.volume ?? settings.narrationVolume, settings.narrationVolume);
       const model = options.model || effectiveModel || null;
+      const preferredMime = settings.narrationMimeType || null;
+      const sampleRateHz = settings.narrationSampleRate ?? null;
 
       try {
         const result = await speak({
@@ -392,6 +398,8 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
           volume,
           model,
           kind: options.type || null,
+          preferredMime,
+          sampleRateHz,
           allowBrowserFallback: settings.browserVoiceFallback === true,
         });
 
@@ -424,6 +432,8 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       settings.narrationVolume,
       settings.pitch,
       settings.speakingRate,
+      settings.narrationMimeType,
+      settings.narrationSampleRate,
       settings.browserVoiceFallback,
       stopNarration,
     ],

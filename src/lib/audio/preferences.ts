@@ -11,6 +11,8 @@ export type AudioSettings = {
   narrationVoiceLabel: string | null;
   narrationLanguage: string | null;
   narrationModel: string | null;
+  narrationMimeType: 'audio/mpeg' | 'audio/wav';
+  narrationSampleRate: 16000 | 22050 | 24000 | 44100 | null;
   speakingRate: number;
   pitch: number;
   repeatNumbers: boolean;
@@ -33,6 +35,8 @@ const createDefaultAudioSettings = (): AudioSettings => {
     narrationVoiceLabel: null,
     narrationLanguage: 'ro-RO',
     narrationModel: aiConfig.audioModel || null,
+    narrationMimeType: 'audio/mpeg',
+    narrationSampleRate: 24000,
     speakingRate: 1.0,
     pitch: 0,
     repeatNumbers: false,
@@ -69,6 +73,14 @@ export function loadAudioSettings(): AudioSettings {
       narrationVoiceLabel: typeof parsed?.narrationVoiceLabel === 'string' ? parsed.narrationVoiceLabel : null,
       narrationLanguage: typeof parsed?.narrationLanguage === 'string' ? parsed.narrationLanguage : base.narrationLanguage,
       narrationModel: typeof parsed?.narrationModel === 'string' ? parsed.narrationModel : base.narrationModel,
+      narrationMimeType:
+        parsed?.narrationMimeType === 'audio/wav' || parsed?.narrationMimeType === 'audio/mpeg'
+          ? parsed.narrationMimeType
+          : base.narrationMimeType,
+      narrationSampleRate:
+        [16000, 22050, 24000, 44100].includes(Number(parsed?.narrationSampleRate))
+          ? Number(parsed?.narrationSampleRate)
+          : base.narrationSampleRate,
       speakingRate: Number.isFinite(parsed?.speakingRate) ? Number(parsed.speakingRate) : base.speakingRate,
       pitch: Number.isFinite(parsed?.pitch) ? Number(parsed.pitch) : base.pitch,
       repeatNumbers: parsed?.repeatNumbers === true,
@@ -103,6 +115,14 @@ export function saveAudioSettings(next: Partial<AudioSettings>): AudioSettings {
     narrationVoiceLabel: next.narrationVoiceLabel ?? current.narrationVoiceLabel,
     narrationLanguage: next.narrationLanguage ?? current.narrationLanguage,
     narrationModel: next.narrationModel ?? current.narrationModel,
+    narrationMimeType:
+      next.narrationMimeType === 'audio/wav' || next.narrationMimeType === 'audio/mpeg'
+        ? next.narrationMimeType
+        : current.narrationMimeType,
+    narrationSampleRate:
+      next.narrationSampleRate != null && [16000, 22050, 24000, 44100].includes(Number(next.narrationSampleRate))
+        ? (Number(next.narrationSampleRate) as 16000 | 22050 | 24000 | 44100)
+        : current.narrationSampleRate,
     speakingRate:
       next.speakingRate != null && Number.isFinite(next.speakingRate)
         ? Math.min(2, Math.max(0.5, Number(next.speakingRate)))

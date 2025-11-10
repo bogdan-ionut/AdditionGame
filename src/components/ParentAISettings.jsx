@@ -9,7 +9,7 @@ import {
   getAudioCacheSummary,
   isAudioCacheAvailable,
 } from '../lib/audio/cache';
-import { synthesizeSpeech, fetchTtsVoices } from '../services/audioCatalog';
+import { synthesizeSpeech, fetchTtsVoices, fetchTtsModels } from '../services/audioCatalog';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
 
@@ -17,6 +17,17 @@ const LANGUAGE_OPTIONS = [
   { value: 'ro-RO', label: 'Română (ro-RO)' },
   { value: 'en-US', label: 'English (en-US)' },
   { value: 'es-ES', label: 'Español (es-ES)' },
+];
+
+const FORMAT_OPTIONS = [
+  { value: 'audio/mpeg', label: 'MP3 (audio/mpeg)' },
+  { value: 'audio/wav', label: 'WAV (audio/wav)' },
+];
+
+const SAMPLE_RATE_OPTIONS = [
+  { value: 16000, label: '16 kHz' },
+  { value: 24000, label: '24 kHz' },
+  { value: 44100, label: '44.1 kHz' },
 ];
 
 const DEFAULT_SAMPLE_TEXT =
@@ -27,6 +38,7 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export default function ParentAISettings({ onClose }) {
   const [audioSettings, setAudioSettings] = useState(() => loadAudioSettings());
   const [voiceOptions, setVoiceOptions] = useState([]);
+  const [modelOptions, setModelOptions] = useState([]);
   const [voiceStatus, setVoiceStatus] = useState({ state: 'idle', message: null });
   const [previewStatus, setPreviewStatus] = useState({ state: 'idle', message: null });
   const [apiKeyInput, setApiKeyInput] = useState(() => getGeminiApiKey() || '');
@@ -50,6 +62,34 @@ export default function ParentAISettings({ onClose }) {
         setVoiceStatus({ state: 'error', message: 'Nu am putut încărca vocile implicite.' });
       });
   }, [audioSettings.narrationLanguage]);
+
+  useEffect(() => {
+    fetchTtsModels()
+      .then((models) => {
+        if (!models) {
+          setModelOptions([]);
+          return;
+        }
+        if (Array.isArray(models)) {
+          const normalized = models.map((model) =>
+            typeof model === 'string' ? { id: model, label: model } : model,
+          );
+          setModelOptions(normalized);
+          return;
+        }
+        if (Array.isArray(models.options)) {
+          setModelOptions(models.options);
+          return;
+        }
+        if (Array.isArray(models.models)) {
+          setModelOptions(models.models.map((id) => ({ id, label: id })));
+        }
+      })
+      .catch((error) => {
+        console.warn('Unable to load Gemini TTS models', error);
+        setModelOptions([]);
+      });
+  }, []);
 
   useEffect(() => {
     setCacheSupported(isAudioCacheAvailable());
@@ -148,7 +188,11 @@ export default function ParentAISettings({ onClose }) {
         text: sampleText,
         voiceId: audioSettings.narrationVoiceId || undefined,
         speakingRate: audioSettings.speakingRate,
+        pitch: audioSettings.pitch,
         language: audioSettings.narrationLanguage,
+        model: audioSettings.narrationModel || undefined,
+        preferredMime: audioSettings.narrationMimeType,
+        sampleRateHz: audioSettings.narrationSampleRate || undefined,
       });
       const blob = new Blob([response.buffer], { type: response.mimeType || 'audio/mpeg' });
       const objectUrl = URL.createObjectURL(blob);
@@ -214,6 +258,32 @@ export default function ParentAISettings({ onClose }) {
   const handleVoiceChange = (event) => {
     const value = event.target.value;
     setAudioSettings((prev) => ({ ...prev, narrationVoiceId: value || null }));
+  };
+
+  const handleModelChange = (event) => {
+    const value = event.target.value;
+    setAudioSettings((prev) => ({ ...prev, narrationModel: value || null }));
+  };
+
+  const handleFormatChange = (event) => {
+    const value = event.target.value === 'audio/wav' ? 'audio/wav' : 'audio/mpeg';
+    setAudioSettings((prev) => ({ ...prev, narrationMimeType: value }));
+  };
+
+  const handleSampleRateChange = (event) => {
+    const numeric = Number(event.target.value);
+    if (!Number.isFinite(numeric)) return;
+    const allowed = [16000, 22050, 24000, 44100];
+    setAudioSettings((prev) => ({
+      ...prev,
+      narrationSampleRate: allowed.includes(numeric) ? numeric : prev.narrationSampleRate,
+    }));
+  };
+
+  const handlePitchChange = (event) => {
+    const value = Number.parseFloat(event.target.value);
+    if (!Number.isFinite(value)) return;
+    setAudioSettings((prev) => ({ ...prev, pitch: clamp(value, -6, 6) }));
   };
 
   return (
@@ -372,6 +442,86 @@ export default function ParentAISettings({ onClose }) {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="model-select">
+                  Model Gemini TTS
+                </label>
+                <select
+                  id="model-select"
+                  value={audioSettings.narrationModel || ''}
+                  onChange={handleModelChange}
+                  disabled={!audioSettings.narrationEnabled}
+                  className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  <option value="">Implicit (flash)</option>
+                  {modelOptions.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label || model.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="format-select">
+                  Format audio
+                </label>
+                <select
+                  id="format-select"
+                  value={audioSettings.narrationMimeType || 'audio/mpeg'}
+                  onChange={handleFormatChange}
+                  disabled={!audioSettings.narrationEnabled}
+                  className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  {FORMAT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="sample-rate-select">
+                  Rată eșantionare
+                </label>
+                <select
+                  id="sample-rate-select"
+                  value={audioSettings.narrationSampleRate || 24000}
+                  onChange={handleSampleRateChange}
+                  disabled={!audioSettings.narrationEnabled}
+                  className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  {SAMPLE_RATE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="pitch-control">
+                  Ton: {audioSettings.pitch.toFixed(2)}
+                </label>
+                <input
+                  id="pitch-control"
+                  type="range"
+                  min="-6"
+                  max="6"
+                  step="0.1"
+                  value={audioSettings.pitch}
+                  onChange={handlePitchChange}
+                  disabled={!audioSettings.narrationEnabled}
+                  className="w-full"
+                />
+                <p className="text-xs text-slate-500">
+                  Ajustează tonalitatea pentru a obține o voce mai gravă sau mai ascuțită.
+                </p>
               </div>
             </div>
 
