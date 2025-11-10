@@ -26,15 +26,11 @@ The cache helper lives in `src/lib/audio/cache.ts` and exposes:
 
 All helpers are no-ops when IndexedDB is unavailable, so you can call them from shared code without additional guards.
 
-## Narration warm-up
+## Manual narration precompute
 
-`warmupNarrationCache` (`src/lib/audio/warmup.ts`) queues common phrases when narration is enabled:
+`precomputeNarrationClips` (`src/lib/audio/warmup.ts`) exposes a user-triggered queue for generating batches of Gemini clips. The helper accepts the desired categories (praise, encouragement, mini-lessons, addition problems, counting prompts) and synthesises them on demand while yielding to `requestIdleCallback` between tasks.
 
-- UI fallbacks, feedback phrases, and mini-lessons for the active language (plus English fallback).
-- All addition questions (0–9) and the corresponding counting prompts.
-- Work is scheduled with `requestIdleCallback` to avoid blocking the main thread. Each synthesis call first checks the cache, so clips are only generated the first time.
-
-`useNarrationEngine` kicks off the warm-up whenever the learner enables narration or changes voice/model parameters.
+Nothing is generated automatically at runtime. Instead, the parent/admin UI (`ParentAISettings`) offers a "Generare manuală" panel where adults can choose which packs to precompute and start/stop the batch explicitly. Each call still checks the cache first, so existing clips are reused and only missing prompts hit the API.
 
 ## Developer notes
 

@@ -18,7 +18,6 @@ import {
   buildCountingPrompt,
   buildProblemPrompt,
 } from './phrases';
-import { warmupNarrationCache } from './warmup';
 
 export type VoicePreset = {
   id: string;
@@ -184,32 +183,6 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       return saveAudioSettings({ narrationModel: runtime.audioModel });
     });
   }, [runtime?.audioModel]);
-
-  useEffect(() => {
-    if (!settings.narrationEnabled) return undefined;
-    const controller = new AbortController();
-    warmupNarrationCache({
-      language: settings.narrationLanguage || null,
-      voiceId: settings.narrationVoiceId || null,
-      speakingRate: settings.speakingRate ?? null,
-      pitch: settings.pitch ?? null,
-      model: effectiveModel,
-      preferredMime: settings.narrationMimeType || null,
-      sampleRateHz: settings.narrationSampleRate ?? null,
-      additionMax: 9,
-      signal: controller.signal,
-    });
-    return () => controller.abort();
-  }, [
-    effectiveModel,
-    settings.narrationEnabled,
-    settings.narrationLanguage,
-    settings.narrationVoiceId,
-    settings.pitch,
-    settings.speakingRate,
-    settings.narrationMimeType,
-    settings.narrationSampleRate,
-  ]);
 
   const updateSettings = useCallback(
     (next: Partial<AudioSettings>) => {
