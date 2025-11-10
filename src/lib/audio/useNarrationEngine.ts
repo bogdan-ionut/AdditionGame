@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isMathGalaxyConfigured } from '../../services/mathGalaxyClient';
 import { fetchAudioSfx, fetchTtsModels, fetchTtsVoices } from '../../services/audioCatalog';
 import { AUDIO_SETTINGS_EVENT, LS_AUDIO_SETTINGS, loadAudioSettings, saveAudioSettings, type AudioSettings } from './preferences';
 import { createObjectUrlFromBase64 } from './utils';
@@ -186,11 +185,6 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
 
   const fetchCatalog = useCallback(
     async (force = false) => {
-      if (!isMathGalaxyConfigured()) {
-        setCatalogStatus('error');
-        setCatalogError(OFFLINE_MESSAGE);
-        return;
-      }
       if (catalogStatus === 'loading' && !force) return;
       setCatalogStatus('loading');
       setCatalogError(null);
@@ -386,10 +380,16 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     async (card: { a: number; b: number }, meta: { theme?: string | null; story?: string | null } = {}) => {
       if (!settings.narrationEnabled) return;
       const languageKey = toLanguageKey(settings.narrationLanguage);
-      const intro =
+      const question =
         languageKey === 'ro'
-          ? `Cât face ${card.a} plus ${card.b}? Gândește-te la povestea noastră${meta.story ? ': ' : '.'}${meta.story || ''}`
-          : `What is ${card.a} plus ${card.b}? Think about our story${meta.story ? ': ' : '.'}${meta.story || ''}`;
+          ? `Cât face ${card.a} + ${card.b}?`
+          : `What is ${card.a} + ${card.b}?`;
+      const storyLine = meta.story
+        ? languageKey === 'ro'
+          ? ` Povestea spune: ${meta.story}`
+          : ` Think about our story: ${meta.story}`
+        : '';
+      const intro = `${question}${storyLine}`;
       await speakText({ text: intro, type: 'problem' });
       if (settings.repeatNumbers) {
         const sequence = Array.from({ length: card.b }, (_, index) => card.a + index + 1);

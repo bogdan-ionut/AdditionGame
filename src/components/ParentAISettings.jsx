@@ -67,6 +67,22 @@ export default function ParentAISettings({ onClose }) {
 
   const hasKey = useMemo(() => hasGeminiApiKey(), [apiKeyStatus, apiKeyInput]);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const handleBackdropClick = (event) => {
+    if (event.target === event.currentTarget) {
+      onClose?.();
+    }
+  };
+
   const handleSaveKey = async () => {
     const trimmed = apiKeyInput.trim();
     try {
@@ -141,8 +157,16 @@ export default function ParentAISettings({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-3xl rounded-3xl bg-white shadow-2xl">
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm p-4"
+      onClick={handleBackdropClick}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="relative w-full max-w-3xl rounded-3xl bg-white shadow-2xl max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] flex flex-col"
+        onClick={(event) => event.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -151,7 +175,7 @@ export default function ParentAISettings({ onClose }) {
         >
           <X size={18} />
         </button>
-        <div className="space-y-8 px-6 pb-8 pt-10 sm:px-10">
+        <div className="space-y-8 px-6 pb-8 pt-10 sm:px-10 overflow-y-auto">
           <header className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
               <SparklesIcon /> AI Settings
