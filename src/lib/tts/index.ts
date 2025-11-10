@@ -1,6 +1,11 @@
 import { synthesize } from "../../api/tts";
+import {
+  getCachedAudioClip as getCachedTtsClip,
+  storeAudioClip as storeTtsClip,
+  type TtsDescriptor,
+} from "../audio/ttsCache";
 
-export type SpeakMode = "server" | "webspeech" | "none";
+export type SpeakMode = "live" | "cache" | "webspeech" | "none";
 
 export type SpeakOptions = {
   text: string;
@@ -30,6 +35,7 @@ const MIN_RATE = 0.1;
 const MAX_RATE = 4;
 const MIN_PITCH = 0;
 const MAX_PITCH = 2;
+const DEFAULT_CACHE_FORMAT = "audio/mpeg";
 
 function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
@@ -235,32 +241,83 @@ export async function speak({
     return { ok: false, mode: "none" };
   }
 
+  const normalizedLang = lang?.trim() || DEFAULT_LANG;
+  const trimmedVoice = voiceName?.trim() || "";
+  const normalizedRate = toFinite(rate, 1);
+  const normalizedPitch = toFinite(pitch, 1);
+  const normalizedVolume = clamp(toFinite(volume, 1), 0, 1);
+  const playbackRate = clamp(normalizedRate, MIN_RATE, MAX_RATE);
+  const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+  const resolvedModel = typeof model === "string" ? model.trim() : null;
+  const resolvedKind = typeof kind === "string" ? kind.trim() : null;
+
+  const descriptor: TtsDescriptor = {
+    text: content,
+    lang: normalizedLang,
+    voice: trimmedVoice,
+    model: resolvedModel || "",
+    rate: Number.isFinite(normalizedRate) ? normalizedRate : 1,
+    pitch: Number.isFinite(normalizedPitch) ? normalizedPitch : 1,
+    format: DEFAULT_CACHE_FORMAT,
+  };
+
   const fallbackPayload: WebSpeechPayload = {
     text: content,
-    lang,
-    voiceName,
-    rate: toFinite(rate, 1),
-    pitch: toFinite(pitch, 1),
-    volume: clamp(toFinite(volume, 1), 0, 1),
+    lang: normalizedLang,
+    voiceName: trimmedVoice || undefined,
+    rate: normalizedRate,
+    pitch: normalizedPitch,
+    volume: normalizedVolume,
   };
+
+  try {
+    const cachedClip = await getCachedTtsClip(descriptor);
+    if (cachedClip) {
+      const buffer = await cachedClip.arrayBuffer();
+      if (buffer.byteLength > 0) {
+        const mimeType = cachedClip.type || descriptor.format || DEFAULT_CACHE_FORMAT;
+        const played = await playAudioBuffer(buffer, mimeType, normalizedVolume, playbackRate);
+        if (played) {
+          return { ok: true, mode: "cache" };
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("[tts] Unable to read cached audio clip", error);
+  }
+
+  if (isOffline) {
+    if (allowBrowserFallback) {
+      return fallbackToWebSpeech(fallbackPayload);
+    }
+    return { ok: false, mode: "none" };
+  }
 
   try {
     stopActiveServerPlayback();
     const blob = await synthesize(content, {
-      voiceId: voiceName || undefined,
-      speakingRate: toFinite(rate, 1),
-      pitch: toFinite(pitch, 1),
-      language: lang,
-      model,
-      kind,
+      voiceId: trimmedVoice || undefined,
+      speakingRate: normalizedRate,
+      pitch: normalizedPitch,
+      language: normalizedLang,
+      model: resolvedModel,
+      kind: resolvedKind,
     });
     const buffer = await blob.arrayBuffer();
+    const contentType = blob.type || DEFAULT_CACHE_FORMAT;
+    try {
+      const descriptorForStorage: TtsDescriptor = {
+        ...descriptor,
+        format: descriptor.format || contentType,
+      };
+      await storeTtsClip(descriptorForStorage, blob);
+    } catch (error) {
+      console.warn("[tts] Unable to cache synthesized audio", error);
+    }
     if (buffer.byteLength > 0) {
-      const contentType = blob.type || "audio/mpeg";
-      const playbackRate = clamp(toFinite(rate, 1), MIN_RATE, MAX_RATE);
-      const played = await playAudioBuffer(buffer, contentType, clamp(volume, 0, 1), playbackRate);
+      const played = await playAudioBuffer(buffer, contentType, normalizedVolume, playbackRate);
       if (played) {
-        return { ok: true, mode: "server" };
+        return { ok: true, mode: "live" };
       }
     }
     if (allowBrowserFallback) {
