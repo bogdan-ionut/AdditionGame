@@ -257,8 +257,6 @@ const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
 
   const speechConfig: Record<string, unknown> = {};
 
-  const audioConfig: Record<string, unknown> = {};
-
   if (languageCode) {
     speechConfig.languageCode = languageCode;
   }
@@ -270,19 +268,15 @@ const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
   }
 
   if (typeof opts.speakingRate === 'number' && Number.isFinite(opts.speakingRate)) {
-    audioConfig.speakingRate = opts.speakingRate;
+    speechConfig.speakingRate = opts.speakingRate;
   }
 
   if (typeof opts.pitch === 'number' && Number.isFinite(opts.pitch)) {
-    audioConfig.pitch = opts.pitch;
+    speechConfig.pitch = opts.pitch;
   }
 
   if (typeof opts.sampleRateHz === 'number' && Number.isFinite(opts.sampleRateHz)) {
-    audioConfig.sampleRateHertz = opts.sampleRateHz;
-  }
-
-  if (Object.keys(audioConfig).length > 0) {
-    speechConfig.audioConfig = audioConfig;
+    speechConfig.sampleRateHertz = opts.sampleRateHz;
   }
 
   return Object.keys(speechConfig).length > 0 ? speechConfig : undefined;
@@ -409,18 +403,11 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
           contents: [{ parts: [{ text: normalized }] }],
           config: {
             responseModalities: [Modality.AUDIO],
-            ...(speechConfig ? { speechConfig } : {}),
           },
           safetySettings: [],
           generationConfig: {
             responseMimeType,
-            ...(typeof opts.sampleRateHz === 'number' && Number.isFinite(opts.sampleRateHz)
-              ? { sampleRateHertz: opts.sampleRateHz }
-              : {}),
-            ...(typeof opts.speakingRate === 'number' && Number.isFinite(opts.speakingRate)
-              ? { speakingRate: opts.speakingRate }
-              : {}),
-            ...(typeof opts.pitch === 'number' && Number.isFinite(opts.pitch) ? { pitch: opts.pitch } : {}),
+            ...(speechConfig ? { speechConfig } : {}),
           },
           signal: opts.signal,
         });
