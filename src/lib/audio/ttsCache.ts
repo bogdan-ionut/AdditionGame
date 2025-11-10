@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { CACHE_LIMITS_EVENT, getAudioCacheLimits } from './cachePolicy';
 
 export type TtsDescriptor = {
   text: string;
@@ -53,10 +54,6 @@ const LAST_ACCESS_INDEX = 'by-lastAccess';
 const CREATED_AT_INDEX = 'by-createdAt';
 const DEFAULT_FORMAT = 'audio/mpeg';
 
-const MAX_CACHE_ENTRIES = 200;
-const MAX_TOTAL_BYTES = 100 * 1024 * 1024; // 100 MB upper bound
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-
 export const CACHE_EVENT_NAME = 'addition-game.audio.cache.updated';
 export const CACHE_SUMMARY_STORAGE_KEY = 'addition-game.audio.cache.summary.v1';
 
@@ -68,8 +65,58 @@ let summaryInitialized = false;
 let summaryInitPromise: Promise<void> | null = null;
 let summarySnapshot: CacheSummary = readSummaryFromStorage();
 
+type CacheLimits = {
+  maxEntries: number;
+  maxBytes: number;
+  ttlMs: number;
+};
+
+function getCacheLimits(): CacheLimits {
+  const limits = getAudioCacheLimits();
+  return {
+    maxEntries: Math.max(1, Number(limits.maxEntries) || 1),
+    maxBytes: Math.max(0, Number(limits.maxBytes) || 0),
+    ttlMs: Math.max(0, Number(limits.ttlMs) || 0),
+  };
+}
+
+function updateSummaryAfterPut(
+  existing: TtsClipRecord | undefined,
+  record: TtsClipRecord,
+  updatedAt: number,
+): void {
+  const current = getSummarySnapshot();
+  const previousBytes = getRecordBytes(existing);
+  const recordBytes = getRecordBytes(record);
+  persistSummary({
+    entryCount: existing ? current.entryCount : current.entryCount + 1,
+    totalBytes: Math.max(0, current.totalBytes - previousBytes + recordBytes),
+    updatedAt,
+  });
+}
+
+function updateSummaryAfterDelete(record: TtsClipRecord, updatedAt: number): void {
+  const current = getSummarySnapshot();
+  const recordBytes = getRecordBytes(record);
+  persistSummary({
+    entryCount: Math.max(0, current.entryCount - 1),
+    totalBytes: Math.max(0, current.totalBytes - recordBytes),
+    updatedAt,
+  });
+}
+
 function isBrowser(): boolean {
   return typeof window !== 'undefined';
+}
+
+function getRecordBytes(record: TtsClipRecord | undefined): number {
+  if (!record) {
+    return 0;
+  }
+  if (Number.isFinite(record.bytes) && record.bytes > 0) {
+    return Number(record.bytes);
+  }
+  return record.blob?.size || 0;
 }
 
 function isIndexedDbSupported(): boolean {
@@ -255,6 +302,7 @@ async function pruneCache(): Promise<void> {
   let summary = getSummarySnapshot();
   const now = Date.now();
   let changed = false;
+  const limits = getCacheLimits();
 
   const tx = db.transaction(STORE_NAME, 'readwrite');
   const index = tx.store.index(LAST_ACCESS_INDEX);
@@ -263,9 +311,9 @@ async function pruneCache(): Promise<void> {
   while (cursor) {
     const record = cursor.value as TtsClipRecord;
     const age = now - Math.max(record.lastAccess, record.createdAt);
-    const expired = age > CACHE_TTL_MS;
-    const overEntries = summary.entryCount > MAX_CACHE_ENTRIES;
-    const overBytes = summary.totalBytes > MAX_TOTAL_BYTES;
+    const expired = limits.ttlMs > 0 && age > limits.ttlMs;
+    const overEntries = summary.entryCount > limits.maxEntries;
+    const overBytes = limits.maxBytes > 0 && summary.totalBytes > limits.maxBytes;
     if (!(expired || overEntries || overBytes)) {
       break;
     }
@@ -317,9 +365,10 @@ export async function getCachedAudioClip(descriptor: TtsDescriptor): Promise<Blo
     await tx.done;
     return null;
   }
+  const limits = getCacheLimits();
   const now = Date.now();
   const age = now - Math.max(record.lastAccess, record.createdAt);
-  if (age > CACHE_TTL_MS) {
+  if (limits.ttlMs > 0 && age > limits.ttlMs) {
     await store.delete(key);
     await tx.done;
     const current = getSummarySnapshot();
@@ -373,13 +422,7 @@ export async function storeAudioClip(descriptor: TtsDescriptor, blob: Blob): Pro
   await store.put(record);
   await tx.done;
 
-  const current = getSummarySnapshot();
-  const previousBytes = existing?.bytes || existing?.blob?.size || 0;
-  persistSummary({
-    entryCount: existing ? current.entryCount : current.entryCount + 1,
-    totalBytes: Math.max(0, current.totalBytes - previousBytes + blob.size),
-    updatedAt: now,
-  });
+  updateSummaryAfterPut(existing, record, now);
 
   schedulePrune();
 }
@@ -388,27 +431,7 @@ export async function deleteAudioClip(key: string): Promise<void> {
   if (!key) {
     return;
   }
-  const db = await getDb();
-  if (!db) {
-    return;
-  }
-  await ensureSummaryInitialized();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  const store = tx.store;
-  const existing = (await store.get(key)) as TtsClipRecord | undefined;
-  if (!existing) {
-    await tx.done;
-    return;
-  }
-  await store.delete(key);
-  await tx.done;
-  const current = getSummarySnapshot();
-  const bytes = existing.bytes || existing.blob.size || 0;
-  persistSummary({
-    entryCount: Math.max(0, current.entryCount - 1),
-    totalBytes: Math.max(0, current.totalBytes - bytes),
-    updatedAt: Date.now(),
-  });
+  await deleteClipByKey(key);
 }
 
 export async function clearAudioCache(): Promise<void> {
@@ -424,6 +447,172 @@ export async function clearAudioCache(): Promise<void> {
   persistSummary({ ...DEFAULT_SUMMARY, updatedAt: Date.now() });
 }
 
+export type TtsClipMetadata = {
+  key: string;
+  bytes: number;
+  createdAt: number;
+  lastAccess: number;
+  meta: TtsClipRecord['meta'];
+  mimeType: string;
+};
+
+export async function deleteClipByKey(key: string): Promise<boolean> {
+  if (!key) {
+    return false;
+  }
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  await ensureSummaryInitialized();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const store = tx.store;
+  const existing = (await store.get(key)) as TtsClipRecord | undefined;
+  if (!existing) {
+    await tx.done;
+    return false;
+  }
+  await store.delete(key);
+  await tx.done;
+  updateSummaryAfterDelete(existing, Date.now());
+  return true;
+}
+
+export async function hasClip(key: string): Promise<boolean> {
+  if (!key) {
+    return false;
+  }
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const result = await tx.store.getKey(key);
+  await tx.done;
+  return typeof result !== 'undefined' && result !== null;
+}
+
+export async function listClipMetadata(): Promise<TtsClipMetadata[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const store = tx.store;
+  const items: TtsClipMetadata[] = [];
+  let cursor = await store.openCursor();
+  while (cursor) {
+    const value = cursor.value as TtsClipRecord;
+    const mimeType = (value?.blob?.type || value?.meta?.format || DEFAULT_FORMAT).split(';')[0];
+    items.push({
+      key: value.key,
+      bytes: getRecordBytes(value),
+      createdAt: value.createdAt,
+      lastAccess: value.lastAccess,
+      meta: { ...value.meta },
+      mimeType,
+    });
+    cursor = await cursor.continue();
+  }
+  await tx.done;
+  return items;
+}
+
+export async function getClipBlobByKey(key: string): Promise<Blob | null> {
+  if (!key) {
+    return null;
+  }
+  const db = await getDb();
+  if (!db) {
+    return null;
+  }
+  await ensureSummaryInitialized();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const store = tx.store;
+  const record = (await store.get(key)) as TtsClipRecord | undefined;
+  if (!record) {
+    await tx.done;
+    return null;
+  }
+  const limits = getCacheLimits();
+  const now = Date.now();
+  const age = now - Math.max(record.lastAccess, record.createdAt);
+  if (limits.ttlMs > 0 && age > limits.ttlMs) {
+    await store.delete(key);
+    await tx.done;
+    updateSummaryAfterDelete(record, now);
+    schedulePrune();
+    return null;
+  }
+  record.lastAccess = now;
+  await store.put(record);
+  await tx.done;
+  return record.blob;
+}
+
+export async function importClipRecord(record: TtsClipRecord): Promise<boolean> {
+  if (!record?.key || !record?.blob) {
+    return false;
+  }
+  const db = await getDb();
+  if (!db) {
+    return false;
+  }
+  await ensureSummaryInitialized();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const store = tx.store;
+  const existing = (await store.get(record.key)) as TtsClipRecord | undefined;
+  if (existing) {
+    await tx.done;
+    return false;
+  }
+  const now = Date.now();
+  const createdAt = Number.isFinite(record.createdAt) ? Number(record.createdAt) : now;
+  const lastAccess = Number.isFinite(record.lastAccess) ? Number(record.lastAccess) : now;
+  const nextRecord: TtsClipRecord = {
+    key: record.key,
+    bytes: getRecordBytes(record) || record.blob.size,
+    blob: record.blob,
+    createdAt,
+    lastAccess,
+    meta: { ...record.meta, text: record.meta?.text ?? '' },
+  };
+  await store.put(nextRecord);
+  await tx.done;
+  updateSummaryAfterPut(existing, nextRecord, now);
+  schedulePrune();
+  return true;
+}
+
+export async function getAllClipRecords(): Promise<TtsClipRecord[]> {
+  const db = await getDb();
+  if (!db) {
+    return [];
+  }
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const store = tx.store;
+  const records: TtsClipRecord[] = [];
+  let cursor = await store.openCursor();
+  while (cursor) {
+    const value = cursor.value as TtsClipRecord;
+    records.push({
+      key: value.key,
+      bytes: getRecordBytes(value),
+      blob: value.blob,
+      createdAt: value.createdAt,
+      lastAccess: value.lastAccess,
+      meta: { ...value.meta },
+    });
+    cursor = await cursor.continue();
+  }
+  await tx.done;
+  return records;
+}
+
+export async function runCachePrune(): Promise<void> {
+  await pruneCache();
+}
+
 export async function getAudioCacheSummary(): Promise<{ entryCount: number; totalBytes: number }> {
   await ensureSummaryInitialized();
   const snapshot = getSummarySnapshot();
@@ -433,4 +622,11 @@ export async function getAudioCacheSummary(): Promise<{ entryCount: number; tota
 // Bootstrap mirror for debug consumers
 if (isBrowser()) {
   void ensureSummaryInitialized();
+  try {
+    window.addEventListener(CACHE_LIMITS_EVENT, () => {
+      schedulePrune();
+    });
+  } catch (error) {
+    console.warn('[tts-cache] Unable to subscribe to cache limit updates', error);
+  }
 }

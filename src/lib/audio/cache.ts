@@ -3,13 +3,27 @@ import {
   CACHE_EVENT_NAME,
   CACHE_SUMMARY_STORAGE_KEY,
   clearAudioCache as clearTtsCache,
+  deleteClipByKey,
   deleteAudioClip as deleteTtsClip,
   getCachedAudioClip as getTtsCachedClip,
+  getClipBlobByKey,
+  hasClip,
+  listClipMetadata,
   makeCacheKey as makeTtsCacheKey,
+  runCachePrune,
   storeAudioClip as storeTtsClip,
+  type TtsClipMetadata,
 } from './ttsCache';
+import {
+  CACHE_LIMITS_EVENT,
+  CACHE_LIMITS_STORAGE_KEY,
+  getAudioCacheLimits as getPolicyLimits,
+  setAudioCacheLimits as setPolicyLimits,
+  type AudioCacheLimits as BaseAudioCacheLimits,
+} from './cachePolicy';
 
 export { CACHE_EVENT_NAME, CACHE_SUMMARY_STORAGE_KEY };
+export { CACHE_LIMITS_EVENT, CACHE_LIMITS_STORAGE_KEY };
 
 const DEFAULT_FORMAT = 'audio/mpeg';
 
@@ -31,6 +45,21 @@ export type AudioCacheSummary = {
   totalBytes: number;
   entryCount: number;
   updatedAt: number;
+};
+
+export type AudioCacheLimits = BaseAudioCacheLimits;
+
+export type AudioCacheEntry = {
+  key: string;
+  text: string;
+  lang: string;
+  voice: string;
+  model: string;
+  format: string;
+  sampleRate?: number;
+  bytes: number;
+  createdAt: number;
+  lastAccess: number;
 };
 
 const isBrowser = typeof window !== 'undefined';
@@ -101,6 +130,68 @@ export const isAudioCacheAvailable = (): boolean => {
 };
 
 export const getAudioCacheSummary = (): AudioCacheSummary => readSummary();
+
+export const getAudioCacheLimits = (): AudioCacheLimits => getPolicyLimits();
+
+export const setAudioCacheLimits = (
+  update: Partial<AudioCacheLimits>,
+): AudioCacheLimits => setPolicyLimits(update);
+
+export const pruneAudioCache = async (): Promise<void> => {
+  await runCachePrune();
+};
+
+const toAudioCacheEntry = (metadata: TtsClipMetadata): AudioCacheEntry => ({
+  key: metadata.key,
+  text: metadata.meta?.text ?? '',
+  lang: metadata.meta?.lang ?? '',
+  voice: metadata.meta?.voice ?? '',
+  model: metadata.meta?.model ?? '',
+  format: metadata.meta?.format ?? metadata.mimeType ?? DEFAULT_FORMAT,
+  sampleRate: metadata.meta?.sampleRate,
+  bytes: metadata.bytes,
+  createdAt: metadata.createdAt,
+  lastAccess: metadata.lastAccess,
+});
+
+export const listAudioCacheEntries = async (): Promise<AudioCacheEntry[]> => {
+  try {
+    const entries = await listClipMetadata();
+    return entries
+      .map(toAudioCacheEntry)
+      .sort((a, b) => b.lastAccess - a.lastAccess || b.createdAt - a.createdAt);
+  } catch (error) {
+    console.warn('[audio-cache] Unable to list cached clips', error);
+    return [];
+  }
+};
+
+export const getAudioCacheEntryBlob = async (key: string): Promise<Blob | null> => {
+  try {
+    return await getClipBlobByKey(key);
+  } catch (error) {
+    console.warn('[audio-cache] Unable to fetch clip blob', error);
+    return null;
+  }
+};
+
+export const deleteAudioCacheEntryByKey = async (key: string): Promise<boolean> => {
+  try {
+    return await deleteClipByKey(key);
+  } catch (error) {
+    console.warn('[audio-cache] Unable to delete clip by key', error);
+    return false;
+  }
+};
+
+export const hasAudioCacheEntry = async (key: string): Promise<boolean> => {
+  try {
+    return await hasClip(key);
+  } catch (error) {
+    console.warn('[audio-cache] Unable to determine clip existence', error);
+    return false;
+  }
+};
 
 export const getCachedAudioClip = async (descriptor: AudioCacheDescriptor): Promise<Blob | null> => {
   if (!descriptor?.text?.trim()) {

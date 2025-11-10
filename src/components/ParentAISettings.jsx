@@ -3,12 +3,21 @@ import { X, Loader2, CheckCircle2, Volume2, KeyRound } from 'lucide-react';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import {
   CACHE_EVENT_NAME,
+  CACHE_LIMITS_EVENT,
+  CACHE_LIMITS_STORAGE_KEY,
   CACHE_SUMMARY_STORAGE_KEY,
   clearAudioCache,
+  deleteAudioCacheEntryByKey,
   formatCacheSize,
+  getAudioCacheEntryBlob,
+  getAudioCacheLimits,
   getAudioCacheSummary,
   isAudioCacheAvailable,
+  listAudioCacheEntries,
+  pruneAudioCache,
+  setAudioCacheLimits,
 } from '../lib/audio/cache';
+import { exportAudioCacheZip, importAudioCacheZip } from '../lib/audio/cacheIO';
 import { synthesizeSpeech, fetchTtsVoices, fetchTtsModels } from '../services/audioCatalog';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
@@ -47,7 +56,22 @@ export default function ParentAISettings({ onClose }) {
   const [cacheSupported, setCacheSupported] = useState(() => isAudioCacheAvailable());
   const [cacheSummary, setCacheSummary] = useState(() => getAudioCacheSummary());
   const [cacheStatus, setCacheStatus] = useState({ state: 'idle', message: null });
+  const limitsSnapshot = useMemo(() => getAudioCacheLimits(), []);
+  const [cacheLimits, setCacheLimitsState] = useState(limitsSnapshot);
+  const [limitDraft, setLimitDraft] = useState(() => ({
+    maxEntries: limitsSnapshot.maxEntries,
+    maxBytes: Math.max(1, Math.round(limitsSnapshot.maxBytes / (1024 * 1024))),
+  }));
+  const [limitStatus, setLimitStatus] = useState({ state: 'idle', message: null });
+  const [cacheEntries, setCacheEntries] = useState([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [entriesError, setEntriesError] = useState(null);
+  const [exportStatus, setExportStatus] = useState({ state: 'idle', message: null });
+  const [importStatus, setImportStatus] = useState({ state: 'idle', message: null, progress: null });
+  const [playingKey, setPlayingKey] = useState(null);
   const previewRef = useRef({ audio: null, revoke: null });
+  const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     setVoiceStatus({ state: 'loading', message: null });
@@ -93,24 +117,53 @@ export default function ParentAISettings({ onClose }) {
 
   useEffect(() => {
     setCacheSupported(isAudioCacheAvailable());
-    setCacheSummary(getAudioCacheSummary());
+    refreshCacheSummary();
+    const limits = getAudioCacheLimits();
+    setCacheLimitsState(limits);
+    setLimitDraft({
+      maxEntries: limits.maxEntries,
+      maxBytes: Math.max(1, Math.round(limits.maxBytes / (1024 * 1024))),
+    });
+    setLimitStatus({ state: 'idle', message: null });
+    void refreshCacheEntries();
   }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const refresh = () => {
-      setCacheSummary(getAudioCacheSummary());
+      refreshCacheSummary();
+      void refreshCacheEntries();
     };
     const handleStorage = (event) => {
       if (event.key === CACHE_SUMMARY_STORAGE_KEY) {
         refresh();
       }
+      if (event.key === CACHE_LIMITS_STORAGE_KEY) {
+        const snapshot = getAudioCacheLimits();
+        setCacheLimitsState(snapshot);
+        setLimitDraft({
+          maxEntries: snapshot.maxEntries,
+          maxBytes: Math.max(1, Math.round(snapshot.maxBytes / (1024 * 1024))),
+        });
+      }
     };
     window.addEventListener('storage', handleStorage);
     window.addEventListener(CACHE_EVENT_NAME, refresh);
+    const handleLimitsEvent = () => {
+      const snapshot = getAudioCacheLimits();
+      setCacheLimitsState(snapshot);
+      setLimitDraft({
+        maxEntries: snapshot.maxEntries,
+        maxBytes: Math.max(1, Math.round(snapshot.maxBytes / (1024 * 1024))),
+      });
+      setLimitStatus({ state: 'idle', message: null });
+      void refreshCacheEntries();
+    };
+    window.addEventListener(CACHE_LIMITS_EVENT, handleLimitsEvent);
     return () => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener(CACHE_EVENT_NAME, refresh);
+      window.removeEventListener(CACHE_LIMITS_EVENT, handleLimitsEvent);
     };
   }, []);
 
@@ -133,9 +186,27 @@ export default function ParentAISettings({ onClose }) {
     }
   };
 
+  const cleanupEntryPreview = () => {
+    if (entryPreviewRef.current.revoke) {
+      entryPreviewRef.current.revoke();
+      entryPreviewRef.current.revoke = null;
+    }
+    if (entryPreviewRef.current.audio) {
+      try {
+        entryPreviewRef.current.audio.pause();
+      } catch (error) {
+        console.warn('Unable to pause cache clip preview', error);
+      }
+      entryPreviewRef.current.audio = null;
+      entryPreviewRef.current.key = null;
+    }
+    setPlayingKey(null);
+  };
+
   useEffect(() => {
     return () => {
       cleanupPreview();
+      cleanupEntryPreview();
     };
   }, []);
 
@@ -211,9 +282,33 @@ export default function ParentAISettings({ onClose }) {
     }
   };
 
-  const handleRefreshCacheSummary = () => {
+  const refreshCacheEntries = async () => {
+    if (!cacheSupported) {
+      setCacheEntries([]);
+      return;
+    }
+    setEntriesLoading(true);
+    setEntriesError(null);
+    try {
+      const entries = await listAudioCacheEntries();
+      setCacheEntries(entries);
+    } catch (error) {
+      console.error('Unable to load cache entries', error);
+      setEntriesError('Nu am putut încărca lista clipurilor.');
+      setCacheEntries([]);
+    } finally {
+      setEntriesLoading(false);
+    }
+  };
+
+  const refreshCacheSummary = () => {
     setCacheSummary(getAudioCacheSummary());
+  };
+
+  const handleRefreshCacheSummary = () => {
+    refreshCacheSummary();
     setCacheStatus({ state: 'idle', message: null });
+    void refreshCacheEntries();
   };
 
   const handleClearCache = async () => {
@@ -229,9 +324,171 @@ export default function ParentAISettings({ onClose }) {
       const message = 'Cache-ul audio a fost golit.';
       setCacheStatus({ state: 'success', message });
       showToast({ level: 'success', message });
+      await refreshCacheEntries();
     } catch (error) {
       console.error('Unable to clear audio cache', error);
       const message = 'Nu am putut șterge cache-ul audio.';
+      setCacheStatus({ state: 'error', message });
+      showToast({ level: 'error', message });
+    }
+  };
+
+  const handleExportCache = async () => {
+    if (!cacheSupported) {
+      showToast({ level: 'warning', message: 'Cache-ul audio necesită suport IndexedDB în browser.' });
+      return;
+    }
+    setExportStatus({ state: 'loading', message: 'Generăm arhiva cache-ului audio…' });
+    try {
+      const blob = await exportAudioCacheZip();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'addition-game-audio-cache.zip';
+      anchor.rel = 'noopener';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const message = 'Arhiva cache-ului audio a fost generată.';
+      setExportStatus({ state: 'success', message });
+      showToast({ level: 'success', message });
+    } catch (error) {
+      console.error('Unable to export audio cache', error);
+      const message = 'Exportul cache-ului audio a eșuat.';
+      setExportStatus({ state: 'error', message });
+      showToast({ level: 'error', message });
+    }
+  };
+
+  const handleImportInputClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportCache = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportStatus({
+      state: 'loading',
+      message: `Importăm ${file.name}…`,
+      progress: { total: 0, processed: 0, added: 0, skipped: 0, bytes: 0 },
+    });
+    try {
+      const result = await importAudioCacheZip(file, {
+        onProgress: (progress) => {
+          setImportStatus({
+            state: 'loading',
+            message: `Procesăm ${progress.processed}/${progress.total} clipuri…`,
+            progress,
+          });
+        },
+      });
+      const message = `Am importat ${result.added} clipuri (${formatCacheSize(result.bytes)}) și am ignorat ${result.skipped}.`;
+      setImportStatus({ state: 'success', message, progress: null });
+      showToast({ level: 'success', message });
+      refreshCacheSummary();
+      await refreshCacheEntries();
+    } catch (error) {
+      console.error('Unable to import audio cache', error);
+      const message =
+        error instanceof Error ? error.message : 'Importul cache-ului audio a eșuat.';
+      setImportStatus({ state: 'error', message, progress: null });
+      showToast({ level: 'error', message });
+    } finally {
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
+
+  const limitsChanged =
+    limitDraft.maxEntries !== cacheLimits.maxEntries ||
+    limitDraft.maxBytes !== Math.max(1, Math.round(cacheLimits.maxBytes / (1024 * 1024)));
+
+  const handleSaveLimits = async () => {
+    const maxEntries = Math.max(1, Math.floor(limitDraft.maxEntries));
+    const maxBytes = Math.max(1, Math.floor(limitDraft.maxBytes)) * 1024 * 1024;
+    try {
+      const updated = setAudioCacheLimits({ maxEntries, maxBytes });
+      setCacheLimitsState(updated);
+      setLimitDraft({
+        maxEntries: updated.maxEntries,
+        maxBytes: Math.max(1, Math.round(updated.maxBytes / (1024 * 1024))),
+      });
+      setLimitStatus({ state: 'success', message: 'Limitele cache-ului au fost actualizate.' });
+      showToast({ level: 'success', message: 'Noile limite de cache au fost salvate.' });
+      await pruneAudioCache();
+      await refreshCacheEntries();
+      refreshCacheSummary();
+    } catch (error) {
+      console.error('Unable to update cache limits', error);
+      setLimitStatus({ state: 'error', message: 'Nu am putut salva limitele cache-ului audio.' });
+      showToast({ level: 'error', message: 'Nu am putut salva limitele cache-ului.' });
+    }
+  };
+
+  const handleLimitDraftChange = (field) => (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) return;
+    setLimitDraft((prev) => ({ ...prev, [field]: Math.max(1, value) }));
+    setLimitStatus({ state: 'idle', message: null });
+  };
+
+  const handlePlayCacheEntry = async (entry) => {
+    if (playingKey === entry.key && entryPreviewRef.current.audio) {
+      cleanupEntryPreview();
+      return;
+    }
+    cleanupEntryPreview();
+    setPlayingKey(entry.key);
+    try {
+      const blob = await getAudioCacheEntryBlob(entry.key);
+      if (!blob) {
+        const message = 'Clipul nu mai este disponibil în cache.';
+        setCacheStatus({ state: 'error', message });
+        showToast({ level: 'warning', message });
+        await refreshCacheEntries();
+        refreshCacheSummary();
+        setPlayingKey(null);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      entryPreviewRef.current.audio = audio;
+      entryPreviewRef.current.revoke = () => URL.revokeObjectURL(url);
+      entryPreviewRef.current.key = entry.key;
+      audio.onended = cleanupEntryPreview;
+      audio.onerror = cleanupEntryPreview;
+      await audio.play();
+      setCacheStatus({ state: 'success', message: `Redăm clipul pentru „${entry.text.slice(0, 30)}${entry.text.length > 30 ? '…' : ''}”.` });
+    } catch (error) {
+      console.error('Unable to play cached entry', error);
+      const message = 'Nu am putut reda clipul selectat.';
+      setCacheStatus({ state: 'error', message });
+      showToast({ level: 'error', message });
+      setPlayingKey(null);
+    }
+  };
+
+  const handleDeleteCacheEntry = async (entry) => {
+    cleanupEntryPreview();
+    try {
+      const removed = await deleteAudioCacheEntryByKey(entry.key);
+      if (removed) {
+        const message = 'Clipul a fost șters din cache.';
+        setCacheStatus({ state: 'success', message });
+        showToast({ level: 'info', message });
+        await refreshCacheEntries();
+        refreshCacheSummary();
+      } else {
+        const message = 'Clipul nu a putut fi găsit în cache.';
+        setCacheStatus({ state: 'error', message });
+        showToast({ level: 'warning', message });
+      }
+    } catch (error) {
+      console.error('Unable to delete cached entry', error);
+      const message = 'Nu am putut șterge clipul selectat.';
       setCacheStatus({ state: 'error', message });
       showToast({ level: 'error', message });
     }
@@ -586,7 +843,7 @@ export default function ParentAISettings({ onClose }) {
               )}
             </div>
 
-            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                   <h4 className="text-sm font-semibold text-slate-900">Cache audio local</h4>
@@ -604,6 +861,30 @@ export default function ParentAISettings({ onClose }) {
                   </button>
                   <button
                     type="button"
+                    onClick={handleExportCache}
+                    disabled={!cacheSupported || exportStatus.state === 'loading'}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
+                      !cacheSupported || exportStatus.state === 'loading'
+                        ? 'cursor-not-allowed bg-slate-300 text-slate-500'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                  >
+                    Exportă cache-ul
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleImportInputClick}
+                    disabled={!cacheSupported || importStatus.state === 'loading'}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
+                      !cacheSupported || importStatus.state === 'loading'
+                        ? 'cursor-not-allowed bg-slate-300 text-slate-500'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                  >
+                    Importă cache-ul
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleClearCache}
                     disabled={!cacheSupported || cacheStatus.state === 'loading'}
                     className={`rounded-lg px-3 py-2 text-xs font-semibold text-white shadow transition ${
@@ -616,6 +897,15 @@ export default function ParentAISettings({ onClose }) {
                   </button>
                 </div>
               </div>
+
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".zip"
+                onChange={handleImportCache}
+                className="hidden"
+              />
+
               <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1">
                   <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dimensiune</dt>
@@ -626,6 +916,130 @@ export default function ParentAISettings({ onClose }) {
                   <dd className="text-base font-semibold text-slate-900">{cacheSummary.entryCount}</dd>
                 </div>
               </dl>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="cache-limit-entries">
+                    Limită clipuri
+                  </label>
+                  <input
+                    id="cache-limit-entries"
+                    type="number"
+                    min={1}
+                    value={limitDraft.maxEntries}
+                    onChange={handleLimitDraftChange('maxEntries')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="cache-limit-mb">
+                    Limită dimensiune (MB)
+                  </label>
+                  <input
+                    id="cache-limit-mb"
+                    type="number"
+                    min={1}
+                    value={limitDraft.maxBytes}
+                    onChange={handleLimitDraftChange('maxBytes')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveLimits}
+                  disabled={!limitsChanged}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
+                    limitsChanged ? 'bg-slate-900 text-white hover:bg-slate-700' : 'cursor-not-allowed bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  Salvează limitele
+                </button>
+                <span className="text-xs text-slate-500">
+                  Curent: {cacheLimits.maxEntries} clipuri · {formatCacheSize(cacheLimits.maxBytes)} maxim.
+                </span>
+              </div>
+
+              {limitStatus.message && (
+                <p
+                  className={`text-xs ${
+                    limitStatus.state === 'error' ? 'text-rose-600' : 'text-emerald-600'
+                  }`}
+                >
+                  {limitStatus.message}
+                </p>
+              )}
+
+              {(exportStatus.state !== 'idle' || importStatus.state !== 'idle') && (
+                <div className="space-y-1 rounded-lg bg-white/70 p-3 text-xs text-slate-600">
+                  {exportStatus.state !== 'idle' && exportStatus.message && (
+                    <p className={exportStatus.state === 'error' ? 'text-rose-600' : 'text-slate-600'}>{exportStatus.message}</p>
+                  )}
+                  {importStatus.state !== 'idle' && (
+                    <p className={importStatus.state === 'error' ? 'text-rose-600' : 'text-slate-600'}>
+                      {importStatus.message}
+                    </p>
+                  )}
+                  {importStatus.progress && (
+                    <p className="text-[11px] text-slate-500">
+                      Progres import: {importStatus.progress.processed}/{importStatus.progress.total} clipuri ·{' '}
+                      {formatCacheSize(importStatus.progress.bytes)} adăugate
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clipuri salvate</h5>
+                <div className="max-h-60 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3">
+                  {entriesLoading ? (
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Se încarcă lista de clipuri…
+                    </div>
+                  ) : cacheEntries.length === 0 ? (
+                    <p className="text-xs text-slate-500">Nu există clipuri salvate în cache în acest moment.</p>
+                  ) : (
+                    <ul className="space-y-2 text-xs">
+                      {cacheEntries.map((entry) => (
+                        <li
+                          key={entry.key}
+                          className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="space-y-1">
+                            <p className="font-semibold text-slate-800">
+                              {entry.text || 'Text indisponibil'}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {entry.lang || '—'} · {entry.voice || 'voce implicită'} · {formatCacheSize(entry.bytes)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePlayCacheEntry(entry)}
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                                playingKey === entry.key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <Volume2 size={14} /> {playingKey === entry.key ? 'Oprește' : 'Redă'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCacheEntry(entry)}
+                              className="inline-flex items-center gap-1 rounded-md bg-rose-500 px-2 py-1 text-[11px] font-semibold text-white shadow hover:bg-rose-600"
+                            >
+                              Șterge
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {entriesError && <p className="text-xs text-rose-600">{entriesError}</p>}
+                </div>
+              </div>
+
               {!cacheSupported && (
                 <p className="text-xs text-amber-600">
                   Cache-ul audio este dezactivat deoarece browserul nu oferă IndexedDB.
