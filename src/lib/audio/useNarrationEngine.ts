@@ -68,6 +68,18 @@ type PlayTextOptions = {
   volume?: number;
 };
 
+type ProblemCard = {
+  a: number;
+  b: number;
+};
+
+type CountingPromptMode = 'prompt' | 'hint';
+
+type CountingPromptOptions = {
+  includeFinal?: boolean;
+  mode?: CountingPromptMode;
+};
+
 const OFFLINE_MESSAGE = 'Vocea AI nu este disponibilă. Adaugă cheia Gemini în AI Settings pentru a folosi narațiunea.';
 
 const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
@@ -126,6 +138,47 @@ const normalizeVolume = (value: number | null | undefined, fallback: number) => 
 const toLanguageKey = (language: string | null | undefined) => {
   if (!language || typeof language !== 'string') return 'en';
   return language.split('-')[0]?.toLowerCase?.() || language.toLowerCase();
+};
+
+const formatCountingSteps = (languageKey: string, steps: number[]): string | null => {
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  if (languageKey === 'ro') {
+    if (steps.length === 1) return `Apoi ${steps[0]}.`;
+    if (steps.length === 2) return `Apoi ${steps[0]}, apoi ${steps[1]}.`;
+    const head = steps.slice(0, -1).join(', ');
+    const last = steps[steps.length - 1];
+    return `Apoi ${head} și ${last}.`;
+  }
+  if (steps.length === 1) return `Then ${steps[0]}.`;
+  if (steps.length === 2) return `Then ${steps[0]}, then ${steps[1]}.`;
+  const head = steps.slice(0, -1).join(', ');
+  const last = steps[steps.length - 1];
+  return `Then ${head}, and ${last}.`;
+};
+
+const buildCountingPrompt = (
+  languageKey: string,
+  card: ProblemCard,
+  { includeFinal = false, mode = 'prompt' }: CountingPromptOptions = {},
+): string | null => {
+  if (!card || !Number.isFinite(card.a) || !Number.isFinite(card.b)) return null;
+  const steps = Math.max(0, Math.trunc(card.b));
+  if (steps <= 0) return null;
+  const includeCount = includeFinal ? steps : Math.max(steps - 1, 0);
+  const start = Number(card.a);
+  const sequence = Array.from({ length: includeCount }, (_, index) => start + index + 1);
+  const intro =
+    mode === 'hint'
+      ? languageKey === 'ro'
+        ? 'Hai să numărăm împreună.'
+        : 'Let’s count together.'
+      : languageKey === 'ro'
+        ? 'Încearcă să numeri mai departe.'
+        : 'Try counting on.';
+  const startSentence = languageKey === 'ro' ? `Pornește de la ${start}.` : `Start at ${start}.`;
+  const stepsSentence = formatCountingSteps(languageKey, sequence);
+  const closing = languageKey === 'ro' ? 'Ce număr vine după?' : 'What number comes next?';
+  return [intro, startSentence, stepsSentence, closing].filter(Boolean).join(' ');
 };
 
 export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
@@ -376,8 +429,19 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     ],
   );
 
+  const speakCountOn = useCallback(
+    async (card: ProblemCard, options: CountingPromptOptions = {}) => {
+      if (!settings.narrationEnabled) return;
+      const languageKey = toLanguageKey(settings.narrationLanguage);
+      const prompt = buildCountingPrompt(languageKey, card, options);
+      if (!prompt) return;
+      await speakText({ text: prompt, type: 'counting', speakingRate: settings.speakingRate * 0.95 });
+    },
+    [settings.narrationEnabled, settings.narrationLanguage, settings.speakingRate, speakText],
+  );
+
   const speakProblem = useCallback(
-    async (card: { a: number; b: number }, meta: { theme?: string | null; story?: string | null } = {}) => {
+    async (card: ProblemCard, meta: { theme?: string | null; story?: string | null } = {}) => {
       if (!settings.narrationEnabled) return;
       const languageKey = toLanguageKey(settings.narrationLanguage);
       const question =
@@ -392,16 +456,10 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
       const intro = `${question}${storyLine}`;
       await speakText({ text: intro, type: 'problem' });
       if (settings.repeatNumbers) {
-        const sequence = Array.from({ length: card.b }, (_, index) => card.a + index + 1);
-        const sequenceText = sequence.join(', ');
-        const followup =
-          languageKey === 'ro'
-            ? `Hai să numărăm împreună: ${card.a}, ${sequenceText}.`:
-              `Let’s count together: ${card.a}, ${sequenceText}.`;
-        await speakText({ text: followup, type: 'counting', speakingRate: settings.speakingRate * 0.95 });
+        await speakCountOn(card, { includeFinal: false, mode: 'prompt' });
       }
     },
-    [settings.narrationEnabled, settings.narrationLanguage, settings.repeatNumbers, settings.speakingRate, speakText],
+    [settings.narrationEnabled, settings.narrationLanguage, settings.repeatNumbers, speakCountOn, speakText],
   );
 
   const speakHint = useCallback(
@@ -520,6 +578,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     updateSettings,
     speakText,
     speakProblem,
+    speakCountOn,
     speakHint,
     speakMiniLesson,
     speakFeedback,
