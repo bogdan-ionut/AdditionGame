@@ -428,6 +428,143 @@ const ageBands = [
   { maxAge: Infinity, label: 'Upper Elementary (8+)', levelIndex: 4, detail: 'Ready for multi-digit addition and subtraction.' },
 ];
 
+const ADDITION_STAGE_SEQUENCE = [
+  {
+    id: 'add-up-to-3',
+    label: 'Addition up to 3',
+    shortLabel: '+3 Mastery',
+    description: 'Lock in counting-all strategies using addends from 1 to 3.',
+    maxAddend: 3,
+    minAddend: 1,
+    masteryThreshold: 0.9,
+  },
+  {
+    id: 'add-up-to-5',
+    label: 'Addition up to 5',
+    shortLabel: '+5 Mastery',
+    description: 'Build confidence with teen totals by adding numbers up to 5.',
+    maxAddend: 5,
+    minAddend: 1,
+    masteryThreshold: 0.9,
+    prerequisites: ['add-up-to-3'],
+  },
+  {
+    id: 'add-up-to-10',
+    label: 'Addition up to 10',
+    shortLabel: '+10 Mastery',
+    description: 'Finish the within-10 journey with automatic recall of all facts.',
+    maxAddend: 9,
+    minAddend: 1,
+    masteryThreshold: 0.9,
+    prerequisites: ['add-up-to-5'],
+  },
+];
+
+const computeNumberMasteryPercent = (node) => {
+  if (!node || typeof node !== 'object') return 0;
+  const attempts = Number.isFinite(node.totalAttempts) ? node.totalAttempts : 0;
+  if (attempts <= 0) return 0;
+  const correct = Number.isFinite(node.correctAttempts) ? node.correctAttempts : 0;
+  return (correct / attempts) * 100;
+};
+
+const computeAdditionStageProgress = (masteryTracking = {}) => {
+  const stages = [];
+
+  ADDITION_STAGE_SEQUENCE.forEach((stageConfig, index) => {
+    const {
+      id,
+      label,
+      shortLabel,
+      description,
+      maxAddend,
+      minAddend = 1,
+      masteryThreshold = 0.9,
+      prerequisites = [],
+    } = stageConfig;
+
+    const addends = [];
+    for (let value = minAddend; value <= maxAddend; value += 1) {
+      addends.push(value);
+    }
+
+    const summary = addends.reduce(
+      (acc, addend) => {
+        const node = masteryTracking[addend] || {};
+        const percent = computeNumberMasteryPercent(node);
+        const attempts = Number.isFinite(node.totalAttempts) ? node.totalAttempts : 0;
+        const correct = Number.isFinite(node.correctAttempts) ? node.correctAttempts : 0;
+        const mastered =
+          node.level === 'mastered' ||
+          (attempts >= 3 && percent >= masteryThreshold * 100);
+
+        acc.totalAttempts += attempts;
+        acc.totalCorrect += correct;
+        acc.percentSum += percent;
+        acc.masteredCount += mastered ? 1 : 0;
+        if (!mastered) {
+          acc.allMastered = false;
+        }
+        if (!mastered && acc.nextTarget === null) {
+          acc.nextTarget = addend;
+        }
+        return acc;
+      },
+      {
+        totalAttempts: 0,
+        totalCorrect: 0,
+        percentSum: 0,
+        masteredCount: 0,
+        allMastered: addends.length === 0,
+        nextTarget: null,
+      },
+    );
+
+    const avgPercent = addends.length > 0
+      ? Math.round(summary.percentSum / addends.length)
+      : 0;
+
+    const prerequisitesMet = prerequisites.every((reqId) => {
+      const prerequisiteStage = stages.find((entry) => entry.id === reqId);
+      return prerequisiteStage?.mastered === true;
+    });
+
+    const unlocked = index === 0 ? true : prerequisitesMet;
+
+    stages.push({
+      id,
+      label,
+      shortLabel,
+      description,
+      maxAddend,
+      minAddend,
+      masteryThreshold,
+      prerequisites,
+      addends,
+      unlocked,
+      prerequisitesMet,
+      mastered: summary.allMastered && addends.length > 0,
+      progressPercent: avgPercent,
+      totalAttempts: summary.totalAttempts,
+      totalCorrect: summary.totalCorrect,
+      masteredCount: summary.masteredCount,
+      nextTarget: summary.nextTarget,
+    });
+  });
+
+  return stages;
+};
+
+const resolveMaxUnlockedAddend = (stageProgress = []) => {
+  const unlockedStages = stageProgress.filter((stage) => stage.unlocked);
+  if (!unlockedStages.length) {
+    return ADDITION_STAGE_SEQUENCE[0]?.maxAddend ?? 3;
+  }
+  return unlockedStages.reduce((max, stage) => Math.max(max, stage.maxAddend), unlockedStages[0].maxAddend);
+};
+
+const findStageById = (stageProgress = [], id) => stageProgress.find((stage) => stage.id === id) || null;
+
 const analyzeNumberPerformance = (gameState) => {
   const stats = gameState.statistics || {};
   const aggregates = Array.from({ length: 10 }, (_, number) => ({ number, attempts: 0, correct: 0 }));
@@ -1236,6 +1373,7 @@ const ModeSelection = ({
   motifJobState,
   aiBadgeActive,
   narrationNotice,
+  stageProgress,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1254,6 +1392,27 @@ const ModeSelection = ({
   const focusRecommendations = (learningInsights.path || [])
     .filter((entry) => entry.level !== 'mastered' || entry.unlockedByPath)
     .slice(0, 5);
+
+  const additionStages = useMemo(() => {
+    if (Array.isArray(stageProgress) && stageProgress.length) {
+      return stageProgress;
+    }
+    return computeAdditionStageProgress(gameState?.masteryTracking || {});
+  }, [gameState?.masteryTracking, stageProgress]);
+
+  const defaultRangeLimit = useMemo(
+    () => resolveMaxUnlockedAddend(additionStages),
+    [additionStages],
+  );
+
+  const defaultStageForModes = useMemo(() => {
+    if (!additionStages.length) return null;
+    const matching = additionStages.find((stage) => stage.maxAddend === defaultRangeLimit);
+    if (matching) return matching;
+    const unlocked = additionStages.filter((stage) => stage.unlocked);
+    if (unlocked.length) return unlocked[unlocked.length - 1];
+    return additionStages[0];
+  }, [additionStages, defaultRangeLimit]);
 
   const safeMotifJobState = motifJobState || createDefaultMotifJobState();
 
@@ -1637,7 +1796,10 @@ const ModeSelection = ({
             return (
               <button
                 key={mode.id}
-                onClick={() => onSelectMode(mode.id)}
+                onClick={() => onSelectMode(mode.id, null, {
+                  rangeLimit: defaultRangeLimit,
+                  stageId: defaultStageForModes?.id ?? null,
+                })}
                 className="bg-white p-8 rounded-3xl shadow-lg hover:shadow-2xl transition-all transform hover:scale-105 border-4 border-blue-200 hover:border-blue-400"
               >
                 <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mb-4 mx-auto">
@@ -1649,6 +1811,91 @@ const ModeSelection = ({
             );
           })}
         </div>
+
+        {additionStages.length > 0 && (
+          <div className="bg-white p-8 rounded-3xl shadow-lg border-4 border-indigo-100 mb-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">Mastery Milestones</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Conquer each stage with 90% accuracy before unlocking the next range.
+                </p>
+              </div>
+              <div className="px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-semibold text-indigo-700">
+                Current unlock: +{defaultRangeLimit}
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {additionStages.map((stage) => {
+                const thresholdPercent = Math.round((stage.masteryThreshold ?? 0.9) * 100);
+                const statusMeta = stage.mastered
+                  ? { label: 'Mastered', tone: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+                  : stage.unlocked
+                    ? { label: 'In progress', tone: 'bg-amber-100 text-amber-700 border-amber-200' }
+                    : { label: 'Locked', tone: 'bg-slate-100 text-slate-600 border-slate-200' };
+                const prerequisiteStage = (stage.prerequisites || [])
+                  .map((id) => additionStages.find((entry) => entry.id === id))
+                  .find(Boolean);
+                const supportingMessage = stage.mastered
+                  ? 'Maintain mastery with spaced review and checkpoints.'
+                  : stage.unlocked
+                    ? `Reach ${thresholdPercent}% accuracy on addends up to +${stage.maxAddend} to earn the badge.`
+                    : prerequisiteStage
+                      ? `Unlock by mastering ${prerequisiteStage.label}.`
+                      : `Unlock by mastering addends up to +${stage.maxAddend - 1}.`;
+
+                return (
+                  <div
+                    key={stage.id}
+                    className="border-2 border-indigo-100 rounded-2xl p-5 flex flex-col gap-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-indigo-500 uppercase tracking-widest">Stage</div>
+                        <h3 className="text-xl font-bold text-gray-800">{stage.label}</h3>
+                        <p className="text-sm text-gray-600 mt-1">{stage.description}</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${statusMeta.tone}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                      <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
+                        Progress: {stage.progressPercent}%
+                      </span>
+                      <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
+                        Mastered: {stage.masteredCount}/{stage.addends.length}
+                      </span>
+                      <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
+                        Goal: ≥{thresholdPercent}% accuracy
+                      </span>
+                      {stage.nextTarget != null && (
+                        <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
+                          Next focus: +{stage.nextTarget}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600">{supportingMessage}</p>
+                    <button
+                      onClick={() => onSelectMode(`stage-${stage.id}`, null, {
+                        rangeLimit: stage.maxAddend,
+                        stageId: stage.id,
+                      })}
+                      disabled={!stage.unlocked}
+                      className={`inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition ${
+                        stage.unlocked
+                          ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow'
+                          : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {stage.mastered ? 'Review stage' : 'Practice stage'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Number-specific modes with Mastery Gates */}
         <div className="bg-white p-8 rounded-3xl shadow-lg">
@@ -1758,6 +2005,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const [aiSessionMeta, setAiSessionMeta] = useState(null);
   const [interestDraft, setInterestDraft] = useState('');
   const [activeTheme, setActiveTheme] = useState(null);
+  const [rangeLimit, setRangeLimit] = useState(null);
+  const [activeStageId, setActiveStageId] = useState(null);
   const [checkpointState, setCheckpointState] = useState({
     active: false,
     reviewCards: [],
@@ -1823,6 +2072,31 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     }
     return aiPersonalization.planQueue?.[0] || null;
   }, [aiPersonalization]);
+
+  const stageProgress = useMemo(
+    () => computeAdditionStageProgress(gameState.masteryTracking || {}),
+    [gameState.masteryTracking],
+  );
+
+  const defaultRangeLimit = useMemo(
+    () => resolveMaxUnlockedAddend(stageProgress),
+    [stageProgress],
+  );
+
+  const currentRangeLimit = Number.isFinite(rangeLimit) ? rangeLimit : defaultRangeLimit;
+
+  const activeStage = useMemo(() => {
+    if (activeStageId) {
+      const stage = findStageById(stageProgress, activeStageId);
+      if (stage) return stage;
+    }
+    if (!stageProgress.length) return null;
+    const matching = stageProgress.find((stage) => stage.maxAddend === currentRangeLimit);
+    if (matching) return matching;
+    const unlocked = stageProgress.filter((stage) => stage.unlocked);
+    if (unlocked.length) return unlocked[unlocked.length - 1];
+    return stageProgress[0];
+  }, [activeStageId, currentRangeLimit, stageProgress]);
 
   useEffect(() => {
     gameStateRef.current = gameState;
@@ -2335,6 +2609,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       answer: item.answer,
       aiPlanItem: item,
     })));
+    setRangeLimit(null);
+    setActiveStageId(null);
     setGameMode('ai-path');
     setCurrentCard(0);
     setUserAnswer('');
@@ -2378,17 +2654,29 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const { reviewCards, remaining } = pickReviewDue(currentState.adaptiveLearning);
     const difficulty = currentState.adaptiveLearning.currentDifficulty || 'medium';
 
+    const stageSnapshot = computeAdditionStageProgress(currentState.masteryTracking || {});
+    const defaultLimit = resolveMaxUnlockedAddend(stageSnapshot);
+    const activeLimit = Number.isFinite(rangeLimit) ? rangeLimit : defaultLimit;
+    const limit = Math.max(0, Math.min(9, activeLimit));
+
+    const filteredReviewCards = reviewCards.filter(({ a, b }) => a <= limit && b <= limit);
     let newCards = [];
 
-    if (gameMode === 'sequential') {
-      for (let a = 0; a <= 9; a++) {
-        for (let b = 0; b <= 9; b++) {
+    if (gameMode === 'sequential' || (gameMode && gameMode.startsWith('stage-'))) {
+      for (let a = 0; a <= limit; a++) {
+        for (let b = 0; b <= limit; b++) {
           newCards.push({ a, b, answer: a + b });
         }
       }
+      if (gameMode && gameMode.startsWith('stage-')) {
+        for (let i = newCards.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
+        }
+      }
     } else if (gameMode === 'random') {
-      for (let a = 0; a <= 9; a++) {
-        for (let b = 0; b <= 9; b++) {
+      for (let a = 0; a <= limit; a++) {
+        for (let b = 0; b <= limit; b++) {
           newCards.push({ a, b, answer: a + b });
         }
       }
@@ -2397,7 +2685,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
       }
     } else if (gameMode?.startsWith('focus-')) {
-      for (let i = 0; i <= 9; i++) {
+      const partnerLimit = Math.min(9, Math.max(limit, focusNumber ?? 0));
+      for (let i = 0; i <= partnerLimit; i++) {
         newCards.push({ a: focusNumber, b: i, answer: focusNumber + i });
         if (i !== focusNumber) {
           newCards.push({ a: i, b: focusNumber, answer: i + focusNumber });
@@ -2415,7 +2704,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       newCards.sort((c1, c2) => (c2.a + c2.b) - (c1.a + c1.b));
     }
 
-    const generatedDeck = [...reviewCards, ...newCards];
+    const generatedDeck = [...filteredReviewCards, ...newCards];
 
     setCards(generatedDeck);
     setCurrentCard(0);
@@ -2444,7 +2733,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         }
       }
     }));
-  }, [gameMode, focusNumber]);
+  }, [gameMode, focusNumber, rangeLimit]);
 
 
   // Save game state whenever it changes
@@ -2489,6 +2778,11 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       intro = isRomanian
         ? 'Vom parcurge toate adunările pe rând. Respira adânc și spune răspunsul corect!'
         : 'We will go through every addition in order. Take a breath and tell me the right answer!';
+    } else if (gameMode.startsWith('stage-')) {
+      const stageLabel = activeStage?.label || `addition up to ${currentRangeLimit}`;
+      intro = isRomanian
+        ? `Exersăm ${stageLabel.toLowerCase()}. Rămâi atent și menține acuratețea peste 90%.`
+        : `We are practicing ${stageLabel.toLowerCase()}. Stay focused and aim for 90% accuracy.`;
     } else if (gameMode.startsWith('focus-') && Number.isFinite(focusNumber)) {
       intro = isRomanian
         ? `Ne concentrăm pe adunări cu ${focusNumber}. Imaginează-ți ${focusNumber} obiecte și adaugă restul.`
@@ -2503,7 +2797,16 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         console.warn('Unable to narrate mode intro', error);
       }
     });
-  }, [audioSettings.narrationEnabled, audioSettings.narrationLanguage, audioSettings.speakingRate, focusNumber, gameMode, speakText]);
+  }, [
+    activeStage?.label,
+    audioSettings.narrationEnabled,
+    audioSettings.narrationLanguage,
+    audioSettings.speakingRate,
+    currentRangeLimit,
+    focusNumber,
+    gameMode,
+    speakText,
+  ]);
 
   useEffect(() => {
     const interests = aiPersonalization.learnerProfile?.interests || [];
@@ -3039,7 +3342,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
 
   };
 
-  const handleModeSelect = (mode, number = null) => {
+  const handleModeSelect = (mode, number = null, options = {}) => {
     const profile = gameStateRef.current?.aiPersonalization?.learnerProfile || {};
     const interests = profile?.interests || [];
     const motifs = collectMotifHintsForProfile(profile);
@@ -3052,6 +3355,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     }
     setGameMode(mode);
     setFocusNumber(number);
+    if (Number.isFinite(options.rangeLimit)) {
+      setRangeLimit(options.rangeLimit);
+    } else {
+      setRangeLimit(null);
+    }
+    setActiveStageId(options.stageId ?? null);
   };
 
   const resetToMenu = () => {
@@ -3065,6 +3374,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     setGuidedHelp({ active: false, step: 0, complete: false });
     setProblemStartTime(null);
     setAiSessionMeta(null);
+    setRangeLimit(null);
+    setActiveStageId(null);
     setGameState((prev) => {
       const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
       if (!ai.activeSession) return prev;
@@ -3262,6 +3573,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         motifJobState={motifJobState}
         aiBadgeActive={aiBadgeActive}
         narrationNotice={narrationNotice}
+        stageProgress={stageProgress}
       />
     );
   }
@@ -3368,11 +3680,22 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       {/* Mode indicator */}
       <div className="mb-2 flex items-center gap-2">
         <div className="px-4 py-2 bg-white rounded-full shadow text-sm font-medium text-gray-700">
-          {gameMode === 'sequential' && '📋 All Numbers (Sequential)'}
-          {gameMode === 'random' && '🎲 Random Practice'}
+          {gameMode === 'sequential' && `📋 Sequential Practice (up to +${currentRangeLimit})`}
+          {gameMode === 'random' && `🎲 Random Practice (up to +${currentRangeLimit})`}
+          {gameMode?.startsWith('stage-') && `🧱 Mastery Stage: ${activeStage?.shortLabel || activeStage?.label || `+${currentRangeLimit}`}`}
           {gameMode?.startsWith('focus-') && `🎯 Practice with ${focusNumber}`}
           {gameMode === 'ai-path' && '🤖 AI Path Session'}
         </div>
+        {gameMode !== 'ai-path' && activeStage && (
+          <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-indigo-600">
+            Stage focus: {activeStage.label}
+          </div>
+        )}
+        {gameMode !== 'ai-path' && (
+          <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-gray-700">
+            Range: up to +{currentRangeLimit}
+          </div>
+        )}
         <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-gray-700">
           Difficulty: <span className={{ easy: 'text-green-600', medium: 'text-orange-600', hard: 'text-red-600' }[gameState.adaptiveLearning.currentDifficulty] || 'text-gray-600'}>{gameState.adaptiveLearning.currentDifficulty}</span>
         </div>
