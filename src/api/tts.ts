@@ -18,7 +18,7 @@ export type TtsSynthesizeOptions = {
   kind?: string | null;
 };
 
-const DEFAULT_MODEL = 'gemini-2.5-flash-preview-tts';
+export const DEFAULT_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 const DEFAULT_MIME = 'audio/mpeg';
 const RATE_LIMIT_STORAGE_KEY = 'addition-game.tts.daily.v1';
 const RATE_LIMIT_COOLDOWN_STORAGE_KEY = 'addition-game.tts.cooldown.v1';
@@ -446,7 +446,7 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     throw new Error('Cannot synthesize empty text.');
   }
 
-  const targetModel = opts.model?.trim() || DEFAULT_MODEL;
+  const targetModel = opts.model?.trim() || DEFAULT_TTS_MODEL;
   const cacheDescriptor: AudioCacheDescriptor = {
     text: normalized,
     voiceId: typeof opts.voiceId === 'string' ? opts.voiceId.trim() : null,

@@ -1,4 +1,9 @@
-import { synthesize, type SupportedSampleRate, type SupportedTtsMime } from "../../api/tts";
+import {
+  DEFAULT_TTS_MODEL,
+  synthesize,
+  type SupportedSampleRate,
+  type SupportedTtsMime,
+} from "../../api/tts";
 import {
   getCachedAudioClip as getCachedTtsClip,
   storeAudioClip as storeTtsClip,
@@ -253,13 +258,14 @@ export async function speak({
   const playbackRate = clamp(normalizedRate, MIN_RATE, MAX_RATE);
   const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
   const resolvedModel = typeof model === "string" ? model.trim() : null;
+  const resolvedModelName = resolvedModel || DEFAULT_TTS_MODEL;
   const resolvedKind = typeof kind === "string" ? kind.trim() : null;
 
   const descriptor: TtsDescriptor = {
     text: content,
     lang: normalizedLang,
     voice: trimmedVoice,
-    model: resolvedModel || "",
+    model: resolvedModelName,
     rate: Number.isFinite(normalizedRate) ? normalizedRate : 1,
     pitch: Number.isFinite(normalizedPitch) ? normalizedPitch : 1,
     format: (preferredMime || DEFAULT_CACHE_FORMAT) as string,
@@ -305,7 +311,7 @@ export async function speak({
       speakingRate: normalizedRate,
       pitch: normalizedPitch,
       language: normalizedLang,
-      model: resolvedModel,
+      model: resolvedModelName,
       kind: resolvedKind,
       preferredMime: preferredMime || DEFAULT_CACHE_FORMAT,
       sampleRateHz: typeof sampleRateHz === "number" ? sampleRateHz : undefined,
