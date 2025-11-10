@@ -1,126 +1,39 @@
-import { requireApiBaseUrl } from '../lib/api/baseUrl';
+import { hasGeminiApiKey } from '../lib/gemini/apiKey';
 
-const DEFAULT_HEADERS: HeadersInit = {
-  Accept: 'application/json',
+export type RuntimeInfo = {
+  ok: boolean;
+  runtimeLabel: string | null;
+  ttsModel: string | null;
+  planningModel?: string | null;
+  spriteModel?: string | null;
+  note?: string | null;
 };
 
-const stripTrailingSlash = (value: string) => value.replace(/\/+$/, '');
-
-export class ApiError extends Error {
-  status?: number;
-  data?: unknown;
-
-  constructor(message: string, options: { status?: number; data?: unknown } = {}) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = options.status;
-    this.data = options.data;
-  }
+export async function fetchRuntime(): Promise<RuntimeInfo> {
+  const hasKey = hasGeminiApiKey();
+  return {
+    ok: hasKey,
+    runtimeLabel: hasKey ? 'Gemini (browser)' : 'Offline',
+    ttsModel: hasKey ? 'gemini-2.5-flash-preview-tts' : null,
+    note: hasKey
+      ? 'Vocea este generată direct în browser folosind cheia ta Gemini.'
+      : 'Configurează cheia Gemini în AI Settings pentru a activa vocea.',
+  };
 }
 
-const buildUrl = (path: string) => {
-  if (!path.startsWith('/')) {
-    throw new Error(`API path must start with "/": ${path}`);
-  }
-  const base = stripTrailingSlash(requireApiBaseUrl());
-  return `${base}${path}`;
-};
+export const fetchVoices = async () => [
+  {
+    id: 'Kore',
+    label: 'Kore · Română prietenoasă',
+    language: 'ro-RO',
+  },
+  {
+    id: 'Juniper',
+    label: 'Juniper · English upbeat',
+    language: 'en-US',
+  },
+];
 
-async function parseJsonResponse(response: Response) {
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    return response.json();
-  }
-  if (response.status === 204) {
-    return null;
-  }
-  return null;
-}
-
-async function handleJsonResponse(response: Response) {
-  const payload = await parseJsonResponse(response).catch((error) => {
-    console.warn('[api] Failed to parse JSON response', error);
-    return null;
-  });
-
-  if (!response.ok) {
-    throw new ApiError(`Request failed with status ${response.status}`, {
-      status: response.status,
-      data: payload ?? undefined,
-    });
-  }
-
-  return payload;
-}
-
-async function execute(path: string, init: RequestInit = {}) {
-  const url = buildUrl(path);
-  const headers = new Headers(init.headers ?? {});
-  for (const [key, value] of Object.entries(DEFAULT_HEADERS)) {
-    if (!headers.has(key)) {
-      headers.set(key, value);
-    }
-  }
-
-  try {
-    const response = await fetch(url, {
-      ...init,
-      headers,
-      mode: 'cors',
-      credentials: 'omit',
-    });
-    return response;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new ApiError(message);
-  }
-}
-
-export async function getJson(path: string, init: RequestInit = {}) {
-  const response = await execute(path, { ...init, method: init.method ?? 'GET' });
-  return handleJsonResponse(response);
-}
-
-export async function postJson(path: string, body: unknown, init: RequestInit = {}) {
-  const headers = new Headers(init.headers ?? {});
-  if (!headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  const response = await execute(path, {
-    ...init,
-    method: 'POST',
-    headers,
-    body: body == null ? null : JSON.stringify(body),
-  });
-  return handleJsonResponse(response);
-}
-
-export async function fetchRuntime() {
-  try {
-    return await getJson('/v1/ai/runtime');
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return getJson('/v1/ai/status');
-    }
-    throw error;
-  }
-}
-
-export const fetchVoices = async () => {
-  try {
-    return await getJson('/v1/ai/tts/voices');
-  } catch (error) {
-    if (error instanceof ApiError && (error.status === 404 || error.status === 500)) {
-      return [
-        {
-          id: 'local-default',
-          label: 'Local Narrator',
-          language: 'en-US',
-        },
-      ];
-    }
-    throw error;
-  }
-};
-
-export const fetchSfx = () => getJson('/v1/ai/audio/sfx');
+export const fetchSfx = async () => ({
+  packs: ['default'],
+});

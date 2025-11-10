@@ -1,200 +1,104 @@
-import { MathGalaxyApiError, request } from './mathGalaxyClient';
-import { getLocalSfxCatalog, getLocalSfxClip } from '../lib/audio/localSfx';
-import { isAiProxyConfigured } from './aiEndpoints';
 import { synthesize } from '../api/tts';
+import { getLocalSfxCatalog, getLocalSfxClip } from '../lib/audio/localSfx';
+import { hasGeminiApiKey } from '../lib/gemini/apiKey';
 
-const OFFLINE_MESSAGE = 'API offline sau URL greșit. Deschide AI Settings pentru a verifica Cloud API Base URL.';
+const DEFAULT_TTS_MODEL = {
+  id: 'gemini-2.5-flash-preview-tts',
+  label: 'Gemini Flash TTS',
+};
 
-const LOCAL_FALLBACK_VOICES = [
+const GEMINI_VOICES = [
   {
-    id: 'local-default',
-    label: 'Local Narrator',
+    id: 'Kore',
+    label: 'Kore · Română prietenoasă',
+    language: 'ro-RO',
+    gender: 'neutral',
+    tags: ['gemini', 'default'],
+  },
+  {
+    id: 'Juniper',
+    label: 'Juniper · English upbeat',
     language: 'en-US',
     gender: 'neutral',
-    tags: ['fallback'],
+    tags: ['gemini'],
+  },
+  {
+    id: 'Poppy',
+    label: 'Poppy · Español cálido',
+    language: 'es-ES',
+    gender: 'neutral',
+    tags: ['gemini'],
   },
 ];
 
-const normalizeError = (error) => {
-  if (error instanceof MathGalaxyApiError) {
-    return error;
+const ensureArray = (value) => (Array.isArray(value) ? value : []);
+
+const selectVoicesForLanguage = (lang) => {
+  if (!lang) return GEMINI_VOICES;
+  const normalized = lang.trim().toLowerCase();
+  const matches = GEMINI_VOICES.filter((voice) => voice.language.toLowerCase().startsWith(normalized));
+  return matches.length ? matches : GEMINI_VOICES;
+};
+
+const resolveLocalSfx = ({ pack, category, mode } = {}) => {
+  const key = (() => {
+    if (mode === 'low-stim') return 'low-stim';
+    if (pack && pack !== 'auto') return pack;
+    return 'default';
+  })();
+  if (category) {
+    return getLocalSfxClip(category, key);
   }
-  return new MathGalaxyApiError(error instanceof Error ? error.message : OFFLINE_MESSAGE, { cause: error });
+  return getLocalSfxCatalog(key);
 };
 
 export async function fetchTtsModels() {
-  if (!isAiProxyConfigured()) {
-    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
-  }
-  try {
-    const response = await request('/v1/ai/tts/models');
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok) {
-      const data = contentType.includes('application/json') ? await response.json() : null;
-      throw new MathGalaxyApiError(
-        (data && data.error) || 'Failed to load TTS models.',
-        { data, status: response.status },
-      );
-    }
-    if (!contentType.includes('application/json')) {
-      return [];
-    }
-    return await response.json();
-  } catch (error) {
-    throw normalizeError(error);
-  }
+  return [DEFAULT_TTS_MODEL];
 }
 
-export async function fetchTtsVoices({ lang, model } = {}) {
-  if (!isAiProxyConfigured()) {
-    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
-  }
-  try {
-    const search = new URLSearchParams();
-    if (lang) {
-      search.set('lang', lang);
-    }
-    if (model) {
-      search.set('model', model);
-    }
-    const path = search.size ? `/v1/ai/tts/voices?${search.toString()}` : '/v1/ai/tts/voices';
-    const response = await request(path);
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok) {
-      const data = contentType.includes('application/json') ? await response.json() : null;
-      if (response.status === 404 || response.status === 500) {
-        return LOCAL_FALLBACK_VOICES;
-      }
-      throw new MathGalaxyApiError(
-        (data && data.error) || 'Failed to load TTS voices.',
-        { data, status: response.status },
-      );
-    }
-    if (!contentType.includes('application/json')) {
-      return LOCAL_FALLBACK_VOICES;
-    }
-    const payload = await response.json();
-    if (!payload || (Array.isArray(payload) && payload.length === 0)) {
-      return LOCAL_FALLBACK_VOICES;
-    }
-    return payload;
-  } catch (error) {
-    if (
-      error instanceof MathGalaxyApiError &&
-      (error.status === 404 || error.status === 500 || error.message?.includes('Failed to fetch'))
-    ) {
-      return LOCAL_FALLBACK_VOICES;
-    }
-    throw normalizeError(error);
-  }
+export async function fetchTtsVoices({ lang } = {}) {
+  return selectVoicesForLanguage(lang);
 }
-
-const resolveLocalPackKey = ({ pack, mode } = {}) => {
-  if (mode === 'low-stim') return 'low-stim';
-  if (pack && pack !== 'auto') return pack;
-  return 'default';
-};
-
-const loadLocalSfx = ({ pack, category, mode } = {}) => {
-  if (category) {
-    return getLocalSfxClip(category, resolveLocalPackKey({ pack, mode }));
-  }
-  return getLocalSfxCatalog(resolveLocalPackKey({ pack, mode }));
-};
 
 export async function fetchAudioSfx({ pack, name, category, mode } = {}) {
-  if (!isAiProxyConfigured()) {
-    const fallback = loadLocalSfx({ pack, category, mode });
-    if (fallback) {
-      return fallback;
-    }
-    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
-  }
-  try {
-    const search = new URLSearchParams();
-    if (pack) {
-      search.set('pack', pack);
-    }
-    if (category) {
-      search.set('category', category);
-    }
-    if (mode) {
-      search.set('mode', mode);
-    }
-    if (name) {
-      search.set('name', name);
-    }
-    const path = search.size ? `/v1/ai/audio/sfx?${search.toString()}` : '/v1/ai/audio/sfx';
-    const response = await request(path, {
-      headers: { Accept: 'audio/mpeg,application/json' },
-    });
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok) {
-      if (response.status === 404 || response.status === 403) {
-        const fallback = loadLocalSfx({ pack, category, mode });
-        if (fallback) return fallback;
-        return null;
-      }
-      const data = contentType.includes('application/json') ? await response.json() : null;
-      throw new MathGalaxyApiError(
-        (data && data.error) || 'Failed to load SFX clips.',
-        { data, status: response.status },
-      );
-    }
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      if (!data) {
-        const fallback = loadLocalSfx({ pack, category, mode });
-        if (fallback) return fallback;
-      }
-      return data;
-    }
-    if (contentType.startsWith('audio/')) {
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength === 0) {
-        const fallback = loadLocalSfx({ pack, category, mode });
-        if (fallback) return fallback;
-      }
-      return { buffer, mimeType: contentType.split(';')[0] || contentType };
-    }
-    const fallback = loadLocalSfx({ pack, category, mode });
-    if (fallback) return fallback;
+  const local = resolveLocalSfx({ pack, category, mode });
+  if (!local) {
     return null;
-  } catch (error) {
-    const fallback = loadLocalSfx({ pack, category, mode });
-    if (fallback) {
-      console.warn('[audio] Falling back to local SFX assets due to remote error.', error);
-      return fallback;
-    }
-    throw normalizeError(error);
   }
+  if (name && typeof name === 'string' && local && typeof local === 'object' && local.clips) {
+    const clip = ensureArray(local.clips).find((item) => item.id === name);
+    return clip || null;
+  }
+  return local;
 }
 
 export async function synthesizeSpeech(payload = {}) {
-  if (!isAiProxyConfigured()) {
-    throw new MathGalaxyApiError(OFFLINE_MESSAGE);
+  if (!hasGeminiApiKey()) {
+    throw new Error('Configurează cheia Gemini în AI Settings pentru a genera voce.');
   }
-  try {
-    const text = typeof payload.text === 'string' ? payload.text : '';
-    const blob = await synthesize(text, {
-      voiceId: payload.voiceId || payload.voice || undefined,
-      speakingRate:
-        typeof payload.speakingRate === 'number'
-          ? payload.speakingRate
-          : typeof payload.speaking_rate === 'number'
+  const text = typeof payload.text === 'string' ? payload.text.trim() : '';
+  if (!text) {
+    throw new Error('Introduceți text pentru sintetizare.');
+  }
+
+  const blob = await synthesize(text, {
+    voiceId: payload.voiceId || payload.voice || undefined,
+    speakingRate:
+      typeof payload.speakingRate === 'number'
+        ? payload.speakingRate
+        : typeof payload.speaking_rate === 'number'
           ? payload.speaking_rate
           : undefined,
-      pitch: typeof payload.pitch === 'number' ? payload.pitch : undefined,
-      language:
-        payload.languageCode ||
-        payload.language_code ||
-        payload.language ||
-        payload.lang ||
-        undefined,
-    });
-    const buffer = await blob.arrayBuffer();
-    return { buffer, mimeType: blob.type || 'audio/mpeg' };
-  } catch (error) {
-    throw normalizeError(error);
-  }
+    pitch: typeof payload.pitch === 'number' ? payload.pitch : undefined,
+    language:
+      payload.languageCode ||
+      payload.language_code ||
+      payload.language ||
+      payload.lang ||
+      undefined,
+    model: payload.model || payload.ttsModel || undefined,
+    preferredMime: payload.mime || payload.preferredMime || undefined,
+  });
+  const buffer = await blob.arrayBuffer();
+  return { buffer, mimeType: blob.type || 'audio/mpeg' };
 }
