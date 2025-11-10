@@ -1796,14 +1796,14 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   }, [onOpenAiSettings]);
 
   const speakProblemDebounced = useCallback(
-    (card, meta = {}) => {
+    (card) => {
       if (!card) return Promise.resolve();
       const now = Date.now();
       if (now - narrationCooldownRef.current < 600) {
         return Promise.resolve();
       }
       narrationCooldownRef.current = now;
-      return speakProblem(card, meta);
+      return speakProblem(card);
     },
     [speakProblem],
   );
@@ -2548,7 +2548,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     if (!gameMode) return;
     const card = cards[currentCard];
     if (!card) return;
-    speakProblemDebounced(card, { story: aiSessionMeta?.story || null }).catch((error) => {
+    speakProblemDebounced(card).catch((error) => {
       if (import.meta.env.DEV) {
         console.warn('Unable to narrate problem prompt', error);
       }
@@ -2559,7 +2559,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     cards,
     currentCard,
     gameMode,
-    aiSessionMeta?.story,
     speakProblemDebounced,
   ]);
 
@@ -3577,7 +3576,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           <button
             onClick={() => {
               if (!card) return;
-              speakProblemDebounced(card, { story: aiSessionMeta?.story || null }).catch(() => {});
+              speakProblemDebounced(card).catch(() => {});
             }}
             disabled={!audioSettings.narrationEnabled}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${

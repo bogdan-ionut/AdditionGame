@@ -424,24 +424,12 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
   );
 
   const speakProblem = useCallback(
-    async (card: ProblemCard, meta: { theme?: string | null; story?: string | null } = {}) => {
+    async (card: ProblemCard) => {
       if (!settings.narrationEnabled) return;
-      const languageKey = toLanguageKey(settings.narrationLanguage);
       const question = buildProblemPrompt(card.a, card.b, settings.narrationLanguage);
-      const storyLine = meta.story
-        ? languageKey === 'ro'
-          ? ` Povestea spune: ${meta.story}`
-          : ` Think about our story: ${meta.story}`
-        : '';
-      const intro = `${question}${storyLine}`;
-      await speakText({ text: intro, type: 'problem' });
-      if (settings.repeatNumbers) {
-        const followup = buildCountingPrompt(card.a, card.b, settings.narrationLanguage);
-        await speakText({ text: followup, type: 'counting', speakingRate: settings.speakingRate * 0.95 });
-        await speakCountOn(card, { includeFinal: false, mode: 'prompt' });
-      }
+      await speakText({ text: question, type: 'problem' });
     },
-    [settings.narrationEnabled, settings.narrationLanguage, settings.repeatNumbers, speakCountOn, speakText],
+    [settings.narrationEnabled, settings.narrationLanguage, speakText],
   );
 
   const speakHint = useCallback(
