@@ -10,9 +10,10 @@ export const UI_TEXT = {
 };
 
 export const PRAISE_LINES_RO: readonly string[] = [
-  'Bravo, ai reușit! Ești o stea strălucitoare!',
-  'Excelent! Îmi place cât de atent ai fost.',
-  'Felicitări! Continuă tot așa!',
+  'Bravo, ai calculat corect! Matematica devine distractivă cu tine!',
+  'Excelent! Ai găsit suma ca un adevărat explorator al numerelor.',
+  'Felicitări! Fiecare exercițiu rezolvat te face mai încrezător.',
+  'Super! Aduci mereu zâmbete când aduni numerele atât de bine.',
 ];
 
 export const PRAISE_LINES_EN: readonly string[] = [
@@ -22,9 +23,10 @@ export const PRAISE_LINES_EN: readonly string[] = [
 ];
 
 export const ENCOURAGE_LINES_RO: readonly string[] = [
-  'Nu-i nimic, mai încearcă! Știu că poți!',
-  'Respirăm adânc și încercăm din nou. Eu cred în tine!',
-  'Aproape! Împreună găsim răspunsul corect.',
+  'Nu-i nimic dacă greșești; refacem pașii și descoperim răspunsul corect.',
+  'Respiră adânc și încearcă din nou; sunt aici să te ghidez printre numere.',
+  'Aproape! Să analizăm împreună și să vedem ce pas ne-a scăpat.',
+  'Hai să transformăm provocarea într-un joc și să găsim soluția pas cu pas.',
 ];
 
 export const ENCOURAGE_LINES_EN: readonly string[] = [
@@ -34,10 +36,12 @@ export const ENCOURAGE_LINES_EN: readonly string[] = [
 ];
 
 export const MINI_LESSONS_RO: Record<string, string> = {
-  'count-on': 'Hai să numărăm împreună. Începem de la primul număr și mai adăugăm pașii pe rând.',
+  'count-on':
+    'Hai să numărăm împreună. Pornim de la primul număr și adăugăm fiecare pas cu voce tare pentru a vedea cum crește suma.',
   'make-10':
-    'Gândește-te la numărul 10 ca la un prieten. Poți împărți al doilea număr ca să ajungi la 10 și apoi adaugi restul.',
-  commutativity: 'Ordinea termenilor nu schimbă suma. Poți schimba numerele între ele pentru a calcula mai ușor.',
+    'Gândește-te la numărul 10 ca la un prieten bun. Împarte al doilea număr astfel încât să ajungi la 10 și apoi adaugă ce a rămas.',
+  commutativity:
+    'Ordinea numerelor într-o adunare nu schimbă suma. Poți schimba locul numerelor pentru a calcula mai ușor.',
 };
 
 export const MINI_LESSONS_EN: Record<string, string> = {

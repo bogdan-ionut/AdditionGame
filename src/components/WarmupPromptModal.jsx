@@ -10,11 +10,8 @@ function PromptLanguageBadge({ language }) {
       </span>
     );
   }
-  const label = language === 'ro' ? 'RO' : 'EN';
   return (
-    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700">
-      {label}
-    </span>
+    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700">RO</span>
   );
 }
 
