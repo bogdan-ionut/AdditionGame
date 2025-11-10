@@ -63,39 +63,6 @@ const createDefaultMotifJobState = () => ({
   cacheKey: null,
 });
 
-const resolveUiSpriteStatus = (item) => {
-  if (!item || typeof item !== 'object') return null;
-  if (typeof item.status === 'string') return item.status;
-  if (typeof item.state === 'string') return item.state;
-  if (item.done === true) return 'done';
-  if (item.pending === true) return 'pending';
-  return null;
-};
-
-const resolveUiSpriteUrl = (item) => {
-  if (!item || typeof item !== 'object') return null;
-  if (typeof item.url === 'string') return item.url;
-  if (typeof item.sprite_url === 'string') return item.sprite_url;
-  if (typeof item.href === 'string') return item.href;
-  if (Array.isArray(item.urls) && item.urls.length) {
-    const first = item.urls.find((value) => typeof value === 'string' && value.trim());
-    if (first) return first;
-  }
-  if (item.asset && typeof item.asset === 'string') return item.asset;
-  return null;
-};
-
-const sanitizeSpriteItemsForUi = (items = []) => {
-  if (!Array.isArray(items)) return [];
-  return items
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => ({
-      interest: typeof item.interest === 'string' ? item.interest : null,
-      status: resolveUiSpriteStatus(item),
-      url: resolveUiSpriteUrl(item),
-    }));
-};
-
 const sanitizeInterestList = (values = []) => {
   if (!Array.isArray(values)) return [];
   const seen = new Set();
@@ -204,56 +171,6 @@ const resolveNarrationLocale = (code) => {
   return normalized;
 };
 
-const collectSpriteUrlsForUi = (items = []) => {
-  return sanitizeSpriteItemsForUi(items)
-    .filter((item) => item.status === 'done' && item.url)
-    .map((item) => item.url)
-    .filter(Boolean);
-};
-
-const parseSpriteJobStatusForUi = (payload = {}) => {
-  const job = payload && typeof payload.job === 'object' ? payload.job : null;
-  const rawItems = Array.isArray(payload.items) && payload.items.length
-    ? payload.items
-    : Array.isArray(job?.items)
-      ? job.items
-      : Array.isArray(payload.job_items)
-        ? payload.job_items
-        : [];
-  const items = sanitizeSpriteItemsForUi(rawItems);
-  const doneCandidate =
-    payload.done ??
-    payload.completed ??
-    job?.done ??
-    job?.completed ??
-    job?.stats?.done ??
-    job?.stats?.completed;
-  const pendingCandidate =
-    payload.pending ??
-    job?.pending ??
-    job?.stats?.pending ??
-    job?.remaining;
-  const done = Number.isFinite(doneCandidate)
-    ? Number(doneCandidate)
-    : items.filter((item) => item.status === 'done').length;
-  const pending = Number.isFinite(pendingCandidate)
-    ? Number(pendingCandidate)
-    : Math.max(0, items.length - (Number.isFinite(done) ? done : 0));
-  const jobId = typeof payload.job_id === 'string'
-    ? payload.job_id
-    : typeof payload.jobId === 'string'
-      ? payload.jobId
-      : typeof job?.id === 'string'
-        ? job.id
-        : null;
-  return {
-    jobId,
-    done: Number.isFinite(done) ? done : 0,
-    pending: Number.isFinite(pending) ? pending : 0,
-    items,
-  };
-};
-
 const describeSpriteUrl = (url = '') => {
   if (typeof url !== 'string') return '';
   try {
@@ -269,8 +186,6 @@ const describeSpriteUrl = (url = '') => {
   }
   return 'sprite motif';
 };
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const SPRITE_CACHE_STORAGE_KEY = 'ai.sprite.cache';
 const SPRITE_CACHE_VERSION = 'v1';
@@ -2460,13 +2375,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       } catch (error) {
         console.warn('Gemini planning failed, falling back to local planner.', error);
         const message =
-          error instanceof MathGalaxyApiError && (error.status === 500 || error.status === 501)
-            ? 'Serverul AI a întâmpinat o eroare. Încerc fallback local.'
-            : error instanceof MathGalaxyApiError && error.message
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : 'Gemini planning failed.';
+          error instanceof Error && error.message
+            ? error.message
+            : 'Gemini planning failed.';
         setAiPlanStatus((prev) => ({ ...prev, error: message }));
       }
     }
@@ -3131,22 +3042,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const problemKey = `${card.a}+${card.b}`;
     const timeSec = timeSpent / 1000;
     const attemptTimestamp = Date.now();
-    const deckSize = cards.length;
-    const activeCardIndex = currentCard;
-    const numericAnswer = Number.parseInt(userAnswer, 10);
-    const safeAnswer = Number.isFinite(numericAnswer) ? numericAnswer : Number(card.answer);
-    const answerForApi = Number.isFinite(safeAnswer) ? safeAnswer : 0;
-    const stateSnapshot = gameStateRef.current;
-    const learnerProfile = stateSnapshot?.aiPersonalization?.learnerProfile;
-    const learnerId =
-      (typeof learnerProfile?.learnerId === 'string' && learnerProfile.learnerId.trim()) ||
-      (typeof stateSnapshot?.studentInfo?.name === 'string' && stateSnapshot.studentInfo.name.trim()) ||
-      '';
-    const userIdForApi = learnerId || undefined;
-    const difficultyBefore = stateSnapshot?.adaptiveLearning?.currentDifficulty || null;
-    const sessionStartedAt = stateSnapshot?.sessionData?.currentSession?.startTime || null;
-    const checkpointSnapshot = stateSnapshot?.adaptiveLearning?.checkpoint || null;
-
     setGameState(prev => {
       const statistics = {
         ...prev.statistics,

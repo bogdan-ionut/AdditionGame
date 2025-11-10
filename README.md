@@ -13,31 +13,15 @@ This repository now uses [Vite](https://vitejs.dev/) for the React build. To run
 
 ### Environment configuration
 
-Create a `.env.local` (or the appropriate Vite environment file) with the new backend endpoint:
+Create a `.env.local` (or the appropriate Vite environment file) with your Gemini API key if you want narration and AI-driven
+stories to work:
 
 ```
-VITE_MATH_API_URL=https://math-api-811756754621.us-central1.run.app
-VITE_MATH_API_FORCE_LOCAL=false
+VITE_GEMINI_API_KEY=AIza...
 ```
 
-The frontend SDK reads `VITE_MATH_API_URL` at build time to configure the MathGalaxy client. When deploying to GitHub Pages you
-must also override the default ".github.io" stub behaviour by setting `VITE_MATH_API_FORCE_LOCAL=false`; otherwise the app will
-continue to use the offline stub even though a remote URL is provided. Use `VITE_MATH_API_FORCE_LOCAL=true` only when you
-explicitly want to disable remote AI features (for example during local demos).
-
-If you host the static site on a domain that cannot reach the API because of CORS restrictions (for example GitHub Pages), make
-sure the backend allows requests from `https://<username>.github.io` via its `ALLOW_ORIGINS` configuration. A missing CORS
-origin will look just like an offline API in the UI.
-
-### Cloud AI base URL at runtime
-
-When the app is served from GitHub Pages or any other static host, open **AI Settings** from the in-app banner and paste your backend URL in the **Cloud API Base URL** field. The public Cloud Run instance is:
-
-```
-https://math-api-811756754621.us-central1.run.app
-```
-
-Click **Save override & reload** to persist the override in the browser and refresh the app. The override lives in `localStorage`, so subsequent visits keep Cloud AI features online without rebuilding the site.
+The key is read at build time and also cached in `localStorage` when you enter it through **AI Settings**. If you skip this
+step, the app still runs but narration falls back to on-device voices or remains muted.
 
 ## GitHub Pages deployment
 

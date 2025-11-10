@@ -7,13 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview",
-    "server": "node server/index.js"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
     "fflate": "^0.8.2",
     "idb": "^8.0.3",
     "lucide-react": "^0.379.0",

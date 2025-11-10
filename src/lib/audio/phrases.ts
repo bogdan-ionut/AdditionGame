@@ -5,7 +5,7 @@ export const UI_TEXT = {
   offline: OFFLINE_MESSAGE,
   webSpeechFallback: 'Nu am putut reda vocea din cloud. Folosesc vocea dispozitivului.',
   deviceVoiceUnavailable: 'Vocea dispozitivului nu este disponibilă pe acest browser.',
-  ttsUnavailable: 'TTS not available—check backend /v1/ai/tts/say',
+  ttsUnavailable: 'Serviciul TTS nu este disponibil momentan. Încearcă din nou mai târziu.',
   genericPlaybackError: 'Nu am putut reda vocea. Verifică setările audio.',
 };
 
