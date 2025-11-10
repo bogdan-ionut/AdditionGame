@@ -1,4 +1,6 @@
 import { GoogleGenAI, Modality } from '@google/genai';
+import { getCachedAudioClip, storeAudioClip } from '../lib/audio/cache';
+import type { AudioCacheDescriptor } from '../lib/audio/cache';
 import { getGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 
 export type TtsSynthesizeOptions = {
@@ -10,6 +12,7 @@ export type TtsSynthesizeOptions = {
   preferredMime?: string | null;
   mime?: string | null;
   signal?: AbortSignal;
+  kind?: string | null;
 };
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-preview-tts';
@@ -162,13 +165,33 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     throw new Error('Cannot synthesize empty text.');
   }
 
+  const targetModel = opts.model?.trim() || DEFAULT_MODEL;
+  const cacheDescriptor: AudioCacheDescriptor = {
+    text: normalized,
+    voiceId: typeof opts.voiceId === 'string' ? opts.voiceId.trim() : null,
+    speakingRate: typeof opts.speakingRate === 'number' ? opts.speakingRate : null,
+    pitch: typeof opts.pitch === 'number' ? opts.pitch : null,
+    language: typeof opts.language === 'string' ? opts.language.trim() : null,
+    model: targetModel,
+    type: typeof opts.kind === 'string' ? opts.kind.trim() : null,
+  };
+
+  try {
+    const cached = await getCachedAudioClip(cacheDescriptor);
+    if (cached) {
+      return cached;
+    }
+  } catch (error) {
+    console.warn('[Gemini TTS] Unable to read cached audio', error);
+  }
+
   if (!hasGeminiApiKey()) {
     throw new Error('tts_unavailable');
   }
 
   try {
     const client = getClient();
-    const model = opts.model?.trim() || DEFAULT_MODEL;
+    const model = targetModel;
     const speechConfig = buildSpeechConfig(opts);
     const responseMimeType = opts.mime?.trim() || opts.preferredMime?.trim() || DEFAULT_MIME;
 
@@ -215,12 +238,16 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
       normalizedType === 'audio/pcm' ||
       encodingLower.includes('pcm');
 
-    if (looksLikePcm && bitsPerSample === 16) {
-      const wavBytes = wrapPcmAsWav(bytes, sampleRate, channels, bitsPerSample);
-      return new Blob([wavBytes], { type: 'audio/wav' });
-    }
+    const blob = (() => {
+      if (looksLikePcm && bitsPerSample === 16) {
+        const wavBytes = wrapPcmAsWav(bytes, sampleRate, channels, bitsPerSample);
+        return new Blob([wavBytes], { type: 'audio/wav' });
+      }
+      return new Blob([bytes], { type: mimeType });
+    })();
 
-    return new Blob([bytes], { type: mimeType });
+    void storeAudioClip(cacheDescriptor, blob);
+    return blob;
   } catch (error) {
     console.error('[Gemini TTS] Failed to generate speech.', error);
     throw new Error('tts_unavailable');
