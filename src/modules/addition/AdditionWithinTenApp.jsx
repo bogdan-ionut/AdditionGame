@@ -1740,8 +1740,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const [cards, setCards] = useState([]);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showHint, setShowHint] = useState(false);
-  const [showCountTogether, setShowCountTogether] = useState(false);
-  const [attemptCount, setAttemptCount] = useState(0);
   const [problemStartTime, setProblemStartTime] = useState(null);
   const [guidedHelp, setGuidedHelp] = useState({ active: false, step: 0, complete: false });
   const [aiRuntime, setAiRuntime] = useState({
@@ -2342,7 +2340,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     setUserAnswer('');
     setFeedback(null);
     setShowHint(false);
-    setAttemptCount(0);
     setGuidedHelp({ active: false, step: 0, complete: false });
   }, [aiRuntime.aiEnabled, aiRuntime.planningModel, ensureAiPlan]);
 
@@ -2537,7 +2534,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   useEffect(() => {
     if (cards.length > 0) {
       setProblemStartTime(Date.now());
-      setAttemptCount(0);
       setShowHint(false);
       setGuidedHelp({ active: false, step: 0, complete: false });
       // Focus the input when card changes
@@ -2546,13 +2542,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       }, 100);
     }
   }, [currentCard, cards]);
-
-  // simple adaptive step: if 2 incorrect attempts for current card, enable hint automatically
-  useEffect(() => {
-    if (attemptCount >= 2 && feedback === 'incorrect') {
-      setShowHint(true);
-    }
-  }, [attemptCount, feedback]);
 
   useEffect(() => {
     if (!audioSettings.narrationEnabled || !audioSettings.narrationAutoplay) return;
@@ -2620,22 +2609,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     speakCountOn,
   ]);
 
-  // activate guided help after 30 seconds without response submission
-  useEffect(() => {
-    if (!cards[currentCard] || !problemStartTime) return;
-    if (attemptCount > 0 || feedback === 'correct') return;
-
-    const timer = setTimeout(() => {
-      setShowHint(true);
-      setGuidedHelp({ active: true, step: 0, complete: false });
-    }, 30000);
-
-    return () => clearTimeout(timer);
-  }, [cards, currentCard, problemStartTime, attemptCount, feedback]);
-
   // drive the guided counting animation once it is active
   useEffect(() => {
-    if (!guidedHelp.active || guidedHelp.complete || showCountTogether) return;
+    if (!guidedHelp.active || guidedHelp.complete) return;
     const card = cards[currentCard];
     if (!card) return;
     const total = card.a + card.b;
@@ -2654,17 +2630,18 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     }, 700);
 
     return () => clearInterval(interval);
-  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard, showCountTogether]);
+  }, [guidedHelp.active, guidedHelp.complete, cards, currentCard]);
 
   useEffect(() => {
     if (!audioSettings.narrationEnabled) return;
     if (!guidedHelp.active) return;
+    if (showHint) return;
     speakMiniLesson('count-on').catch((error) => {
       if (import.meta.env.DEV) {
         console.warn('Unable to narrate mini-lesson', error);
       }
     });
-  }, [audioSettings.narrationEnabled, guidedHelp.active, speakMiniLesson]);
+  }, [audioSettings.narrationEnabled, guidedHelp.active, showHint, speakMiniLesson]);
 
   useEffect(() => {
     const solved = gameState.sessionData?.currentSession?.problemsSolved ?? 0;
@@ -2765,7 +2742,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       setUserAnswer('');
       setFeedback(null);
       setShowHint(false);
-      setAttemptCount(0);
       setGuidedHelp({ active: false, step: 0, complete: false });
       setCheckpointState({
         active: false,
@@ -2788,7 +2764,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       setUserAnswer('');
       setFeedback(null);
       setShowHint(false);
-      setAttemptCount(0);
       setGuidedHelp({ active: false, step: 0, complete: false });
       setCheckpointState({
         active: true,
@@ -3151,7 +3126,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const correct = parseInt(userAnswer, 10) === cards[currentCard].answer;
 
     setFeedback(correct ? 'correct' : 'incorrect');
-    setAttemptCount(prev => prev + 1);
 
     recordProblemAttempt(cards[currentCard], correct, timeSpent);
 
@@ -3211,7 +3185,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       setUserAnswer('');
       setFeedback(null);
       setShowHint(false);
-      setAttemptCount(0);
       setGuidedHelp({ active: false, step: 0, complete: false });
       return;
     }
@@ -3221,7 +3194,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       setUserAnswer('');
       setFeedback(null);
       setShowHint(false);
-      setAttemptCount(0);
       setGuidedHelp({ active: false, step: 0, complete: false });
     }
   };
@@ -3232,7 +3204,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       setUserAnswer('');
       setFeedback(null);
       setShowHint(false);
-      setAttemptCount(0);
       setGuidedHelp({ active: false, step: 0, complete: false });
     }
   };
@@ -3473,14 +3444,14 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
               <div className="text-yellow-800 text-sm space-y-2">
                 {card.aiPlanItem.hints.slice(0, 2).map((hint, index) => (
                   <p key={index} className="font-medium flex items-start gap-2">
-                    <span className="font-bold">💡 Hint {index + 1}:</span>
+                    <span className="font-bold">💡 Ajutor {index + 1}:</span>
                     <span>{hint}</span>
                   </p>
                 ))}
               </div>
             ) : (
               <p className="text-yellow-800 font-medium text-center">
-                💡 Hint: Count all the objects below or use the number line to jump from {card.a} by {card.b}.
+                💡 Ajutor: Numără toate obiectele de mai jos sau folosește linia numerelor pentru a sări de la {card.a} cu {card.b} pași.
               </p>
             )}
           </div>
@@ -3538,7 +3509,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         </div>
 
         {/* Number line hint */}
-        {(showHint || feedback === 'incorrect') && (
+        {showHint && (
           <NumberLine a={card.a} b={card.b} showHint={true} />
         )}
 
@@ -3564,7 +3535,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
               setUserAnswer('');
               setFeedback(null);
               setShowHint(false);
-              setAttemptCount(0);
               setGuidedHelp({ active: false, step: 0, complete: false });
               setProblemStartTime(Date.now());
               inputRef.current?.focus();
@@ -3593,12 +3563,16 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
 
           <button
             onClick={() => {
-              setShowHint((s) => !s);
-              setShowCountTogether((s) => !s);
+              stopNarration();
+              setShowHint(prev => {
+                const next = !prev;
+                setGuidedHelp(next ? { active: true, step: 0, complete: false } : { active: false, step: 0, complete: false });
+                return next;
+              });
             }}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${showHint ? 'bg-yellow-100 border-yellow-300' : 'bg-white border hover:bg-gray-50'}`}
           >
-            💡 Hint
+            💡 Ajutor
           </button>
           <button
             onClick={() => {
@@ -3612,17 +3586,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           >
             🔊 Hear it again
           </button>
-          {showCountTogether && (
-            <button
-              onClick={() => {
-                setGuidedHelp({ active: true, step: 0, complete: false });
-                setShowCountTogether(false);
-              }}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow bg-blue-600 text-white hover:bg-blue-700"
-            >
-              Count Together
-            </button>
-          )}
         </div>
       </div>
 
