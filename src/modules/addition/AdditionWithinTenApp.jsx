@@ -1775,6 +1775,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     settings: audioSettings,
     speakText,
     speakProblem,
+    speakCountOn,
     speakHint,
     speakMiniLesson,
     speakFeedback,
@@ -2578,15 +2579,46 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     if (!showHint) return;
     const card = cards[currentCard];
     if (!card) return;
-    const hintText = card.aiPlanItem?.hints?.length
-      ? card.aiPlanItem.hints.slice(0, 2).join(' ')
-      : `Hai să numărăm de la ${card.a} și să adăugăm ${card.b}.`;
-    speakHint(hintText).catch((error) => {
-      if (import.meta.env.DEV) {
-        console.warn('Unable to narrate hint', error);
+    const languageKey = (audioSettings.narrationLanguage || 'ro-RO').split('-')[0]?.toLowerCase?.() || 'ro';
+    const aiHints = card.aiPlanItem?.hints?.length ? card.aiPlanItem.hints.slice(0, 2) : [];
+    const hasAiHints = aiHints.length > 0;
+    const fallbackHint = hasAiHints
+      ? null
+      : languageKey === 'ro'
+        ? `Hai să numărăm împreună. Începem de la ${card.a} și mai adăugăm ${card.b} pași.`
+        : `Let’s count together. Start at ${card.a} and add ${card.b} more steps.`;
+    const hintText = hasAiHints ? aiHints.join(' ') : fallbackHint;
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        if (hintText) {
+          await speakHint(hintText);
+        }
+        if (!cancelled && !hasAiHints) {
+          await speakCountOn(card, { includeFinal: false, mode: 'hint' });
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.warn('Unable to narrate hint', error);
+        }
       }
-    });
-  }, [audioSettings.narrationEnabled, cards, currentCard, showHint, speakHint]);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    audioSettings.narrationEnabled,
+    audioSettings.narrationLanguage,
+    cards,
+    currentCard,
+    showHint,
+    speakHint,
+    speakCountOn,
+  ]);
 
   // activate guided help after 30 seconds without response submission
   useEffect(() => {
