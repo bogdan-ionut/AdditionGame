@@ -1,4 +1,4 @@
-import { synthesize } from "../../api/tts";
+import { synthesize, type SupportedSampleRate, type SupportedTtsMime } from "../../api/tts";
 import {
   getCachedAudioClip as getCachedTtsClip,
   storeAudioClip as storeTtsClip,
@@ -17,6 +17,8 @@ export type SpeakOptions = {
   model?: string | null;
   kind?: string | null;
   allowBrowserFallback?: boolean;
+  preferredMime?: SupportedTtsMime | null;
+  sampleRateHz?: SupportedSampleRate | null;
 };
 
 export type SpeakResult = { ok: boolean; mode: SpeakMode };
@@ -35,7 +37,7 @@ const MIN_RATE = 0.1;
 const MAX_RATE = 4;
 const MIN_PITCH = 0;
 const MAX_PITCH = 2;
-const DEFAULT_CACHE_FORMAT = "audio/mpeg";
+const DEFAULT_CACHE_FORMAT: SupportedTtsMime = "audio/mpeg";
 
 function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
@@ -235,6 +237,8 @@ export async function speak({
   model = null,
   kind = null,
   allowBrowserFallback = false,
+  preferredMime = null,
+  sampleRateHz = null,
 }: SpeakOptions): Promise<SpeakResult> {
   const content = text?.trim();
   if (!content) {
@@ -258,7 +262,8 @@ export async function speak({
     model: resolvedModel || "",
     rate: Number.isFinite(normalizedRate) ? normalizedRate : 1,
     pitch: Number.isFinite(normalizedPitch) ? normalizedPitch : 1,
-    format: DEFAULT_CACHE_FORMAT,
+    format: (preferredMime || DEFAULT_CACHE_FORMAT) as string,
+    sampleRate: typeof sampleRateHz === "number" ? sampleRateHz : undefined,
   };
 
   const fallbackPayload: WebSpeechPayload = {
@@ -302,13 +307,16 @@ export async function speak({
       language: normalizedLang,
       model: resolvedModel,
       kind: resolvedKind,
+      preferredMime: preferredMime || DEFAULT_CACHE_FORMAT,
+      sampleRateHz: typeof sampleRateHz === "number" ? sampleRateHz : undefined,
     });
     const buffer = await blob.arrayBuffer();
     const contentType = blob.type || DEFAULT_CACHE_FORMAT;
     try {
       const descriptorForStorage: TtsDescriptor = {
         ...descriptor,
-        format: descriptor.format || contentType,
+        format: contentType || descriptor.format || DEFAULT_CACHE_FORMAT,
+        sampleRate: descriptor.sampleRate,
       };
       await storeTtsClip(descriptorForStorage, blob);
     } catch (error) {
@@ -325,6 +333,15 @@ export async function speak({
     }
     return { ok: false, mode: "none" };
   } catch (error: any) {
+    if (
+      error instanceof Error &&
+      (error.message === "tts_ratelimited" || (error as any)?.status === 429 || (error as any)?.code === 429)
+    ) {
+      if (allowBrowserFallback) {
+        return fallbackToWebSpeech(fallbackPayload);
+      }
+      return { ok: false, mode: "none" };
+    }
     if (error instanceof Error && error.message === "tts_unavailable") {
       if (allowBrowserFallback) {
         return fallbackToWebSpeech(fallbackPayload);

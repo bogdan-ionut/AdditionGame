@@ -3,20 +3,131 @@ import { getCachedAudioClip, storeAudioClip } from '../lib/audio/cache';
 import type { AudioCacheDescriptor } from '../lib/audio/cache';
 import { getGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 
+export type SupportedTtsMime = 'audio/mpeg' | 'audio/wav';
+export type SupportedSampleRate = 16000 | 22050 | 24000 | 44100;
+
 export type TtsSynthesizeOptions = {
   voiceId?: string;
   speakingRate?: number;
   pitch?: number;
   language?: string;
   model?: string | null;
-  preferredMime?: string | null;
-  mime?: string | null;
+  preferredMime?: SupportedTtsMime | null;
+  sampleRateHz?: SupportedSampleRate | null;
   signal?: AbortSignal;
   kind?: string | null;
 };
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-preview-tts';
 const DEFAULT_MIME = 'audio/mpeg';
+const RATE_LIMIT_STORAGE_KEY = 'addition-game.tts.daily.v1';
+const MAX_REQUESTS_PER_MINUTE = 10;
+const MAX_REQUESTS_PER_DAY = 100;
+
+type DailyCounterState = { dateKey: string; count: number };
+
+const pacificDateFormatter = typeof Intl !== 'undefined'
+  ? new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  : null;
+
+const getPacificDateKey = (now: Date = new Date()): string => {
+  if (!pacificDateFormatter) {
+    return now.toISOString().slice(0, 10);
+  }
+  return pacificDateFormatter.format(now);
+};
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.floor(ms))));
+
+let dailyCounter: DailyCounterState = { dateKey: getPacificDateKey(), count: 0 };
+
+const readDailyCounter = (): DailyCounterState => {
+  if (typeof window === 'undefined') {
+    return { ...dailyCounter };
+  }
+  try {
+    const raw = window.localStorage.getItem(RATE_LIMIT_STORAGE_KEY);
+    if (!raw) {
+      return { ...dailyCounter };
+    }
+    const parsed = JSON.parse(raw);
+    const dateKey = typeof parsed?.dateKey === 'string' ? parsed.dateKey : getPacificDateKey();
+    const count = Number(parsed?.count) || 0;
+    return { dateKey, count };
+  } catch (error) {
+    console.warn('[Gemini TTS] Unable to read daily rate limit state', error);
+    return { ...dailyCounter };
+  }
+};
+
+const writeDailyCounter = (state: DailyCounterState): void => {
+  dailyCounter = { ...state };
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(RATE_LIMIT_STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('[Gemini TTS] Unable to persist daily rate limit state', error);
+  }
+};
+
+const ensureDailyAllowance = (): void => {
+  const todayKey = getPacificDateKey();
+  const current = readDailyCounter();
+  const normalized = current.dateKey === todayKey ? current : { dateKey: todayKey, count: 0 };
+  if (normalized.count >= MAX_REQUESTS_PER_DAY) {
+    throw new Error('tts_ratelimited');
+  }
+  normalized.count += 1;
+  writeDailyCounter(normalized);
+};
+
+type TokenBucket = { tokens: number; lastRefill: number };
+
+const bucket: TokenBucket = {
+  tokens: MAX_REQUESTS_PER_MINUTE,
+  lastRefill: Date.now(),
+};
+
+const refillTokens = (now: number): void => {
+  if (bucket.tokens >= MAX_REQUESTS_PER_MINUTE) {
+    bucket.lastRefill = now;
+    return;
+  }
+  const elapsed = Math.max(0, now - bucket.lastRefill);
+  if (elapsed <= 0) {
+    return;
+  }
+  const tokensToAdd = (elapsed / 60000) * MAX_REQUESTS_PER_MINUTE;
+  bucket.tokens = Math.min(MAX_REQUESTS_PER_MINUTE, bucket.tokens + tokensToAdd);
+  bucket.lastRefill = now;
+};
+
+const takeToken = (): void => {
+  const now = Date.now();
+  refillTokens(now);
+  if (bucket.tokens < 1) {
+    throw new Error('tts_ratelimited');
+  }
+  bucket.tokens -= 1;
+};
+
+const enforceRateLimits = (): void => {
+  takeToken();
+  try {
+    ensureDailyAllowance();
+  } catch (error) {
+    bucket.tokens = Math.min(MAX_REQUESTS_PER_MINUTE, bucket.tokens + 1);
+    throw error;
+  }
+};
 
 let cachedClient: GoogleGenAI | null = null;
 let cachedKey: string | null = null;
@@ -146,6 +257,8 @@ const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
 
   const speechConfig: Record<string, unknown> = {};
 
+  const audioConfig: Record<string, unknown> = {};
+
   if (languageCode) {
     speechConfig.languageCode = languageCode;
   }
@@ -156,7 +269,96 @@ const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
     };
   }
 
+  if (typeof opts.speakingRate === 'number' && Number.isFinite(opts.speakingRate)) {
+    audioConfig.speakingRate = opts.speakingRate;
+  }
+
+  if (typeof opts.pitch === 'number' && Number.isFinite(opts.pitch)) {
+    audioConfig.pitch = opts.pitch;
+  }
+
+  if (typeof opts.sampleRateHz === 'number' && Number.isFinite(opts.sampleRateHz)) {
+    audioConfig.sampleRateHertz = opts.sampleRateHz;
+  }
+
+  if (Object.keys(audioConfig).length > 0) {
+    speechConfig.audioConfig = audioConfig;
+  }
+
   return Object.keys(speechConfig).length > 0 ? speechConfig : undefined;
+};
+
+const extractRetryInfoDelay = (payload: any): number | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload.retryDelayMs && Number.isFinite(payload.retryDelayMs)) {
+    return Math.max(0, Number(payload.retryDelayMs));
+  }
+  if (payload.retryDelay && Number.isFinite(payload.retryDelay)) {
+    return Math.max(0, Number(payload.retryDelay));
+  }
+  const retryInfo =
+    payload.retryInfo ||
+    payload.retryinfo ||
+    payload.retry_info ||
+    payload.RetryInfo ||
+    payload.retry ||
+    null;
+  if (retryInfo && typeof retryInfo === 'object') {
+    const seconds = Number(retryInfo.seconds ?? retryInfo.second ?? 0);
+    const nanos = Number(retryInfo.nanos ?? retryInfo.nano ?? 0);
+    if (Number.isFinite(seconds) || Number.isFinite(nanos)) {
+      return Math.max(0, seconds * 1000 + nanos / 1_000_000);
+    }
+    if (typeof retryInfo.retryDelay === 'string') {
+      const parsed = Number.parseFloat(retryInfo.retryDelay);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, parsed * 1000);
+      }
+    }
+  }
+  if (Array.isArray(payload.details)) {
+    for (const detail of payload.details) {
+      const delay = extractRetryInfoDelay(detail);
+      if (delay != null) {
+        return delay;
+      }
+    }
+  }
+  return null;
+};
+
+const resolveRetryDelayMs = (error: any, attempt: number): number => {
+  const delayMs =
+    extractRetryInfoDelay(error) ??
+    extractRetryInfoDelay(error?.errorInfo) ??
+    extractRetryInfoDelay(error?.extensions) ??
+    extractRetryInfoDelay(error?.cause);
+  if (delayMs != null) {
+    return delayMs;
+  }
+  const headerDelay = (() => {
+    try {
+      const headers = error?.response?.headers;
+      if (!headers) return null;
+      const retryAfter = typeof headers.get === 'function' ? headers.get('retry-after') : headers['retry-after'];
+      if (!retryAfter) return null;
+      const numeric = Number(retryAfter);
+      if (Number.isFinite(numeric)) {
+        return Math.max(0, numeric * 1000);
+      }
+      const parsedDate = Date.parse(retryAfter);
+      if (!Number.isNaN(parsedDate)) {
+        return Math.max(0, parsedDate - Date.now());
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  })();
+  if (headerDelay != null) {
+    return headerDelay;
+  }
+  return 1000 * 2 ** attempt;
 };
 
 export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}): Promise<Blob> {
@@ -174,6 +376,8 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     language: typeof opts.language === 'string' ? opts.language.trim() : null,
     model: targetModel,
     type: typeof opts.kind === 'string' ? opts.kind.trim() : null,
+    preferredMime: opts.preferredMime ?? null,
+    sampleRateHz: typeof opts.sampleRateHz === 'number' ? opts.sampleRateHz : null,
   };
 
   try {
@@ -190,24 +394,57 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
   }
 
   try {
+    enforceRateLimits();
     const client = getClient();
     const model = targetModel;
     const speechConfig = buildSpeechConfig(opts);
-    const responseMimeType = opts.mime?.trim() || opts.preferredMime?.trim() || DEFAULT_MIME;
+    const responseMimeType = opts.preferredMime?.trim() || DEFAULT_MIME;
 
-    const response = await client.models.generateContent({
-      model,
-      contents: [{ parts: [{ text: normalized }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        ...(speechConfig ? { speechConfig } : {}),
-      },
-      safetySettings: [],
-      generationConfig: {
-        responseMimeType,
-      },
-      signal: opts.signal,
-    });
+    let response;
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        response = await client.models.generateContent({
+          model,
+          contents: [{ parts: [{ text: normalized }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            ...(speechConfig ? { speechConfig } : {}),
+          },
+          safetySettings: [],
+          generationConfig: {
+            responseMimeType,
+            ...(typeof opts.sampleRateHz === 'number' && Number.isFinite(opts.sampleRateHz)
+              ? { sampleRateHertz: opts.sampleRateHz }
+              : {}),
+            ...(typeof opts.speakingRate === 'number' && Number.isFinite(opts.speakingRate)
+              ? { speakingRate: opts.speakingRate }
+              : {}),
+            ...(typeof opts.pitch === 'number' && Number.isFinite(opts.pitch) ? { pitch: opts.pitch } : {}),
+          },
+          signal: opts.signal,
+        });
+        break;
+      } catch (error: any) {
+        if (error instanceof Error && error.message === 'tts_ratelimited') {
+          throw error;
+        }
+        const status = error?.status ?? error?.code ?? error?.response?.status;
+        const is429 = status === 429;
+        if (is429 && attempt < maxAttempts) {
+          await delay(resolveRetryDelayMs(error, attempt));
+          continue;
+        }
+        if (is429) {
+          throw new Error('tts_ratelimited');
+        }
+        throw error;
+      }
+    }
+
+    if (!response) {
+      throw new Error('tts_unavailable');
+    }
 
     const candidate = response.candidates?.[0];
     const part = candidate?.content?.parts?.find((item) => Boolean(item.inlineData));
@@ -249,6 +486,14 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     void storeAudioClip(cacheDescriptor, blob);
     return blob;
   } catch (error) {
+    if (error instanceof Error && error.message === 'tts_ratelimited') {
+      console.warn('[Gemini TTS] Rate limit reached.', error);
+      throw error;
+    }
+    if (error instanceof Error && error.message === 'tts_unavailable') {
+      console.error('[Gemini TTS] Failed to generate speech.', error);
+      throw error;
+    }
     console.error('[Gemini TTS] Failed to generate speech.', error);
     throw new Error('tts_unavailable');
   }

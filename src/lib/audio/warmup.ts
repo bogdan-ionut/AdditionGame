@@ -13,6 +13,8 @@ export type WarmupOptions = {
   speakingRate?: number | null;
   pitch?: number | null;
   model?: string | null;
+  preferredMime?: 'audio/mpeg' | 'audio/wav' | null;
+  sampleRateHz?: 16000 | 22050 | 24000 | 44100 | null;
   additionMax?: number;
   signal?: AbortSignal;
 };
@@ -108,6 +110,8 @@ export const warmupNarrationCache = (options: WarmupOptions): void => {
       pitch: options.pitch ?? undefined,
       language: options.language || undefined,
       model: options.model || undefined,
+      preferredMime: options.preferredMime || undefined,
+      sampleRateHz: options.sampleRateHz ?? undefined,
       kind: task.type,
       signal: options.signal,
     })

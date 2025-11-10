@@ -23,6 +23,8 @@ export type AudioCacheDescriptor = {
   pitch?: number | null;
   model?: string | null;
   type?: string | null;
+  preferredMime?: string | null;
+  sampleRateHz?: number | null;
 };
 
 export type AudioCacheSummary = {
@@ -43,11 +45,18 @@ const normalizeNumber = (value: number | null | undefined, fallback: number): nu
 };
 
 const buildFormat = (descriptor: AudioCacheDescriptor): string => {
-  const kind = descriptor.type?.trim();
-  if (!kind) {
-    return DEFAULT_FORMAT;
+  const segments: string[] = [];
+  const base = descriptor.preferredMime?.trim() || DEFAULT_FORMAT;
+  if (descriptor.type?.trim()) {
+    segments.push(`kind=${descriptor.type.trim()}`);
   }
-  return `${DEFAULT_FORMAT};kind=${kind}`;
+  if (Number.isFinite(descriptor.sampleRateHz)) {
+    segments.push(`rate=${Number(descriptor.sampleRateHz)}`);
+  }
+  if (segments.length === 0) {
+    return base;
+  }
+  return `${base};${segments.join(';')}`;
 };
 
 const toTtsDescriptor = (descriptor: AudioCacheDescriptor): TtsDescriptor => ({
@@ -58,6 +67,7 @@ const toTtsDescriptor = (descriptor: AudioCacheDescriptor): TtsDescriptor => ({
   rate: normalizeNumber(descriptor.speakingRate, 1),
   pitch: normalizeNumber(descriptor.pitch, 1),
   format: buildFormat(descriptor),
+  sampleRate: Number.isFinite(descriptor.sampleRateHz) ? Number(descriptor.sampleRateHz) : undefined,
 });
 
 const readSummary = (): AudioCacheSummary => {
