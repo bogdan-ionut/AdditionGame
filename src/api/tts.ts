@@ -64,10 +64,23 @@ const resolveMime = (inlineData: { mimeType?: string | null } | null | undefined
   return DEFAULT_MIME;
 };
 
-const sanitizeNumber = (value: unknown): number | undefined => {
-  if (typeof value !== 'number') return undefined;
-  if (!Number.isFinite(value)) return undefined;
-  return value;
+const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
+  const languageCode = opts.language?.trim();
+  const voiceName = opts.voiceId?.trim();
+
+  const speechConfig: Record<string, unknown> = {};
+
+  if (languageCode) {
+    speechConfig.languageCode = languageCode;
+  }
+
+  if (voiceName) {
+    speechConfig.voiceConfig = {
+      prebuiltVoiceConfig: { voiceName },
+    };
+  }
+
+  return Object.keys(speechConfig).length > 0 ? speechConfig : undefined;
 };
 
 export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}): Promise<Blob> {
@@ -83,26 +96,19 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
   try {
     const client = getClient();
     const model = opts.model?.trim() || DEFAULT_MODEL;
+    const speechConfig = buildSpeechConfig(opts);
+    const responseMimeType = opts.mime?.trim() || opts.preferredMime?.trim() || DEFAULT_MIME;
+
     const response = await client.models.generateContent({
       model,
       contents: [{ parts: [{ text: normalized }] }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: opts.voiceId
-            ? {
-                prebuiltVoiceConfig: { voiceName: opts.voiceId },
-              }
-            : undefined,
-          speakingRate: sanitizeNumber(opts.speakingRate),
-          pitch: sanitizeNumber(opts.pitch),
-          audioEncoding: opts.mime?.trim() || opts.preferredMime?.trim() || DEFAULT_MIME,
-          languageCode: opts.language?.trim() || undefined,
-        },
+        ...(speechConfig ? { speechConfig } : {}),
       },
       safetySettings: [],
       generationConfig: {
-        responseMimeType: opts.mime?.trim() || opts.preferredMime?.trim() || DEFAULT_MIME,
+        responseMimeType,
       },
       signal: opts.signal,
     });
@@ -116,7 +122,7 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     }
 
     const bytes = decodeBase64(base64Audio);
-    const mimeType = resolveMime(inlineData, opts.mime?.trim() || opts.preferredMime?.trim() || DEFAULT_MIME);
+    const mimeType = resolveMime(inlineData, responseMimeType);
     return new Blob([bytes], { type: mimeType });
   } catch (error) {
     console.error('[Gemini TTS] Failed to generate speech.', error);

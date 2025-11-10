@@ -59,7 +59,12 @@ function stopActiveServerPlayback() {
   }
 }
 
-async function playAudioBuffer(buffer: ArrayBuffer, mimeType: string, volume = 1): Promise<boolean> {
+async function playAudioBuffer(
+  buffer: ArrayBuffer,
+  mimeType: string,
+  volume = 1,
+  playbackRate = 1,
+): Promise<boolean> {
   if (typeof window === "undefined" || typeof Audio === "undefined") {
     return false;
   }
@@ -71,6 +76,18 @@ async function playAudioBuffer(buffer: ArrayBuffer, mimeType: string, volume = 1
   const audio = new Audio();
   audio.src = objectUrl;
   audio.volume = clamp(volume, 0, 1);
+  audio.playbackRate = clamp(playbackRate, MIN_RATE, MAX_RATE);
+
+  const globalAudio = audio as any;
+  if (typeof globalAudio.preservesPitch === "boolean") {
+    globalAudio.preservesPitch = true;
+  }
+  if (typeof globalAudio.mozPreservesPitch === "boolean") {
+    globalAudio.mozPreservesPitch = true;
+  }
+  if (typeof globalAudio.webkitPreservesPitch === "boolean") {
+    globalAudio.webkitPreservesPitch = true;
+  }
 
   try {
     await audio.play();
@@ -237,7 +254,8 @@ export async function speak({
     const buffer = await blob.arrayBuffer();
     if (buffer.byteLength > 0) {
       const contentType = blob.type || "audio/mpeg";
-      const played = await playAudioBuffer(buffer, contentType, clamp(volume, 0, 1));
+      const playbackRate = clamp(toFinite(rate, 1), MIN_RATE, MAX_RATE);
+      const played = await playAudioBuffer(buffer, contentType, clamp(volume, 0, 1), playbackRate);
       if (played) {
         return { ok: true, mode: "server" };
       }
