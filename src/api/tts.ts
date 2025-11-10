@@ -53,15 +53,88 @@ const getClient = (): GoogleGenAI => {
   return cachedClient;
 };
 
-const resolveMime = (inlineData: { mimeType?: string | null } | null | undefined, fallback: string) => {
+type AudioMimeInfo = {
+  type: string;
+  params: Record<string, string>;
+};
+
+const parseAudioMime = (mimeType: string | null | undefined): AudioMimeInfo | null => {
+  if (!mimeType) return null;
+  const segments = mimeType
+    .split(';')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return null;
+
+  const [type, ...paramSegments] = segments;
+  const params: Record<string, string> = {};
+  for (const segment of paramSegments) {
+    const eqIndex = segment.indexOf('=');
+    if (eqIndex <= 0) continue;
+    const key = segment.slice(0, eqIndex).trim().toLowerCase();
+    const value = segment.slice(eqIndex + 1).trim();
+    if (key) {
+      params[key] = value;
+    }
+  }
+
+  return { type: type.toLowerCase(), params };
+};
+
+const resolveMime = (
+  inlineData: { mimeType?: string | null } | null | undefined,
+  fallback: string,
+): { mimeType: string; info: AudioMimeInfo | null } => {
   const candidate = inlineData?.mimeType?.trim();
-  if (candidate) {
-    return candidate;
-  }
-  if (fallback && fallback.trim()) {
-    return fallback.trim();
-  }
-  return DEFAULT_MIME;
+  const resolved = candidate && candidate.length > 0 ? candidate : fallback.trim() || DEFAULT_MIME;
+  return { mimeType: resolved, info: parseAudioMime(resolved) };
+};
+
+const wrapPcmAsWav = (
+  pcmBytes: Uint8Array,
+  sampleRate: number,
+  channels: number,
+  bitsPerSample: number,
+): Uint8Array => {
+  const bytesPerSample = Math.max(1, Math.floor(bitsPerSample / 8));
+  const blockAlign = channels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const buffer = new ArrayBuffer(44 + pcmBytes.byteLength);
+  const view = new DataView(buffer);
+
+  let offset = 0;
+  const writeString = (value: string) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset, value.charCodeAt(i));
+      offset += 1;
+    }
+  };
+  const writeUint32 = (value: number) => {
+    view.setUint32(offset, value, true);
+    offset += 4;
+  };
+  const writeUint16 = (value: number) => {
+    view.setUint16(offset, value, true);
+    offset += 2;
+  };
+
+  writeString('RIFF');
+  writeUint32(36 + pcmBytes.byteLength);
+  writeString('WAVE');
+  writeString('fmt ');
+  writeUint32(16);
+  writeUint16(1);
+  writeUint16(channels);
+  writeUint32(sampleRate);
+  writeUint32(byteRate);
+  writeUint16(blockAlign);
+  writeUint16(bitsPerSample);
+  writeString('data');
+  writeUint32(pcmBytes.byteLength);
+
+  new Uint8Array(buffer).set(pcmBytes, 44);
+
+  return new Uint8Array(buffer);
 };
 
 const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
@@ -122,7 +195,31 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     }
 
     const bytes = decodeBase64(base64Audio);
-    const mimeType = resolveMime(inlineData, responseMimeType);
+    const { mimeType, info } = resolveMime(inlineData, responseMimeType);
+
+    const normalizedType = info?.type ?? mimeType;
+    const encoding = info?.params.encoding || info?.params.codecs || '';
+    const encodingLower = encoding.toLowerCase();
+    const bitsParam = info?.params.bits || info?.params.bitdepth || info?.params['bits-per-sample'];
+    const channelsParam = info?.params.channels || info?.params.channel;
+    const rateParam = info?.params.rate || info?.params.samplerate || info?.params['sample-rate'];
+
+    const bitsPerSample = Number(bitsParam) || (encodingLower.includes('16') ? 16 : 16);
+    const sampleRate = Number(rateParam) || 24000;
+    const channels = Number(channelsParam) || 1;
+
+    const looksLikePcm =
+      normalizedType === 'audio/raw' ||
+      normalizedType === 'audio/x-raw' ||
+      normalizedType === 'audio/l16' ||
+      normalizedType === 'audio/pcm' ||
+      encodingLower.includes('pcm');
+
+    if (looksLikePcm && bitsPerSample === 16) {
+      const wavBytes = wrapPcmAsWav(bytes, sampleRate, channels, bitsPerSample);
+      return new Blob([wavBytes], { type: 'audio/wav' });
+    }
+
     return new Blob([bytes], { type: mimeType });
   } catch (error) {
     console.error('[Gemini TTS] Failed to generate speech.', error);
