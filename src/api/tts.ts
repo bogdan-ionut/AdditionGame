@@ -16,6 +16,8 @@ export type TtsSynthesizeOptions = {
   sampleRateHz?: SupportedSampleRate | null;
   signal?: AbortSignal;
   kind?: string | null;
+  promptFlavor?: string | null;
+  systemInstruction?: string | null;
 };
 
 export const DEFAULT_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
@@ -336,6 +338,12 @@ const wrapPcmAsWav = (
   return new Uint8Array(buffer);
 };
 
+const BASE_VERBATIM_SYSTEM_PROMPT = [
+  "You are the text-to-speech narrator for a children's math practice app.",
+  'Read the user\'s prompt exactly as written, matching the language, punctuation, and pacing.',
+  'Do not provide answers, hints, translations, or commentary beyond the text you are given.',
+].join(' ');
+
 const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
   const languageCode = opts.language?.trim();
   const voiceName = opts.voiceId?.trim();
@@ -365,6 +373,39 @@ const buildSpeechConfig = (opts: TtsSynthesizeOptions) => {
   }
 
   return Object.keys(speechConfig).length > 0 ? speechConfig : undefined;
+};
+
+const buildSystemInstruction = (opts: TtsSynthesizeOptions): string => {
+  const base = BASE_VERBATIM_SYSTEM_PROMPT;
+  const kind = opts.kind?.trim().toLowerCase();
+  if (kind === 'problem') {
+    return `${base} Never say the solution to any math problem—only speak the question verbatim.`;
+  }
+  return base;
+};
+
+const resolvePromptFlavor = (opts: TtsSynthesizeOptions): string => {
+  const explicit = opts.promptFlavor?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  const kind = opts.kind?.trim().toLowerCase();
+  switch (kind) {
+    case 'problem':
+      return 'problem.v2';
+    case 'counting':
+      return 'counting.v1';
+    case 'mini-lesson':
+      return 'mini-lesson.v1';
+    case 'praise':
+      return 'praise.v1';
+    case 'encouragement':
+      return 'encouragement.v1';
+    case 'hint':
+      return 'hint.v1';
+    default:
+      return kind ? `${kind}.v1` : 'generic.v1';
+  }
 };
 
 const extractRetryInfoDelay = (payload: any): number | null => {
@@ -447,6 +488,7 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
   }
 
   const targetModel = opts.model?.trim() || DEFAULT_TTS_MODEL;
+  const promptFlavor = resolvePromptFlavor(opts);
   const cacheDescriptor: AudioCacheDescriptor = {
     text: normalized,
     voiceId: typeof opts.voiceId === 'string' ? opts.voiceId.trim() : null,
@@ -455,6 +497,7 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     language: typeof opts.language === 'string' ? opts.language.trim() : null,
     model: targetModel,
     type: typeof opts.kind === 'string' ? opts.kind.trim() : null,
+    promptFlavor,
     preferredMime: opts.preferredMime ?? null,
     sampleRateHz: typeof opts.sampleRateHz === 'number' ? opts.sampleRateHz : null,
   };
@@ -478,6 +521,13 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
     const model = targetModel;
     const speechConfig = buildSpeechConfig(opts);
     const responseMimeType = opts.preferredMime?.trim() || DEFAULT_MIME;
+    const systemInstruction = (opts.systemInstruction ?? buildSystemInstruction(opts)).trim();
+    const contents = [
+      {
+        role: 'user',
+        parts: [{ text: normalized }],
+      },
+    ];
 
     let response;
     const maxAttempts = 3;
@@ -485,7 +535,7 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
       try {
         response = await client.models.generateContent({
           model,
-          contents: [{ parts: [{ text: normalized }] }],
+          contents,
           config: {
             responseModalities: [Modality.AUDIO],
           },
@@ -494,6 +544,7 @@ export async function synthesize(text: string, opts: TtsSynthesizeOptions = {}):
             responseMimeType,
             ...(speechConfig ? { speechConfig } : {}),
           },
+          ...(systemInstruction ? { systemInstruction } : {}),
           signal: opts.signal,
         });
         break;

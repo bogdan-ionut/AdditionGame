@@ -37,6 +37,7 @@ export type AudioCacheDescriptor = {
   pitch?: number | null;
   model?: string | null;
   type?: string | null;
+  promptFlavor?: string | null;
   preferredMime?: string | null;
   sampleRateHz?: number | null;
 };
@@ -93,6 +94,7 @@ const toTtsDescriptor = (descriptor: AudioCacheDescriptor): TtsDescriptor => ({
   lang: normalizeString(descriptor.language),
   voice: normalizeString(descriptor.voiceId),
   model: normalizeString(descriptor.model),
+  flavor: normalizeString(descriptor.promptFlavor) || 'generic.v1',
   rate: normalizeNumber(descriptor.speakingRate, 1),
   pitch: normalizeNumber(descriptor.pitch, 1),
   format: buildFormat(descriptor),
