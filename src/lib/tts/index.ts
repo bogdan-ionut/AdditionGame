@@ -402,10 +402,10 @@ export async function speakProblem(
   const language = meta.language ?? DEFAULT_LANG;
   const story = meta.story?.trim();
   const name = meta.studentName?.trim();
-  const baseQuestion = `What is ${card.a} + ${card.b}?`;
+  const baseQuestion = `What is ${card.a} plus ${card.b}?`;
   let prompt = baseQuestion;
   if (toLanguageKey(language) === "ro") {
-    prompt = `Cât face ${card.a} + ${card.b}?`;
+    prompt = `Cât face ${card.a} plus ${card.b}?`;
   }
   if (story) {
     prompt = `${prompt}${buildStoryReminder(story, language)}`;
