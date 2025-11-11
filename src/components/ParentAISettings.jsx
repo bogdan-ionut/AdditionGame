@@ -58,6 +58,14 @@ const DEFAULT_SAMPLE_TEXT =
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const CHIRP_MANIFEST_FILE_NAME = 'chirp-pack-request.json';
+const CHIRP_SCRIPT_COMMAND =
+  'npm run chirp-pack -- --manifest ./chirp-pack-request.json --out-dir public/audio/ro-RO/chirp3-hd-a';
+const CHIRP_DEFAULT_LANGUAGE = 'ro-RO';
+const CHIRP_DEFAULT_AUDIO_ENCODING = 'MP3';
+const CHIRP_DEFAULT_SAMPLE_RATE = 24000;
+const CHIRP_DEFAULT_VOICE_NAME = 'ro-RO-Chirp3-HD-A';
+
 export default function ParentAISettings({ onClose }) {
   const [audioSettings, setAudioSettings] = useState(() => loadAudioSettings());
   const [voiceOptions, setVoiceOptions] = useState([]);
@@ -90,6 +98,13 @@ export default function ParentAISettings({ onClose }) {
   const [activeWarmupCategory, setActiveWarmupCategory] = useState(null);
   const [warmupPromptStatuses, setWarmupPromptStatuses] = useState({});
   const [warmupStatusLoadingMap, setWarmupStatusLoadingMap] = useState({});
+  const [chirpExportStatus, setChirpExportStatus] = useState({
+    state: 'idle',
+    message: null,
+    promptCount: 0,
+    fileName: null,
+    timestamp: null,
+  });
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
   const warmupControllerRef = useRef(null);
@@ -948,6 +963,89 @@ export default function ParentAISettings({ onClose }) {
     }
     return `Generăm clipuri audio… ${base}.`;
   };
+
+  const handleExportChirpManifest = useCallback(() => {
+    const tasks = collectWarmupTasks({
+      selection: warmupSelection,
+      library: warmupLibrary,
+      language: CHIRP_DEFAULT_LANGUAGE,
+      includeFallbackLanguage: false,
+    });
+
+    if (!tasks.length) {
+      const message = 'Selectează cel puțin un prompt pentru manifestul Chirp 3.';
+      setChirpExportStatus({ state: 'idle', message, promptCount: 0, fileName: null, timestamp: null });
+      showToast({ level: 'info', message });
+      return;
+    }
+
+    const timestamp = new Date();
+    const payload = {
+      version: 1,
+      generatedAt: timestamp.toISOString(),
+      voice: {
+        name: CHIRP_DEFAULT_VOICE_NAME,
+        languageCode: CHIRP_DEFAULT_LANGUAGE,
+        audioEncoding: CHIRP_DEFAULT_AUDIO_ENCODING,
+        sampleRateHertz: CHIRP_DEFAULT_SAMPLE_RATE,
+      },
+      prompts: tasks.map((task) => ({
+        text: task.text,
+        kind: task.kind || 'default',
+        categories: Array.from(new Set((task.prompts || []).map((item) => item.categoryId))),
+        languageCode: CHIRP_DEFAULT_LANGUAGE,
+      })),
+    };
+
+    try {
+      const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+        type: 'application/json',
+      });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = CHIRP_MANIFEST_FILE_NAME;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(href);
+      const message =
+        tasks.length === 1
+          ? 'Manifestul Chirp 3 conține 1 prompt.'
+          : `Manifestul Chirp 3 conține ${tasks.length} prompturi.`;
+      setChirpExportStatus({
+        state: 'success',
+        message,
+        promptCount: tasks.length,
+        fileName: CHIRP_MANIFEST_FILE_NAME,
+        timestamp: timestamp.toISOString(),
+      });
+      showToast({ level: 'success', message: 'Am descărcat manifestul Chirp 3 (JSON).' });
+    } catch (error) {
+      console.error('Unable to export Chirp manifest', error);
+      setChirpExportStatus({
+        state: 'error',
+        message: 'Nu am putut salva manifestul Chirp 3. Încearcă din nou.',
+        promptCount: tasks.length,
+        fileName: null,
+        timestamp: null,
+      });
+      showToast({ level: 'error', message: 'Nu am putut genera manifestul Chirp 3.' });
+    }
+  }, [warmupLibrary, warmupSelection]);
+
+  const handleCopyChirpCommand = useCallback(async () => {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+        throw new Error('clipboard_unavailable');
+      }
+      await navigator.clipboard.writeText(CHIRP_SCRIPT_COMMAND);
+      showToast({ level: 'success', message: 'Comanda a fost copiată în clipboard.' });
+    } catch (error) {
+      console.warn('Unable to copy Chirp command', error);
+      showToast({ level: 'error', message: 'Nu am putut copia comanda. Copiaz-o manual.' });
+    }
+  }, []);
 
   const handleStartWarmup = async () => {
     if (isWarmupRunning) return;
@@ -1829,6 +1927,18 @@ export default function ParentAISettings({ onClose }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
+                    onClick={handleExportChirpManifest}
+                    disabled={warmupSelectedPrompts === 0}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow transition ${
+                      warmupSelectedPrompts === 0
+                        ? 'cursor-not-allowed bg-emerald-200 text-emerald-800'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                  >
+                    Descarcă manifest Chirp 3 (JSON)
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleStartWarmup}
                     disabled={isWarmupRunning || warmupSelectedPrompts === 0}
                     className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow transition ${
@@ -1855,6 +1965,47 @@ export default function ParentAISettings({ onClose }) {
                     </button>
                   )}
                 </div>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs text-emerald-900">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold text-emerald-900">Script Node pentru pachetul Chirp 3: HD</h4>
+                    <p>
+                      După ce descarci manifestul <span className="font-semibold">{CHIRP_MANIFEST_FILE_NAME}</span>, mută-l în
+                      directorul proiectului și rulează comanda de mai jos. Scriptul va genera fișierele MP3 în{' '}
+                      <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px] text-[11px]">public/audio/ro-RO/chirp3-hd-a</code>.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyChirpCommand}
+                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                  >
+                    Copiază comanda
+                  </button>
+                </div>
+                <pre className="overflow-x-auto rounded-xl bg-emerald-900/90 p-3 font-mono text-[11px] leading-relaxed text-emerald-50">{CHIRP_SCRIPT_COMMAND}</pre>
+                {chirpExportStatus.message ? (
+                  <p
+                    className={`${
+                      chirpExportStatus.state === 'success'
+                        ? 'text-emerald-700'
+                        : chirpExportStatus.state === 'error'
+                          ? 'text-rose-600'
+                          : 'text-emerald-800'
+                    }`}
+                  >
+                    {chirpExportStatus.message}
+                    {chirpExportStatus.fileName ? ` (${chirpExportStatus.fileName})` : ''}
+                  </p>
+                ) : null}
+                <p className="text-[11px] text-emerald-700">
+                  Manifestul este compatibil cu scriptul{' '}
+                  <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">npm run chirp-pack</code> și poate fi
+                  rerulat oricând pentru a reface clipurile. Pentru regenerare forțată, adaugă opțiunea{' '}
+                  <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">--force</code>.
+                </p>
               </div>
 
               {warmupStatus.message && !isWarmupRunning && (
