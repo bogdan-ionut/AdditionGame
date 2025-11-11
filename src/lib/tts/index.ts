@@ -38,6 +38,15 @@ type WebSpeechPayload = {
 };
 
 const DEFAULT_LANG = "ro-RO";
+const DEFAULT_PROMPT_FLAVOR = "generic.v1";
+const PROMPT_FLAVOR_BY_KIND: Record<string, string> = {
+  problem: "problem.v2",
+  counting: "counting.v1",
+  "mini-lesson": "mini-lesson.v1",
+  praise: "praise.v1",
+  encouragement: "encouragement.v1",
+  hint: "hint.v1",
+};
 const MIN_RATE = 0.1;
 const MAX_RATE = 4;
 const MIN_PITCH = 0;
@@ -51,6 +60,14 @@ function clamp(value: number, min: number, max: number): number {
 
 function toFinite(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? (value as number) : fallback;
+}
+
+function resolvePromptFlavor(kind: string | null | undefined): string {
+  if (!kind) {
+    return DEFAULT_PROMPT_FLAVOR;
+  }
+  const normalized = kind.trim().toLowerCase();
+  return PROMPT_FLAVOR_BY_KIND[normalized] ?? `${normalized}.v1`;
 }
 
 type ServerPlayback = {
@@ -260,12 +277,14 @@ export async function speak({
   const resolvedModel = typeof model === "string" ? model.trim() : null;
   const resolvedModelName = resolvedModel || DEFAULT_TTS_MODEL;
   const resolvedKind = typeof kind === "string" ? kind.trim() : null;
+  const promptFlavor = resolvePromptFlavor(resolvedKind);
 
   const descriptor: TtsDescriptor = {
     text: content,
     lang: normalizedLang,
     voice: trimmedVoice,
     model: resolvedModelName,
+    flavor: promptFlavor,
     rate: Number.isFinite(normalizedRate) ? normalizedRate : 1,
     pitch: Number.isFinite(normalizedPitch) ? normalizedPitch : 1,
     format: (preferredMime || DEFAULT_CACHE_FORMAT) as string,
@@ -313,6 +332,7 @@ export async function speak({
       language: normalizedLang,
       model: resolvedModelName,
       kind: resolvedKind,
+      promptFlavor,
       preferredMime: preferredMime || DEFAULT_CACHE_FORMAT,
       sampleRateHz: typeof sampleRateHz === "number" ? sampleRateHz : undefined,
     });

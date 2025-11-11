@@ -6,6 +6,7 @@ export type TtsDescriptor = {
   lang: string;
   voice: string;
   model: string;
+  flavor: string;
   rate: number;
   pitch: number;
   format: string;
@@ -23,6 +24,7 @@ export type TtsClipRecord = {
     lang: string;
     voice: string;
     model: string;
+    flavor: string;
     rate: number;
     pitch: number;
     format: string;
@@ -343,6 +345,7 @@ function normalizeDescriptor(descriptor: TtsDescriptor): TtsDescriptor {
     lang: descriptor.lang ?? '',
     voice: descriptor.voice ?? '',
     model: descriptor.model ?? '',
+    flavor: descriptor.flavor?.trim() || 'generic.v1',
     rate: Number.isFinite(descriptor.rate) ? Number(descriptor.rate) : 1,
     pitch: Number.isFinite(descriptor.pitch) ? Number(descriptor.pitch) : 1,
     format: descriptor.format?.trim() || DEFAULT_FORMAT,
@@ -407,6 +410,7 @@ export async function storeAudioClip(descriptor: TtsDescriptor, blob: Blob): Pro
   const normalizedLang = normalized.lang.trim().toLowerCase();
   const normalizedVoice = normalized.voice.trim().toLowerCase();
   const normalizedModel = normalized.model.trim().toLowerCase();
+  const normalizedFlavor = normalized.flavor.trim().toLowerCase();
   const record: TtsClipRecord = {
     key,
     bytes: blob.size,
@@ -418,6 +422,7 @@ export async function storeAudioClip(descriptor: TtsDescriptor, blob: Blob): Pro
       lang: normalized.lang,
       voice: normalized.voice,
       model: normalized.model,
+      flavor: normalized.flavor,
       rate: normalized.rate,
       pitch: normalized.pitch,
       format: normalized.format,
@@ -434,11 +439,13 @@ export async function storeAudioClip(descriptor: TtsDescriptor, blob: Blob): Pro
       const valueLang = value.meta?.lang?.trim().toLowerCase() || '';
       const valueVoice = value.meta?.voice?.trim().toLowerCase() || '';
       const valueModel = value.meta?.model?.trim().toLowerCase() || '';
+      const valueFlavor = value.meta?.flavor?.trim().toLowerCase() || '';
       if (
         valueText === normalizedText &&
         valueLang === normalizedLang &&
         valueVoice === normalizedVoice &&
-        valueModel === normalizedModel
+        valueModel === normalizedModel &&
+        valueFlavor === normalizedFlavor
       ) {
         duplicates.push(value);
         await cursor.delete();
