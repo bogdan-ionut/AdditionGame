@@ -2074,6 +2074,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     }
   }, [onOpenAiSettings]);
 
+  const learnerName = gameState?.studentInfo?.name?.trim?.() || null;
+
   const speakProblemDebounced = useCallback(
     (card) => {
       if (!card) return Promise.resolve();
@@ -2082,9 +2084,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         return Promise.resolve();
       }
       narrationCooldownRef.current = now;
-      return speakProblem(card);
+      return speakProblem(card, { studentName: learnerName });
     },
-    [speakProblem],
+    [learnerName, speakProblem],
   );
 
   const { studentInfo } = gameState;

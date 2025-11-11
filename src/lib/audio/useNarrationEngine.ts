@@ -65,6 +65,7 @@ type PlayTextOptions = {
   text: string;
   type?:
     | 'problem'
+    | 'learner-name'
     | 'hint'
     | 'mini-lesson'
     | 'feedback'
@@ -83,6 +84,10 @@ type PlayTextOptions = {
 type ProblemCard = {
   a: number;
   b: number;
+};
+
+type ProblemNarrationOptions = {
+  studentName?: string | null;
 };
 
 type CountingPromptMode = 'prompt' | 'hint';
@@ -424,9 +429,13 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
   );
 
   const speakProblem = useCallback(
-    async (card: ProblemCard) => {
+    async (card: ProblemCard, options: ProblemNarrationOptions = {}) => {
       if (!settings.narrationEnabled) return;
       const question = buildProblemPrompt(card.a, card.b, settings.narrationLanguage);
+      const studentName = options.studentName?.trim();
+      if (studentName) {
+        await speakText({ text: studentName, type: 'learner-name' });
+      }
       await speakText({ text: question, type: 'problem' });
     },
     [settings.narrationEnabled, settings.narrationLanguage, speakText],

@@ -393,6 +393,8 @@ const resolvePromptFlavor = (opts: TtsSynthesizeOptions): string => {
   switch (kind) {
     case 'problem':
       return 'problem.v2';
+    case 'learner-name':
+      return 'learner-name.v1';
     case 'counting':
       return 'counting.v1';
     case 'mini-lesson':
