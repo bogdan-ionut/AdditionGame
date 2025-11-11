@@ -525,6 +525,24 @@ export default function ParentAISettings({ onClose }) {
       if (!file) return;
       setChirpImportStatus({ state: 'loading', message: `Importăm ${file.name}…` });
       try {
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+          throw new Error('Browserul nu permite salvarea automată în directorul proiectului.');
+        }
+
+        let projectDirectory;
+        try {
+          projectDirectory = await window.showDirectoryPicker({
+            id: 'addition-game-project-root',
+            mode: 'readwrite',
+          });
+        } catch (pickerError) {
+          if (pickerError instanceof DOMException && pickerError.name === 'AbortError') {
+            setChirpImportStatus({ state: 'idle', message: null });
+            return;
+          }
+          throw pickerError;
+        }
+
         const contents = await file.text();
         let manifest;
         try {
@@ -535,15 +553,6 @@ export default function ParentAISettings({ onClose }) {
         if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.prompts)) {
           throw new Error('Manifestul nu conține câmpul „prompts”.');
         }
-        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
-          throw new Error('Browserul nu permite salvarea automată în directorul proiectului.');
-        }
-
-        const projectDirectory = await window.showDirectoryPicker({
-          id: 'addition-game-project-root',
-          mode: 'readwrite',
-        });
-
         const manifestHandle = await projectDirectory.getFileHandle(CHIRP_MANIFEST_FILE_NAME, {
           create: true,
         });
