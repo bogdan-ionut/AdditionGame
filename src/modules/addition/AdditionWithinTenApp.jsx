@@ -609,9 +609,9 @@ const computeLearningPathInsights = (gameState) => {
   if (avgTime > 0 && avgTime <= 22) readinessWindow += 1;
   readinessWindow = Math.min(9, Math.max(0, readinessWindow));
 
-  const overrides = new Set();
+  const recommendations = new Set();
   for (let i = 0; i <= readinessWindow; i += 1) {
-    overrides.add(i);
+    recommendations.add(i);
   }
 
   performance.forEach((perf) => {
@@ -626,14 +626,14 @@ const computeLearningPathInsights = (gameState) => {
       masteryPercent: Math.round(masteryPercent),
       accuracy: Math.round(perf.accuracy * 100),
       attempts: perf.attempts,
-      unlockedByPath: overrides.has(perf.number),
+      recommended: recommendations.has(perf.number),
       priority: 0,
       reason: '',
     };
 
-    if (!overrides.has(perf.number) && perf.attempts >= 6 && perf.accuracy >= 0.8) {
-      overrides.add(perf.number);
-      entry.unlockedByPath = true;
+    if (!recommendations.has(perf.number) && perf.attempts >= 6 && perf.accuracy >= 0.8) {
+      recommendations.add(perf.number);
+      entry.recommended = true;
     }
 
     if (entry.level === 'mastered') {
@@ -649,7 +649,7 @@ const computeLearningPathInsights = (gameState) => {
       entry.reason = 'Solid performance—polish accuracy to earn full mastery.';
       entry.priority = 70 - (entry.masteryPercent / 2);
     } else {
-      if (overrides.has(perf.number)) {
+      if (recommendations.has(perf.number)) {
         if (perf.number === highestMastered + 1) {
           entry.reason = 'Next sequential milestone after your latest mastery.';
         } else {
@@ -669,7 +669,7 @@ const computeLearningPathInsights = (gameState) => {
 
   return {
     path: entries,
-    overrides,
+    recommendations,
     highestMastered,
     metrics: {
       overallAccuracy: Math.round(overallAccuracy * 100),
@@ -1301,11 +1301,11 @@ const ModeSelection = ({
   };
   const exitHandler = onExit ?? (() => {});
   const learningInsights = useMemo(() => computeLearningPathInsights(gameState), [gameState]);
-  const overrides = learningInsights.overrides || new Set();
+  const recommendedNumbers = learningInsights.recommendations || new Set();
   const metrics = learningInsights.metrics || { overallAccuracy: 0, streak: 0, avgTime: '0.0' };
   const targetSuccessPercent = Math.round(((aiPersonalization?.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint) * 100));
   const focusRecommendations = (learningInsights.path || [])
-    .filter((entry) => entry.level !== 'mastered' || entry.unlockedByPath)
+    .filter((entry) => entry.level !== 'mastered' || entry.recommended)
     .slice(0, 5);
 
   const additionStages = useMemo(() => {
@@ -1328,6 +1328,24 @@ const ModeSelection = ({
     if (unlocked.length) return unlocked[unlocked.length - 1];
     return additionStages[0];
   }, [additionStages, defaultRangeLimit]);
+
+  const stageMapByAddend = useMemo(() => {
+    const map = new Map();
+    additionStages.forEach((stage) => {
+      stage.addends.forEach((addend) => {
+        map.set(addend, stage);
+      });
+    });
+    return map;
+  }, [additionStages]);
+
+  const stageMapById = useMemo(() => {
+    const map = new Map();
+    additionStages.forEach((stage) => {
+      map.set(stage.id, stage);
+    });
+    return map;
+  }, [additionStages]);
 
   const safeMotifJobState = motifJobState || createDefaultMotifJobState();
 
@@ -1360,13 +1378,52 @@ const ModeSelection = ({
     }
   };
 
-  const isLocked = (n) => {
-    if (overrides?.has(n)) return false;
-    if (n === 0) return false;
-    const prev = gameState.masteryTracking[n - 1];
-    const prevAccuracy = prev && prev.totalAttempts > 0 ? prev.correctAttempts / prev.totalAttempts : 0;
-    return !(prev && (prev.level === 'mastered' || prevAccuracy >= 0.9));
-  };
+  const getLockInfo = useCallback((addend) => {
+    if (!Number.isInteger(addend) || addend <= 0) {
+      return { locked: false, message: '', tooltip: '' };
+    }
+
+    const stage = stageMapByAddend.get(addend);
+    if (!stage) {
+      if (addend <= defaultRangeLimit) {
+        return { locked: false, message: '', tooltip: '' };
+      }
+      const message = `Locked · Complete current stages to reach +${addend}.`;
+      return {
+        locked: true,
+        message,
+        tooltip: message,
+      };
+    }
+
+    if (stage.unlocked) {
+      return { locked: false, message: '', tooltip: '', stage };
+    }
+
+    const unmetPrerequisite = (stage.prerequisites || [])
+      .map((stageId) => stageMapById.get(stageId))
+      .find((prereq) => prereq && !prereq.mastered);
+
+    if (unmetPrerequisite) {
+      const { minAddend, maxAddend, label } = unmetPrerequisite;
+      const rangeLabel = Number.isInteger(minAddend) && Number.isInteger(maxAddend)
+        ? `+${minAddend} through +${maxAddend}`
+        : label || 'the prerequisite stage';
+      const message = `Locked · Master ${rangeLabel} to unlock +${addend}.`;
+      const tooltip = `Master ${rangeLabel} (≥90% accuracy) to unlock this focus number.`;
+      return {
+        locked: true,
+        message,
+        tooltip,
+        stage,
+        blockingStage: unmetPrerequisite,
+      };
+    }
+
+    const fallback = 'Locked until prerequisite stages are mastered.';
+    return { locked: true, message: fallback, tooltip: fallback, stage };
+  }, [defaultRangeLimit, stageMapByAddend, stageMapById]);
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
@@ -1539,6 +1596,8 @@ const ModeSelection = ({
                 'not-started': 'bg-slate-100 text-slate-700 border-slate-300',
               };
               const levelBadgeClass = badgeStyles[item.level] || badgeStyles['not-started'];
+              const recommendationLockInfo = getLockInfo(item.number);
+              const recommendationLocked = recommendationLockInfo.locked;
               return (
                 <div key={`focus-${item.number}`} className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div className="flex-1">
@@ -1554,9 +1613,9 @@ const ModeSelection = ({
                           <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${levelBadgeClass}`}>
                             {item.level.replace('-', ' ')}
                           </span>
-                          {item.unlockedByPath && (
+                          {item.recommended && (
                             <span className="text-xs font-semibold px-2 py-1 rounded-full border bg-green-50 text-green-700 border-green-300">
-                              Path unlocked
+                              AI recommended
                             </span>
                           )}
                         </div>
@@ -1569,8 +1628,16 @@ const ModeSelection = ({
                     </div>
                   </div>
                   <button
-                    onClick={() => onSelectMode(`focus-${item.number}`, item.number)}
-                    className="self-start md:self-center px-5 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition"
+                    onClick={() => {
+                      if (recommendationLocked) {
+                        alert(recommendationLockInfo.message || 'This practice set is locked until prerequisites are mastered.');
+                        return;
+                      }
+                      onSelectMode(`focus-${item.number}`, item.number);
+                    }}
+                    disabled={recommendationLocked}
+                    title={recommendationLocked ? recommendationLockInfo.tooltip : ''}
+                    className={`self-start md:self-center px-5 py-2 rounded-xl font-semibold transition ${recommendationLocked ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                   >
                     Practice +{item.number}
                   </button>
@@ -1821,23 +1888,24 @@ const ModeSelection = ({
               const masteryPercent = mastery && mastery.totalAttempts > 0
                 ? (mastery.correctAttempts / mastery.totalAttempts * 100).toFixed(0)
                 : 0;
-              const locked = isLocked(mode.number);
-              const aiUnlocked =
-                aiRuntime?.aiEnabled && overrides?.has(mode.number) && mode.number > (learningInsights.highestMastered ?? -1) + 1;
+              const lockInfo = getLockInfo(mode.number);
+              const locked = lockInfo.locked;
+              const aiRecommended =
+                aiRuntime?.aiEnabled && recommendedNumbers.has(mode.number) && mode.number > (learningInsights.highestMastered ?? -1) + 1;
 
               return (
                 <button
                   key={mode.id}
                   onClick={() => {
                     if (locked) {
-                      alert(`Locked: master ${mode.number - 1} first (≥90% accuracy).`);
+                      alert(lockInfo.message || 'This practice set is locked. Master the prerequisite path first.');
                       return;
                     }
                     onSelectMode(mode.id, mode.number);
                   }}
                   disabled={locked}
                   className={`relative bg-gradient-to-br from-gray-100 to-gray-200 p-6 rounded-2xl shadow hover:shadow-lg transition-all transform ${locked ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'} border-2 border-gray-300`}
-                  title={locked ? `Requires mastering ${mode.number - 1}` : ''}
+                  title={locked ? lockInfo.tooltip : ''}
                 >
                   <div className="text-4xl font-bold text-gray-800 mb-2">{mode.number}</div>
                   <div className="text-sm text-gray-700 font-medium">+ {mode.number}</div>
@@ -1849,9 +1917,9 @@ const ModeSelection = ({
                   {mastery && mastery.totalAttempts > 0 && (
                     <div className="text-xs text-gray-600 mt-2">{masteryPercent}% mastered</div>
                   )}
-                  {aiUnlocked && (
+                  {aiRecommended && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded-full shadow">
-                      AI Path
+                      AI Recommended
                     </div>
                   )}
                   {locked && (
