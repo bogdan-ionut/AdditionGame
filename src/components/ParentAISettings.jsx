@@ -35,7 +35,6 @@ import {
 import WarmupPromptModal from './WarmupPromptModal';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
-import { canRunChirpPackInBrowser, runChirpPack } from '../services/chirpPack';
 
 const LANGUAGE_OPTIONS = [
   { value: 'ro-RO', label: 'Română (ro-RO)' },
@@ -58,14 +57,6 @@ const DEFAULT_SAMPLE_TEXT =
   'Salut! Sunt Kore, ghidul tău de matematică. Hai să rezolvăm problemele împreună!';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const CHIRP_MANIFEST_FILE_NAME = 'chirp-pack-request.json';
-const CHIRP_SCRIPT_COMMAND =
-  'npm run chirp-pack -- --manifest ./chirp-pack-request.json --out-dir public/audio/ro-RO/chirp3-hd-a';
-const CHIRP_DEFAULT_LANGUAGE = 'ro-RO';
-const CHIRP_DEFAULT_AUDIO_ENCODING = 'MP3';
-const CHIRP_DEFAULT_SAMPLE_RATE = 24000;
-const CHIRP_DEFAULT_VOICE_NAME = 'ro-RO-Chirp3-HD-A';
 
 export default function ParentAISettings({ onClose }) {
   const [audioSettings, setAudioSettings] = useState(() => loadAudioSettings());
@@ -99,41 +90,12 @@ export default function ParentAISettings({ onClose }) {
   const [activeWarmupCategory, setActiveWarmupCategory] = useState(null);
   const [warmupPromptStatuses, setWarmupPromptStatuses] = useState({});
   const [warmupStatusLoadingMap, setWarmupStatusLoadingMap] = useState({});
-  const [chirpExportStatus, setChirpExportStatus] = useState({
-    state: 'idle',
-    message: null,
-    promptCount: 0,
-    fileName: null,
-    timestamp: null,
-  });
-  const [chirpImportStatus, setChirpImportStatus] = useState({
-    state: 'idle',
-    message: null,
-  });
-  const [chirpRunnerStatus, setChirpRunnerStatus] = useState({
-    state: 'idle',
-    message: null,
-    summary: null,
-    manifestPath: null,
-    outputDirectory: null,
-    summaryPath: null,
-    totals: null,
-    stdout: null,
-    stderr: null,
-    startedAt: null,
-    finishedAt: null,
-    summaryError: null,
-  });
-  const [hasChirpManifest, setHasChirpManifest] = useState(false);
-  const [chirpRunnerAvailable, setChirpRunnerAvailable] = useState(() => canRunChirpPackInBrowser());
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
   const warmupControllerRef = useRef(null);
   const warmupStatusRequestsRef = useRef({});
   const warmupActiveCategoriesRef = useRef(new Set());
   const importInputRef = useRef(null);
-  const chirpImportInputRef = useRef(null);
-  const chirpManifestRef = useRef({ manifest: null, fileName: null });
 
   const refreshCacheEntries = useCallback(async () => {
     if (!cacheSupported) {
@@ -157,106 +119,6 @@ export default function ParentAISettings({ onClose }) {
   const refreshCacheSummary = useCallback(() => {
     setCacheSummary(getAudioCacheSummary());
   }, []);
-
-  useEffect(() => {
-    setChirpRunnerAvailable(canRunChirpPackInBrowser());
-  }, []);
-
-  const runChirpPackJob = useCallback(
-    async ({ manifest, manifestFileName, silent = false } = {}) => {
-      if (!manifest || typeof manifest !== 'object') {
-        throw new Error('Manifestul Chirp 3 nu este disponibil.');
-      }
-      const startedAt = new Date().toISOString();
-      setChirpRunnerStatus({
-        state: 'running',
-        message: 'Rulăm scriptul chirp-pack…',
-        summary: null,
-        manifestPath: null,
-        outputDirectory: null,
-        summaryPath: null,
-        totals: null,
-        stdout: null,
-        stderr: null,
-        startedAt,
-        finishedAt: null,
-        summaryError: null,
-      });
-      try {
-        const result = await runChirpPack({ manifest, manifestFileName });
-        const totals = (() => {
-          const total = typeof result.totalClips === 'number' ? result.totalClips : null;
-          const generated = typeof result.generatedClips === 'number' ? result.generatedClips : null;
-          const skipped = typeof result.skippedClips === 'number' ? result.skippedClips : null;
-          if (total === null && generated === null && skipped === null) {
-            if (Array.isArray(result?.summary?.clips)) {
-              return result.summary.clips.reduce(
-                (acc, clip) => {
-                  if (clip && typeof clip === 'object') {
-                    if (clip.skipped) {
-                      acc.skipped += 1;
-                    } else {
-                      acc.generated += 1;
-                    }
-                  }
-                  acc.total += 1;
-                  return acc;
-                },
-                { generated: 0, skipped: 0, total: 0 },
-              );
-            }
-            return null;
-          }
-          return { generated, skipped, total };
-        })();
-        setChirpRunnerStatus({
-          state: 'success',
-          message: result.message || 'Scriptul chirp-pack s-a încheiat.',
-          summary: result.summary ?? null,
-          manifestPath: result.manifestPath ?? null,
-          outputDirectory: result.outputDirectory ?? null,
-          summaryPath: result.summaryPath ?? null,
-          totals,
-          stdout: typeof result.stdout === 'string' ? result.stdout : null,
-          stderr: typeof result.stderr === 'string' ? result.stderr : null,
-          startedAt,
-          finishedAt: result.finishedAt ?? new Date().toISOString(),
-          summaryError:
-            typeof result.summaryError === 'string' && result.summaryError.trim()
-              ? result.summaryError.trim()
-              : null,
-        });
-        if (!silent) {
-          showToast({
-            level: 'success',
-            message: result.message || 'Scriptul chirp-pack a rulat cu succes.',
-          });
-        }
-        return result;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Scriptul chirp-pack a eșuat.';
-        setChirpRunnerStatus({
-          state: 'error',
-          message,
-          summary: null,
-          manifestPath: null,
-          outputDirectory: null,
-          summaryPath: null,
-          totals: null,
-          stdout: null,
-          stderr: null,
-          startedAt,
-          finishedAt: new Date().toISOString(),
-          summaryError: null,
-        });
-        if (!silent) {
-          showToast({ level: 'error', message });
-        }
-        throw error;
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     setVoiceStatus({ state: 'loading', message: null });
@@ -370,28 +232,6 @@ export default function ParentAISettings({ onClose }) {
 
   const warmupSelectionCount = warmupSelectionSummary.categories.length;
   const warmupSelectedPrompts = warmupSelectionSummary.totalPrompts;
-  const chirpRunDisabled =
-    !chirpRunnerAvailable || !hasChirpManifest || chirpRunnerStatus.state === 'running';
-  const chirpRunnerTotalsLabel = useMemo(() => {
-    const totals = chirpRunnerStatus.totals;
-    if (!totals || typeof totals !== 'object') {
-      return null;
-    }
-    const segments = [];
-    if (typeof totals.generated === 'number' && Number.isFinite(totals.generated)) {
-      segments.push(`${totals.generated} generate`);
-    }
-    if (typeof totals.skipped === 'number' && Number.isFinite(totals.skipped)) {
-      segments.push(`${totals.skipped} omise`);
-    }
-    if (typeof totals.total === 'number' && Number.isFinite(totals.total)) {
-      segments.push(`total ${totals.total}`);
-    }
-    if (segments.length === 0) {
-      return null;
-    }
-    return `Clipuri: ${segments.join(' · ')}`;
-  }, [chirpRunnerStatus.totals]);
 
   const cleanupPreview = () => {
     if (previewRef.current.revoke) {
@@ -654,117 +494,6 @@ export default function ParentAISettings({ onClose }) {
       }
     }
   };
-
-  const handleChirpImportClick = useCallback(() => {
-    chirpImportInputRef.current?.click();
-  }, []);
-
-  const handleChirpManifestSelected = useCallback(
-    async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      setChirpImportStatus({ state: 'loading', message: `Importăm ${file.name}…` });
-      try {
-        const contents = await file.text();
-        let manifest;
-        try {
-          manifest = JSON.parse(contents);
-        } catch (parseError) {
-          throw new Error('Fișierul selectat nu conține un JSON valid.');
-        }
-        if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.prompts)) {
-          throw new Error('Manifestul nu conține câmpul „prompts”.');
-        }
-        let savedToDisk = false;
-        let saveError = null;
-
-        if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function') {
-          try {
-            const projectDirectory = await window.showDirectoryPicker({
-              id: 'addition-game-project-root',
-              mode: 'readwrite',
-            });
-            const manifestHandle = await projectDirectory.getFileHandle(CHIRP_MANIFEST_FILE_NAME, {
-              create: true,
-            });
-            const writable = await manifestHandle.createWritable();
-            await writable.write(contents);
-            await writable.close();
-
-            const ensureSubdirectory = async (parent, name) =>
-              parent.getDirectoryHandle(name, { create: true });
-            const publicDir = await ensureSubdirectory(projectDirectory, 'public');
-            const audioDir = await ensureSubdirectory(publicDir, 'audio');
-            const localeDir = await ensureSubdirectory(audioDir, CHIRP_DEFAULT_LANGUAGE);
-            await ensureSubdirectory(localeDir, 'chirp3-hd-a');
-            savedToDisk = true;
-          } catch (pickerError) {
-            if (pickerError instanceof DOMException && pickerError.name === 'AbortError') {
-              setChirpImportStatus({ state: 'idle', message: null });
-              return;
-            }
-            console.warn('Unable to save Chirp manifest to project directory', pickerError);
-            saveError = pickerError instanceof Error ? pickerError : new Error(String(pickerError));
-          }
-        }
-
-        chirpManifestRef.current = { manifest, fileName: file.name };
-        setHasChirpManifest(true);
-
-        let message;
-        if (savedToDisk) {
-          message = `Am salvat ${file.name} în directorul proiectului.`;
-        } else if (saveError) {
-          message =
-            'Manifestul Chirp 3 a fost încărcat, dar nu l-am putut salva automat în directorul proiectului.';
-        } else {
-          message = 'Manifestul Chirp 3 a fost încărcat în aplicație.';
-        }
-
-        setChirpImportStatus({ state: 'success', message });
-        showToast({ level: saveError ? 'warning' : 'success', message });
-
-        try {
-          await runChirpPackJob({ manifest, manifestFileName: file.name });
-        } catch (_) {
-          // Erorile sunt deja comunicate în runChirpPackJob.
-        }
-      } catch (error) {
-        console.error('Unable to import Chirp manifest', error);
-        chirpManifestRef.current = { manifest: null, fileName: null };
-        setHasChirpManifest(false);
-        const message =
-          error instanceof Error ? error.message : 'Nu am putut importa manifestul Chirp 3.';
-        setChirpImportStatus({ state: 'error', message });
-        showToast({ level: 'error', message });
-      } finally {
-        if (event.target) {
-          event.target.value = '';
-        }
-      }
-    },
-    [runChirpPackJob],
-  );
-
-  const handleRunChirpPack = useCallback(async () => {
-    if (chirpRunnerStatus.state === 'running') {
-      showToast({ level: 'info', message: 'Scriptul chirp-pack rulează deja.' });
-      return;
-    }
-    const snapshot = chirpManifestRef.current;
-    if (!snapshot?.manifest || typeof snapshot.manifest !== 'object') {
-      showToast({ level: 'info', message: 'Încarcă sau exportă mai întâi un manifest Chirp 3.' });
-      return;
-    }
-    try {
-      await runChirpPackJob({
-        manifest: snapshot.manifest,
-        manifestFileName: snapshot.fileName || CHIRP_MANIFEST_FILE_NAME,
-      });
-    } catch (_) {
-      // Erorile sunt gestionate în runChirpPackJob.
-    }
-  }, [chirpRunnerStatus.state, runChirpPackJob]);
 
   const handleToggleWarmupOption = (categoryId) => {
     if (isWarmupRunning) return;
@@ -1219,92 +948,6 @@ export default function ParentAISettings({ onClose }) {
     }
     return `Generăm clipuri audio… ${base}.`;
   };
-
-  const handleExportChirpManifest = useCallback(() => {
-    const tasks = collectWarmupTasks({
-      selection: warmupSelection,
-      library: warmupLibrary,
-      language: CHIRP_DEFAULT_LANGUAGE,
-      includeFallbackLanguage: false,
-    });
-
-    if (!tasks.length) {
-      const message = 'Selectează cel puțin un prompt pentru manifestul Chirp 3.';
-      setChirpExportStatus({ state: 'idle', message, promptCount: 0, fileName: null, timestamp: null });
-      showToast({ level: 'info', message });
-      return;
-    }
-
-    const timestamp = new Date();
-    const payload = {
-      version: 1,
-      generatedAt: timestamp.toISOString(),
-      voice: {
-        name: CHIRP_DEFAULT_VOICE_NAME,
-        languageCode: CHIRP_DEFAULT_LANGUAGE,
-        audioEncoding: CHIRP_DEFAULT_AUDIO_ENCODING,
-        sampleRateHertz: CHIRP_DEFAULT_SAMPLE_RATE,
-      },
-      prompts: tasks.map((task) => ({
-        text: task.text,
-        kind: task.kind || 'default',
-        categories: Array.from(new Set((task.prompts || []).map((item) => item.categoryId))),
-        languageCode: CHIRP_DEFAULT_LANGUAGE,
-      })),
-    };
-
-    chirpManifestRef.current = { manifest: payload, fileName: CHIRP_MANIFEST_FILE_NAME };
-    setHasChirpManifest(true);
-
-    try {
-      const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
-        type: 'application/json',
-      });
-      const href = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = href;
-      anchor.download = CHIRP_MANIFEST_FILE_NAME;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(href);
-      const message =
-        tasks.length === 1
-          ? 'Manifestul Chirp 3 conține 1 prompt.'
-          : `Manifestul Chirp 3 conține ${tasks.length} prompturi.`;
-      setChirpExportStatus({
-        state: 'success',
-        message,
-        promptCount: tasks.length,
-        fileName: CHIRP_MANIFEST_FILE_NAME,
-        timestamp: timestamp.toISOString(),
-      });
-      showToast({ level: 'success', message: 'Am descărcat manifestul Chirp 3 (JSON).' });
-    } catch (error) {
-      console.error('Unable to export Chirp manifest', error);
-      setChirpExportStatus({
-        state: 'error',
-        message: 'Nu am putut salva manifestul Chirp 3. Încearcă din nou.',
-        promptCount: tasks.length,
-        fileName: null,
-        timestamp: null,
-      });
-      showToast({ level: 'error', message: 'Nu am putut genera manifestul Chirp 3.' });
-    }
-  }, [warmupLibrary, warmupSelection]);
-
-  const handleCopyChirpCommand = useCallback(async () => {
-    try {
-      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-        throw new Error('clipboard_unavailable');
-      }
-      await navigator.clipboard.writeText(CHIRP_SCRIPT_COMMAND);
-      showToast({ level: 'success', message: 'Comanda a fost copiată în clipboard.' });
-    } catch (error) {
-      console.warn('Unable to copy Chirp command', error);
-      showToast({ level: 'error', message: 'Nu am putut copia comanda. Copiaz-o manual.' });
-    }
-  }, []);
 
   const handleStartWarmup = async () => {
     if (isWarmupRunning) return;
@@ -2186,18 +1829,6 @@ export default function ParentAISettings({ onClose }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleExportChirpManifest}
-                    disabled={warmupSelectedPrompts === 0}
-                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow transition ${
-                      warmupSelectedPrompts === 0
-                        ? 'cursor-not-allowed bg-emerald-200 text-emerald-800'
-                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    }`}
-                  >
-                    Descarcă manifest Chirp 3 (JSON)
-                  </button>
-                  <button
-                    type="button"
                     onClick={handleStartWarmup}
                     disabled={isWarmupRunning || warmupSelectedPrompts === 0}
                     className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow transition ${
@@ -2224,167 +1855,6 @@ export default function ParentAISettings({ onClose }) {
                     </button>
                   )}
                 </div>
-              </div>
-
-              <div className="space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs text-emerald-900">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-semibold text-emerald-900">Script Node pentru pachetul Chirp 3: HD</h4>
-                    <p>
-                      După ce descarci manifestul <span className="font-semibold">{CHIRP_MANIFEST_FILE_NAME}</span>, îl poți importa aici și poți lansa scriptul direct din aplicație. Clipurile generate sunt salvate în{' '}
-                      <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px] text-[11px]">public/audio/ro-RO/chirp3-hd-a</code>.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleRunChirpPack}
-                      disabled={chirpRunDisabled}
-                      title={
-                        !chirpRunnerAvailable
-                          ? 'Rulează scriptul chirp-pack din aplicația locală folosind comanda „npm run chirp-pack”.'
-                          : chirpRunDisabled && !hasChirpManifest
-                              ? 'Încarcă sau exportă un manifest înainte de a rula scriptul.'
-                              : undefined
-                      }
-                      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
-                        chirpRunDisabled
-                          ? 'cursor-not-allowed bg-emerald-200 text-emerald-700'
-                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                      }`}
-                    >
-                      {chirpRunnerStatus.state === 'running' ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Rulăm chirp-pack…
-                        </>
-                      ) : (
-                        'Rulează chirp-pack'
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopyChirpCommand}
-                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
-                    >
-                      Copiază comanda
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleChirpImportClick}
-                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
-                    >
-                      Încarcă manifest existent
-                    </button>
-                    <input
-                      ref={chirpImportInputRef}
-                      type="file"
-                      accept="application/json,.json"
-                      className="hidden"
-                      onChange={handleChirpManifestSelected}
-                    />
-                  </div>
-                  {!chirpRunnerAvailable ? (
-                    <p className="mt-2 max-w-xl text-[11px] leading-relaxed text-emerald-900/80">
-                      Rularea scriptului chirp-pack din interfața web este disponibilă doar când aplicația rulează local
-                      (ex. <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">http://localhost:5173</code>). Descarcă
-                      manifestul și rulează <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">npm run chirp-pack</code>{' '}
-                      din terminal pentru a genera clipurile.
-                    </p>
-                  ) : null}
-                </div>
-                <pre className="overflow-x-auto rounded-xl bg-emerald-900/90 p-3 font-mono text-[11px] leading-relaxed text-emerald-50">{CHIRP_SCRIPT_COMMAND}</pre>
-                {chirpExportStatus.message ? (
-                  <p
-                    className={`${
-                      chirpExportStatus.state === 'success'
-                        ? 'text-emerald-700'
-                        : chirpExportStatus.state === 'error'
-                          ? 'text-rose-600'
-                          : 'text-emerald-800'
-                    }`}
-                  >
-                    {chirpExportStatus.message}
-                    {chirpExportStatus.fileName ? ` (${chirpExportStatus.fileName})` : ''}
-                  </p>
-                ) : null}
-                {chirpImportStatus.message ? (
-                  <p
-                    className={`text-[11px] ${
-                      chirpImportStatus.state === 'success'
-                        ? 'text-emerald-700'
-                        : chirpImportStatus.state === 'error'
-                          ? 'text-rose-600'
-                          : 'text-emerald-800'
-                    }`}
-                  >
-                    {chirpImportStatus.message}
-                  </p>
-                ) : null}
-                {chirpRunnerStatus.message ? (
-                  <div
-                    className={`space-y-1 rounded-xl border p-3 text-[11px] ${
-                      chirpRunnerStatus.state === 'error'
-                        ? 'border-rose-200 bg-rose-50 text-rose-700'
-                        : 'border-emerald-200 bg-white/80 text-emerald-900'
-                    }`}
-                  >
-                    <p
-                      className={`font-semibold ${
-                        chirpRunnerStatus.state === 'error'
-                          ? 'text-rose-600'
-                          : chirpRunnerStatus.state === 'running'
-                            ? 'text-emerald-700'
-                            : 'text-emerald-800'
-                      }`}
-                    >
-                      {chirpRunnerStatus.message}
-                    </p>
-                    {chirpRunnerTotalsLabel ? <p>{chirpRunnerTotalsLabel}</p> : null}
-                    {chirpRunnerStatus.outputDirectory ? (
-                      <p>
-                        Clipuri salvate în{' '}
-                        <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">{chirpRunnerStatus.outputDirectory}</code>
-                      </p>
-                    ) : null}
-                    {chirpRunnerStatus.summaryPath ? (
-                      <p>
-                        Manifest generat:{' '}
-                        <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">{chirpRunnerStatus.summaryPath}</code>
-                      </p>
-                    ) : null}
-                    {chirpRunnerStatus.manifestPath ? (
-                      <p>
-                        Manifest sursă:{' '}
-                        <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">{chirpRunnerStatus.manifestPath}</code>
-                      </p>
-                    ) : null}
-                    {chirpRunnerStatus.summaryError ? (
-                      <p className="text-rose-600">{chirpRunnerStatus.summaryError}</p>
-                    ) : null}
-                    {chirpRunnerStatus.state === 'error' && chirpRunnerStatus.stderr ? (
-                      <details className="space-y-1">
-                        <summary className="cursor-pointer font-semibold text-rose-600">Jurnal eroare</summary>
-                        <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-rose-100 p-2 text-[10px] leading-relaxed text-rose-700">
-                          {chirpRunnerStatus.stderr}
-                        </pre>
-                      </details>
-                    ) : null}
-                    {chirpRunnerStatus.stdout && chirpRunnerStatus.state !== 'running' ? (
-                      <details className="space-y-1">
-                        <summary className="cursor-pointer font-semibold text-emerald-700">Jurnal execuție</summary>
-                        <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-emerald-100 p-2 text-[10px] leading-relaxed text-emerald-800">
-                          {chirpRunnerStatus.stdout}
-                        </pre>
-                      </details>
-                    ) : null}
-                  </div>
-                ) : null}
-                <p className="text-[11px] text-emerald-700">
-                  Manifestul este compatibil cu scriptul{' '}
-                  <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">npm run chirp-pack</code> și poate fi
-                  rerulat oricând pentru a reface clipurile. Pentru regenerare forțată, adaugă opțiunea{' '}
-                  <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">--force</code>.
-                </p>
               </div>
 
               {warmupStatus.message && !isWarmupRunning && (

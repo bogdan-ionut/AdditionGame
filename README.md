@@ -34,6 +34,10 @@ Two folders are available for saving JSON exports or other assets:
 - `public/exports/` – bundled with the static site so files are publicly accessible.
 - `data/exports/` – version-controlled alongside the source but not exposed at runtime.
 
+## Chirp audio generation from Terminal
+
+If you need to pre-generate narration without launching the app, follow the step-by-step guide in [`docs/chirp-cli.md`](docs/chirp-cli.md). It covers installing the prerequisites on macOS, exporting your `OPENAI_API_KEY`, and invoking the `gpt-4o-mini-tts` (Chirp) model via `curl` to save MP3 or WAV clips.
+
 ## Feature Implementation Status
 
 ### Implemented
