@@ -41,6 +41,7 @@ const DEFAULT_LANG = "ro-RO";
 const DEFAULT_PROMPT_FLAVOR = "generic.v1";
 const PROMPT_FLAVOR_BY_KIND: Record<string, string> = {
   problem: "problem.v2",
+  "learner-name": "learner-name.v1",
   counting: "counting.v1",
   "mini-lesson": "mini-lesson.v1",
   praise: "praise.v1",
@@ -381,15 +382,40 @@ export async function speak({
   }
 }
 
+const toLanguageKey = (value: string | null | undefined): string => {
+  if (!value) return "en";
+  return value.split("-")[0]?.toLowerCase() || value.toLowerCase();
+};
+
+const buildStoryReminder = (story: string, language: string | null | undefined): string => {
+  const languageKey = toLanguageKey(language);
+  if (languageKey === "ro") {
+    return ` Gândește-te la povestea noastră: ${story}`;
+  }
+  return ` Think about our story: ${story}`;
+};
+
 export async function speakProblem(
   card: { a: number; b: number },
-  meta: { story?: string | null } = {},
+  meta: { story?: string | null; studentName?: string | null; language?: string | null } = {},
 ): Promise<SpeakResult> {
+  const language = meta.language ?? DEFAULT_LANG;
   const story = meta.story?.trim();
-  const prompt = story
-    ? `Cât face ${card.a} plus ${card.b}? Gândește-te la povestea noastră: ${story}`
-    : `Cât face ${card.a} plus ${card.b}?`;
-  return speak({ text: prompt });
+  const name = meta.studentName?.trim();
+  const baseQuestion = `What is ${card.a} + ${card.b}?`;
+  let prompt = baseQuestion;
+  if (toLanguageKey(language) === "ro") {
+    prompt = `Cât face ${card.a} + ${card.b}?`;
+  }
+  if (story) {
+    prompt = `${prompt}${buildStoryReminder(story, language)}`;
+  }
+
+  if (name) {
+    await speak({ text: name, lang: language, kind: "learner-name" });
+  }
+
+  return speak({ text: prompt, lang: language, kind: "problem" });
 }
 
 export async function speakHint(text: string): Promise<SpeakResult> {
