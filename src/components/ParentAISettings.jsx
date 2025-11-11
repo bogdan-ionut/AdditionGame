@@ -105,12 +105,17 @@ export default function ParentAISettings({ onClose }) {
     fileName: null,
     timestamp: null,
   });
+  const [chirpImportStatus, setChirpImportStatus] = useState({
+    state: 'idle',
+    message: null,
+  });
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
   const warmupControllerRef = useRef(null);
   const warmupStatusRequestsRef = useRef({});
   const warmupActiveCategoriesRef = useRef(new Set());
   const importInputRef = useRef(null);
+  const chirpImportInputRef = useRef(null);
 
   const refreshCacheEntries = useCallback(async () => {
     if (!cacheSupported) {
@@ -509,6 +514,70 @@ export default function ParentAISettings({ onClose }) {
       }
     }
   };
+
+  const handleChirpImportClick = useCallback(() => {
+    chirpImportInputRef.current?.click();
+  }, []);
+
+  const handleChirpManifestSelected = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      setChirpImportStatus({ state: 'loading', message: `Importăm ${file.name}…` });
+      try {
+        const contents = await file.text();
+        let manifest;
+        try {
+          manifest = JSON.parse(contents);
+        } catch (parseError) {
+          throw new Error('Fișierul selectat nu conține un JSON valid.');
+        }
+        if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.prompts)) {
+          throw new Error('Manifestul nu conține câmpul „prompts”.');
+        }
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+          throw new Error('Browserul nu permite salvarea automată în directorul proiectului.');
+        }
+
+        const projectDirectory = await window.showDirectoryPicker({
+          id: 'addition-game-project-root',
+          mode: 'readwrite',
+        });
+
+        const manifestHandle = await projectDirectory.getFileHandle(CHIRP_MANIFEST_FILE_NAME, {
+          create: true,
+        });
+        const writable = await manifestHandle.createWritable();
+        await writable.write(contents);
+        await writable.close();
+
+        const ensureSubdirectory = async (parent, name) => parent.getDirectoryHandle(name, { create: true });
+        const publicDir = await ensureSubdirectory(projectDirectory, 'public');
+        const audioDir = await ensureSubdirectory(publicDir, 'audio');
+        const localeDir = await ensureSubdirectory(audioDir, CHIRP_DEFAULT_LANGUAGE);
+        await ensureSubdirectory(localeDir, 'chirp3-hd-a');
+
+        const message = `Am salvat ${file.name} în directorul proiectului.`;
+        setChirpImportStatus({ state: 'success', message });
+        showToast({ level: 'success', message });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          setChirpImportStatus({ state: 'idle', message: null });
+        } else {
+          console.error('Unable to import Chirp manifest', error);
+          const message =
+            error instanceof Error ? error.message : 'Nu am putut importa manifestul Chirp 3.';
+          setChirpImportStatus({ state: 'error', message });
+          showToast({ level: 'error', message });
+        }
+      } finally {
+        if (event.target) {
+          event.target.value = '';
+        }
+      }
+    },
+    [],
+  );
 
   const handleToggleWarmupOption = (categoryId) => {
     if (isWarmupRunning) return;
@@ -1977,13 +2046,29 @@ export default function ParentAISettings({ onClose }) {
                       <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px] text-[11px]">public/audio/ro-RO/chirp3-hd-a</code>.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyChirpCommand}
-                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
-                  >
-                    Copiază comanda
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyChirpCommand}
+                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                    >
+                      Copiază comanda
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleChirpImportClick}
+                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                    >
+                      Încarcă manifest existent
+                    </button>
+                    <input
+                      ref={chirpImportInputRef}
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      onChange={handleChirpManifestSelected}
+                    />
+                  </div>
                 </div>
                 <pre className="overflow-x-auto rounded-xl bg-emerald-900/90 p-3 font-mono text-[11px] leading-relaxed text-emerald-50">{CHIRP_SCRIPT_COMMAND}</pre>
                 {chirpExportStatus.message ? (
@@ -1998,6 +2083,19 @@ export default function ParentAISettings({ onClose }) {
                   >
                     {chirpExportStatus.message}
                     {chirpExportStatus.fileName ? ` (${chirpExportStatus.fileName})` : ''}
+                  </p>
+                ) : null}
+                {chirpImportStatus.message ? (
+                  <p
+                    className={`text-[11px] ${
+                      chirpImportStatus.state === 'success'
+                        ? 'text-emerald-700'
+                        : chirpImportStatus.state === 'error'
+                          ? 'text-rose-600'
+                          : 'text-emerald-800'
+                    }`}
+                  >
+                    {chirpImportStatus.message}
                   </p>
                 ) : null}
                 <p className="text-[11px] text-emerald-700">
