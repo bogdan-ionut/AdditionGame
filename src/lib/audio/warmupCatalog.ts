@@ -1,8 +1,15 @@
 import { FEEDBACK_MESSAGES, buildCountingPrompt, getAdditionPrompts } from './phrases';
 
-export type WarmupPromptKind = 'praise' | 'encouragement' | 'mini-lesson' | 'problem' | 'counting';
+export type WarmupPromptKind =
+  | 'praise'
+  | 'encouragement'
+  | 'mini-lesson'
+  | 'problem'
+  | 'counting'
+  | 'learner-name';
 
 export type WarmupCategoryId =
+  | 'learner-name'
   | 'praise'
   | 'encouragement'
   | 'mini-lesson'
@@ -38,7 +45,15 @@ export const LANGUAGE_TAGS: Array<{ value: WarmupPromptLanguage; label: string }
   { value: 'ro', label: 'Română (ro)' },
 ];
 
+export const LEARNER_NAME_CATEGORY_ID: WarmupCategoryId = 'learner-name';
+
 export const WARMUP_CATEGORIES: WarmupCategoryDefinition[] = [
+  {
+    id: LEARNER_NAME_CATEGORY_ID,
+    label: 'Nume utilizator',
+    description: 'Pregătește pronunțiile pentru numele copilului, porecle sau alte formule de adresare.',
+    kind: 'learner-name',
+  },
   {
     id: 'praise',
     label: 'Mesaje de felicitare',

@@ -12,7 +12,7 @@ import {
   CheckCircle2,
   CircleSlash2,
 } from 'lucide-react';
-import { LANGUAGE_TAGS } from '../lib/audio/warmupCatalog';
+import { LANGUAGE_TAGS, LEARNER_NAME_CATEGORY_ID } from '../lib/audio/warmupCatalog';
 
 const STATUS_CONFIG = {
   cached: {
@@ -94,6 +94,8 @@ export default function WarmupPromptModal({
       return a.text.localeCompare(b.text);
     });
   }, [prompts]);
+
+  const isLearnerNameCategory = definition?.id === LEARNER_NAME_CATEGORY_ID;
 
   const [isAdding, setIsAdding] = useState(false);
   const [draftText, setDraftText] = useState('');
@@ -216,7 +218,13 @@ export default function WarmupPromptModal({
         </div>
 
         <div className="space-y-4 px-6 py-5">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+          {isLearnerNameCategory ? (
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-700">
+              Adaugă aici toate variantele de nume, porecle sau formule de adresare pentru elev. Selectează-le pentru a
+              genera pronunții dedicate înainte de o sesiune.
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
           <span className="rounded-full bg-indigo-50 px-3 py-1 font-semibold text-indigo-700">
             {selectedCount}/{totalPrompts} prompturi selectate
           </span>
