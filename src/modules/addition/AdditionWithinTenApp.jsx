@@ -478,6 +478,31 @@ const resolveMaxUnlockedAddend = (stageProgress = []) => {
   return unlockedStages.reduce((max, stage) => Math.max(max, stage.maxAddend), unlockedStages[0].maxAddend);
 };
 
+const clampAddendLimit = (value) => {
+  const fallback = ADDITION_STAGE_SEQUENCE[0]?.maxAddend ?? 3;
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(9, value));
+};
+
+const resolveUnlockedAddendLimit = (masteryTracking = {}) => {
+  const stageSnapshot = computeAdditionStageProgress(masteryTracking || {});
+  const rawLimit = resolveMaxUnlockedAddend(stageSnapshot);
+  return clampAddendLimit(rawLimit);
+};
+
+const filterItemsWithinAddendLimit = (items = [], limit) => {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const a = toNumber(item.a);
+    const b = toNumber(item.b);
+    if (a == null || b == null) return false;
+    return a <= limit && b <= limit;
+  });
+};
+
 const findStageById = (stageProgress = [], id) => stageProgress.find((stage) => stage.id === id) || null;
 
 const analyzeNumberPerformance = (gameState) => {
@@ -2290,6 +2315,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       return { reused: true, appended: [] };
     }
 
+    const unlockedAddendLimit = resolveUnlockedAddendLimit(current.masteryTracking || {});
+    const enforceAddendLimit = (items) => filterItemsWithinAddendLimit(items, unlockedAddendLimit);
+
     setAiPlanStatus((prev) => ({ ...prev, loading: true, error: null, source: aiRuntime.aiEnabled ? aiRuntime.planningModel : 'local planner' }));
     let resolvedSource = aiRuntime.aiEnabled ? aiRuntime.planningModel || 'gemini-planner' : 'local planner';
 
@@ -2418,27 +2446,34 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             };
           });
 
+          const limitedNormalized = enforceAddendLimit(normalized);
+          const sanitizedRemotePlan = {
+            ...remotePlan,
+            items: limitedNormalized,
+            microStory: planStory || remotePlan.microStory || remotePlan.story || '',
+          };
+
           setGameState((prev) => {
             const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
             return {
               ...prev,
               aiPersonalization: {
                 ...aiPrev,
-                planQueue: [...(aiPrev.planQueue || []), ...normalized],
+                planQueue: [...(aiPrev.planQueue || []), ...limitedNormalized],
                 lastPlan: {
-                  id: normalized[0]?.planId,
+                  id: limitedNormalized[0]?.planId,
                   generatedAt: Date.now(),
-                  source: normalized[0]?.source,
-                  microStory: normalized[0]?.microStory || '',
-                  itemCount: normalized.length,
-                  metadata: remotePlan.metadata || remotePlan.meta || remotePlan._meta || null,
+                  source: limitedNormalized[0]?.source,
+                  microStory: limitedNormalized[0]?.microStory || planStory || '',
+                  itemCount: limitedNormalized.length,
+                  metadata: sanitizedRemotePlan.metadata || sanitizedRemotePlan.meta || sanitizedRemotePlan._meta || null,
                 },
               },
             };
           });
 
           setAiPlanStatus({ loading: false, error: null, source: planSource });
-          return { reused: false, appended: normalized, plan: remotePlan };
+          return { reused: false, appended: limitedNormalized, plan: sanitizedRemotePlan };
         }
       } catch (error) {
         console.warn('Gemini planning failed, falling back to local planner.', error);
@@ -2459,27 +2494,33 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       now: Date.now(),
     });
 
+    const limitedFallbackItems = enforceAddendLimit(fallbackPlan.items);
+    const sanitizedFallbackPlan = {
+      ...fallbackPlan,
+      items: limitedFallbackItems,
+    };
+
     setGameState((prev) => {
       const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
       return {
         ...prev,
         aiPersonalization: {
           ...aiPrev,
-          planQueue: [...(aiPrev.planQueue || []), ...fallbackPlan.items],
+          planQueue: [...(aiPrev.planQueue || []), ...limitedFallbackItems],
           lastPlan: {
-            id: fallbackPlan.planId,
-            generatedAt: fallbackPlan.generatedAt,
-            source: fallbackPlan.source,
-            microStory: fallbackPlan.story || '',
-            itemCount: fallbackPlan.items.length,
-            metadata: fallbackPlan.metadata || null,
+            id: sanitizedFallbackPlan.planId,
+            generatedAt: sanitizedFallbackPlan.generatedAt,
+            source: sanitizedFallbackPlan.source,
+            microStory: sanitizedFallbackPlan.story || sanitizedFallbackPlan.microStory || '',
+            itemCount: limitedFallbackItems.length,
+            metadata: sanitizedFallbackPlan.metadata || null,
           },
         },
       };
     });
 
     setAiPlanStatus({ loading: false, error: null, source: resolvedSource || 'local planner' });
-    return { reused: false, appended: fallbackPlan.items, plan: fallbackPlan };
+    return { reused: false, appended: limitedFallbackItems, plan: sanitizedFallbackPlan };
   }, [
     aiRuntime.aiEnabled,
     aiRuntime.planningModel,
@@ -2542,23 +2583,40 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const startAiPath = useCallback(async () => {
     const planResult = await ensureAiPlan(false);
     const targetDeckSize = 8;
-    const sessionItems = (() => {
-      const ai = ensurePersonalization(gameStateRef.current.aiPersonalization, gameStateRef.current.studentInfo);
-      const combined = [...(ai.planQueue || [])];
-      if (planResult?.appended?.length) {
-        combined.push(...planResult.appended);
-      }
-      return combined.slice(0, Math.min(targetDeckSize, combined.length));
-    })();
+    const currentState = gameStateRef.current;
+    const unlockedAddendLimit = resolveUnlockedAddendLimit(currentState.masteryTracking || {});
+    const ai = ensurePersonalization(currentState.aiPersonalization, currentState.studentInfo);
+    const combined = [...(ai.planQueue || [])];
+    if (planResult?.appended?.length) {
+      combined.push(...planResult.appended);
+    }
+
+    const filteredCandidates = filterItemsWithinAddendLimit(combined, unlockedAddendLimit);
+    const sessionItems = filteredCandidates.slice(0, Math.min(targetDeckSize, filteredCandidates.length));
+    const remaining = filteredCandidates.slice(sessionItems.length);
+    const hadOutOfRange = combined.length > filteredCandidates.length;
 
     if (!sessionItems.length) {
-      alert('We need a bit more data before the AI path can start. Try a few practice rounds first.');
+      if (hadOutOfRange) {
+        alert('Planul AI e peste nivelul curent. Continuăm cu exerciții potrivite nivelului tău.');
+        setGameState((prev) => {
+          const aiPrev = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
+          return {
+            ...prev,
+            aiPersonalization: {
+              ...aiPrev,
+              planQueue: remaining,
+            },
+          };
+        });
+      } else {
+        alert('We need a bit more data before the AI path can start. Try a few practice rounds first.');
+      }
       return;
     }
 
     setGameState((prev) => {
       const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
-      const remaining = (ai.planQueue || []).slice(sessionItems.length);
       return {
         ...prev,
         aiPersonalization: {
@@ -2582,12 +2640,19 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       story: sessionItems[0]?.microStory || '',
     });
 
-    setCards(sessionItems.map((item) => ({
-      a: item.a,
-      b: item.b,
-      answer: item.answer,
-      aiPlanItem: item,
-    })));
+    setCards(
+      sessionItems.map((item) => {
+        const resolvedA = toNumber(item.a);
+        const resolvedB = toNumber(item.b);
+        const resolvedAnswer = toNumber(item.answer);
+        return {
+          a: resolvedA ?? item.a,
+          b: resolvedB ?? item.b,
+          answer: resolvedAnswer ?? ((resolvedA ?? 0) + (resolvedB ?? 0)),
+          aiPlanItem: item,
+        };
+      }),
+    );
     setRangeLimit(null);
     setActiveStageId(null);
     setGameMode('ai-path');
