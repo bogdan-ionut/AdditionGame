@@ -35,7 +35,7 @@ import {
 import WarmupPromptModal from './WarmupPromptModal';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
 import { showToast } from '../lib/ui/toast';
-import { runChirpPack } from '../services/chirpPack';
+import { canRunChirpPackInBrowser, runChirpPack } from '../services/chirpPack';
 
 const LANGUAGE_OPTIONS = [
   { value: 'ro-RO', label: 'Română (ro-RO)' },
@@ -125,6 +125,7 @@ export default function ParentAISettings({ onClose }) {
     summaryError: null,
   });
   const [hasChirpManifest, setHasChirpManifest] = useState(false);
+  const [chirpRunnerAvailable, setChirpRunnerAvailable] = useState(() => canRunChirpPackInBrowser());
   const previewRef = useRef({ audio: null, revoke: null });
   const entryPreviewRef = useRef({ audio: null, revoke: null, key: null });
   const warmupControllerRef = useRef(null);
@@ -155,6 +156,10 @@ export default function ParentAISettings({ onClose }) {
 
   const refreshCacheSummary = useCallback(() => {
     setCacheSummary(getAudioCacheSummary());
+  }, []);
+
+  useEffect(() => {
+    setChirpRunnerAvailable(canRunChirpPackInBrowser());
   }, []);
 
   const runChirpPackJob = useCallback(
@@ -250,7 +255,7 @@ export default function ParentAISettings({ onClose }) {
         throw error;
       }
     },
-    [showToast],
+    [],
   );
 
   useEffect(() => {
@@ -365,7 +370,8 @@ export default function ParentAISettings({ onClose }) {
 
   const warmupSelectionCount = warmupSelectionSummary.categories.length;
   const warmupSelectedPrompts = warmupSelectionSummary.totalPrompts;
-  const chirpRunDisabled = !hasChirpManifest || chirpRunnerStatus.state === 'running';
+  const chirpRunDisabled =
+    !chirpRunnerAvailable || !hasChirpManifest || chirpRunnerStatus.state === 'running';
   const chirpRunnerTotalsLabel = useMemo(() => {
     const totals = chirpRunnerStatus.totals;
     if (!totals || typeof totals !== 'object') {
@@ -737,7 +743,7 @@ export default function ParentAISettings({ onClose }) {
         }
       }
     },
-    [runChirpPackJob, showToast],
+    [runChirpPackJob],
   );
 
   const handleRunChirpPack = useCallback(async () => {
@@ -758,7 +764,7 @@ export default function ParentAISettings({ onClose }) {
     } catch (_) {
       // Erorile sunt gestionate în runChirpPackJob.
     }
-  }, [chirpRunnerStatus.state, runChirpPackJob, showToast]);
+  }, [chirpRunnerStatus.state, runChirpPackJob]);
 
   const handleToggleWarmupOption = (categoryId) => {
     if (isWarmupRunning) return;
@@ -2235,9 +2241,11 @@ export default function ParentAISettings({ onClose }) {
                       onClick={handleRunChirpPack}
                       disabled={chirpRunDisabled}
                       title={
-                        chirpRunDisabled && !hasChirpManifest
-                          ? 'Încarcă sau exportă un manifest înainte de a rula scriptul.'
-                          : undefined
+                        !chirpRunnerAvailable
+                          ? 'Rulează scriptul chirp-pack din aplicația locală folosind comanda „npm run chirp-pack”.'
+                          : chirpRunDisabled && !hasChirpManifest
+                              ? 'Încarcă sau exportă un manifest înainte de a rula scriptul.'
+                              : undefined
                       }
                       className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
                         chirpRunDisabled
@@ -2275,6 +2283,14 @@ export default function ParentAISettings({ onClose }) {
                       onChange={handleChirpManifestSelected}
                     />
                   </div>
+                  {!chirpRunnerAvailable ? (
+                    <p className="mt-2 max-w-xl text-[11px] leading-relaxed text-emerald-900/80">
+                      Rularea scriptului chirp-pack din interfața web este disponibilă doar când aplicația rulează local
+                      (ex. <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">http://localhost:5173</code>). Descarcă
+                      manifestul și rulează <code className="mx-1 rounded bg-emerald-900/10 px-1 py-[1px]">npm run chirp-pack</code>{' '}
+                      din terminal pentru a genera clipurile.
+                    </p>
+                  ) : null}
                 </div>
                 <pre className="overflow-x-auto rounded-xl bg-emerald-900/90 p-3 font-mono text-[11px] leading-relaxed text-emerald-50">{CHIRP_SCRIPT_COMMAND}</pre>
                 {chirpExportStatus.message ? (

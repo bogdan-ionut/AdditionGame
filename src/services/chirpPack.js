@@ -1,5 +1,37 @@
 const DEFAULT_ENDPOINT = '/api/chirp-pack/run';
 
+const isProbablyLocalEnvironment = () => {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  const { protocol, hostname } = window.location || {};
+
+  if (protocol === 'file:') {
+    return true;
+  }
+
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    return true;
+  }
+
+  if (!hostname) {
+    return true;
+  }
+
+  const normalized = hostname.toLowerCase();
+
+  return (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '[::1]' ||
+    normalized.endsWith('.localhost') ||
+    normalized.endsWith('.local')
+  );
+};
+
+export const canRunChirpPackInBrowser = () => isProbablyLocalEnvironment();
+
 const normalizeOptions = (input) => {
   if (!input || typeof input !== 'object') {
     return {};
@@ -77,6 +109,12 @@ export async function runChirpPack({ manifest, manifestFileName, options } = {})
   }
   if (!Array.isArray(manifest.prompts)) {
     throw new Error('Manifestul Chirp 3 nu conține câmpul "prompts".');
+  }
+
+  if (!canRunChirpPackInBrowser()) {
+    throw new Error(
+      'Rulează scriptul chirp-pack doar din aplicația locală: folosește comanda "npm run chirp-pack" în terminal după ce imporți manifestul.'
+    );
   }
 
   const payload = {
