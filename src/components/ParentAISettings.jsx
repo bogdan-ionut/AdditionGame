@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Loader2, CheckCircle2, Volume2, KeyRound } from 'lucide-react';
+import { X, Loader2, CheckCircle2, Volume2, KeyRound, Circle, Plus } from 'lucide-react';
 import { loadAudioSettings, saveAudioSettings } from '../lib/audio/preferences';
 import {
   CACHE_EVENT_NAME,
@@ -30,6 +30,7 @@ import {
   pruneSelection as pruneWarmupSelection,
   isCategoryModified,
   resetCategoryToDefaults,
+  LEARNER_NAME_CATEGORY_ID,
 } from '../lib/audio/warmupCatalog';
 import WarmupPromptModal from './WarmupPromptModal';
 import { getGeminiApiKey, setGeminiApiKey, clearGeminiApiKey, hasGeminiApiKey } from '../lib/gemini/apiKey';
@@ -622,6 +623,172 @@ export default function ParentAISettings({ onClose }) {
 
   const handleResetPromptCategory = (categoryId) => {
     applyWarmupLibraryUpdate((library) => resetCategoryToDefaults(library, categoryId));
+  };
+
+  const learnerNamePrompts = useMemo(
+    () => warmupLibrary[LEARNER_NAME_CATEGORY_ID] || [],
+    [warmupLibrary],
+  );
+  const learnerNameSelection = warmupSelection[LEARNER_NAME_CATEGORY_ID] || [];
+  const [learnerNameDraft, setLearnerNameDraft] = useState('');
+  const [learnerNameSuggestions, setLearnerNameSuggestions] = useState([]);
+
+  const learnerNamePromptSet = useMemo(() => {
+    const entries = new Set();
+    learnerNamePrompts.forEach((prompt) => {
+      if (prompt?.text) {
+        entries.add(prompt.text.trim().toLowerCase());
+      }
+    });
+    return entries;
+  }, [learnerNamePrompts]);
+
+  const availableLearnerNameSuggestions = useMemo(() => {
+    if (!Array.isArray(learnerNameSuggestions)) {
+      return [];
+    }
+    return learnerNameSuggestions.filter((name) => {
+      if (typeof name !== 'string') return false;
+      const normalized = name.trim().toLowerCase();
+      if (!normalized) return false;
+      return !learnerNamePromptSet.has(normalized);
+    });
+  }, [learnerNamePromptSet, learnerNameSuggestions]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const suggestions = new Set();
+      const { localStorage } = window;
+      const lastUser = localStorage.getItem('additionFlashcardsLastUser');
+      if (typeof lastUser === 'string' && lastUser.trim()) {
+        suggestions.add(lastUser.trim());
+      }
+      const prefix = 'additionFlashcardsGameState_';
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key) continue;
+        if (key.startsWith(prefix)) {
+          const nameFromKey = key.slice(prefix.length).trim();
+          if (nameFromKey) {
+            suggestions.add(nameFromKey);
+          }
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              const storedName = parsed?.studentInfo?.name;
+              if (typeof storedName === 'string' && storedName.trim()) {
+                suggestions.add(storedName.trim());
+              }
+            } catch (error) {
+              console.warn('Unable to parse saved profile for learner names', error);
+            }
+          }
+        }
+      }
+      setLearnerNameSuggestions(
+        Array.from(suggestions)
+          .filter((value) => typeof value === 'string' && value.trim())
+          .map((value) => value.trim())
+          .sort((a, b) => a.localeCompare(b, 'ro')),
+      );
+    } catch (error) {
+      console.warn('Unable to load learner name suggestions', error);
+      setLearnerNameSuggestions([]);
+    }
+  }, []);
+
+  const addLearnerNamePrompt = useCallback(
+    (rawName) => {
+      const trimmed = typeof rawName === 'string' ? rawName.trim() : '';
+      if (!trimmed) {
+        return { added: false, reason: 'empty' };
+      }
+      let createdPrompt = null;
+      let duplicate = false;
+      applyWarmupLibraryUpdate((library) => {
+        const prompts = library[LEARNER_NAME_CATEGORY_ID] || [];
+        const normalized = trimmed.toLowerCase();
+        if (
+          prompts.some((prompt) => typeof prompt.text === 'string' && prompt.text.trim().toLowerCase() === normalized)
+        ) {
+          duplicate = true;
+          return library;
+        }
+        const preferredLanguage =
+          typeof audioSettings.narrationLanguage === 'string' &&
+          audioSettings.narrationLanguage.toLowerCase().startsWith('ro')
+            ? 'ro'
+            : null;
+        const prompt = createCustomPrompt(
+          LEARNER_NAME_CATEGORY_ID,
+          'learner-name',
+          trimmed,
+          preferredLanguage,
+        );
+        createdPrompt = prompt;
+        return {
+          ...library,
+          [LEARNER_NAME_CATEGORY_ID]: [...prompts, prompt],
+        };
+      });
+      if (createdPrompt) {
+        updateWarmupSelection((prev) => {
+          const next = { ...prev };
+          const current = new Set(next[LEARNER_NAME_CATEGORY_ID] || []);
+          current.add(createdPrompt.id);
+          next[LEARNER_NAME_CATEGORY_ID] = Array.from(current);
+          return next;
+        });
+        return { added: true, prompt: createdPrompt };
+      }
+      if (duplicate) {
+        return { added: false, reason: 'duplicate' };
+      }
+      return { added: false, reason: 'unknown' };
+    },
+    [applyWarmupLibraryUpdate, audioSettings.narrationLanguage, updateWarmupSelection],
+  );
+
+  const handleSubmitLearnerName = useCallback(() => {
+    const result = addLearnerNamePrompt(learnerNameDraft);
+    if (result.added && result.prompt) {
+      setLearnerNameDraft('');
+      showToast({ level: 'success', message: `Am adăugat pronunția pentru „${result.prompt.text}”.` });
+      return;
+    }
+    if (result.reason === 'empty') {
+      showToast({ level: 'info', message: 'Scrie un nume înainte de a-l adăuga.' });
+      return;
+    }
+    if (result.reason === 'duplicate') {
+      showToast({ level: 'info', message: 'Acest nume este deja în listă.' });
+    }
+  }, [addLearnerNamePrompt, learnerNameDraft]);
+
+  const handleAddLearnerNameSuggestion = useCallback(
+    (name) => {
+      const result = addLearnerNamePrompt(name);
+      if (result.added && result.prompt) {
+        showToast({ level: 'success', message: `Am adăugat pronunția pentru „${result.prompt.text}”.` });
+        return;
+      }
+      if (result.reason === 'duplicate') {
+        showToast({ level: 'info', message: 'Sugestia este deja în listă.' });
+      }
+    },
+    [addLearnerNamePrompt],
+  );
+
+  const handleDeleteLearnerNamePrompt = (promptId) => {
+    const prompt = learnerNamePrompts.find((item) => item.id === promptId);
+    handleDeletePromptFromCategory(LEARNER_NAME_CATEGORY_ID, promptId);
+    if (prompt?.text) {
+      showToast({ level: 'info', message: `Am eliminat pronunția pentru „${prompt.text}”.` });
+    }
   };
 
   const activeCategoryDefinition = useMemo(
@@ -1379,6 +1546,130 @@ export default function ParentAISettings({ onClose }) {
                 <span className="text-sm font-medium text-rose-600">{previewStatus.message}</span>
               )}
             </div>
+
+            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold text-slate-900">Pronunții pentru numele utilizatorului</h3>
+                  <p className="text-sm text-slate-500">
+                    Adaugă numele copilului, poreclele sau alte moduri în care vrei să-l abordezi. Le poți include la
+                    generarea manuală selectând categoria „Nume utilizator”.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenWarmupCategory(LEARNER_NAME_CATEGORY_ID)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50"
+                >
+                  Gestionează toate
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  htmlFor="learner-name-draft"
+                >
+                  Adaugă nume sau formulă de adresare
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    id="learner-name-draft"
+                    type="text"
+                    value={learnerNameDraft}
+                    onChange={(event) => setLearnerNameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleSubmitLearnerName();
+                      }
+                    }}
+                    placeholder="ex. Andrei, Andru, campionul nostru"
+                    className="w-full rounded-xl border-2 border-slate-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSubmitLearnerName}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-indigo-700"
+                  >
+                    <Plus className="h-4 w-4" /> Adaugă la listă
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Numele adăugate aici sunt păstrate local și pot fi generate împreună cu celelalte clipuri TTS.
+                </p>
+              </div>
+
+              {availableLearnerNameSuggestions.length > 0 ? (
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sugestii din profil</span>
+                  <div className="flex flex-wrap gap-2">
+                    {availableLearnerNameSuggestions.map((name) => (
+                      <button
+                        type="button"
+                        key={name}
+                        onClick={() => handleAddLearnerNameSuggestion(name)}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+                      >
+                        <Plus className="h-3 w-3" /> {name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pronunții salvate</span>
+                {learnerNamePrompts.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {learnerNamePrompts.map((prompt) => {
+                      const isSelected = learnerNameSelection.includes(prompt.id);
+                      return (
+                        <div
+                          key={prompt.id}
+                          className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                            isSelected
+                              ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                              : 'border-slate-200 bg-white text-slate-600'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePromptSelection(LEARNER_NAME_CATEGORY_ID, prompt.id)}
+                            className="flex items-center gap-1 focus:outline-none"
+                            aria-pressed={isSelected}
+                            title={
+                              isSelected
+                                ? 'Elimină din generarea curentă'
+                                : 'Include în generarea curentă'
+                            }
+                          >
+                            {isSelected ? (
+                              <CheckCircle2 className="h-3 w-3" />
+                            ) : (
+                              <Circle className="h-3 w-3 text-slate-400" />
+                            )}
+                            <span>{prompt.text}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLearnerNamePrompt(prompt.id)}
+                            className="rounded-full p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                            title="Șterge"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                    Nu ai adăugat încă pronunții personalizate. Completează numele mai sus pentru a începe.
+                  </div>
+                )}
+              </div>
+            </section>
 
             <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
