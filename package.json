@@ -7,11 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview",
-    "chirp-pack": "node ./scripts/build-chirp-voice-pack.mjs"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^6.4.0",
     "@google/genai": "^1.29.0",
     "fflate": "^0.8.2",
     "idb": "^8.0.3",
