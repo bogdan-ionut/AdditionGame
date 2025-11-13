@@ -2204,17 +2204,16 @@ const ModeSelection = ({
                         </div>
                         {runBadgeSlots && (
                           <div className="flex items-center gap-2 pt-1">
-                            {runBadgeSlots.map((earned, idx) => (
-                              // eslint-disable-next-line react/no-array-index-key
-                              <div
-                                key={idx}
-                                className={`flex h-7 w-7 items-center justify-center rounded-full border ${earned
-                                  ? 'border-emerald-400 bg-emerald-400/90 text-white shadow'
-                                  : 'border-indigo-200 bg-white/80 text-indigo-400'}`}
-                              >
-                                <Sparkles className="h-3.5 w-3.5" />
-                              </div>
-                            ))}
+                              {runBadgeSlots.map((earned, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`flex h-7 w-7 items-center justify-center rounded-full border ${earned
+                                    ? 'border-emerald-400 bg-emerald-400/90 text-white shadow'
+                                    : 'border-indigo-200 bg-white/80 text-indigo-400'}`}
+                                >
+                                  <Sparkles className="h-3.5 w-3.5" />
+                                </div>
+                              ))}
                           </div>
                         )}
                       </div>

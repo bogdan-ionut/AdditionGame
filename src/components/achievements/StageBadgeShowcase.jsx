@@ -6,6 +6,54 @@ import {
 } from 'react';
 import { X, Sparkles, Rocket, Crown, Award, Lock, CircleCheckBig } from 'lucide-react';
 
+const FALLBACK_STAGE_BLUEPRINT = [
+  {
+    id: 'add-up-to-3',
+    label: 'Addition up to 3',
+    description: 'Lock in counting-all strategies using addends from 1 to 3.',
+    maxAddend: 3,
+    minAddend: 1,
+    requiredHighAccuracyRuns: 3,
+    badge: {
+      name: 'Stellar Start',
+      description: 'Perfect hero of the +3 galaxy sprint.',
+      gradient: 'from-amber-300 via-pink-400 to-purple-500',
+      accent: 'text-purple-900',
+      icon: 'Sparkles',
+    },
+  },
+  {
+    id: 'add-up-to-5',
+    label: 'Addition up to 5',
+    description: 'Build confidence with teen totals by adding numbers up to 5.',
+    maxAddend: 5,
+    minAddend: 1,
+    requiredHighAccuracyRuns: 3,
+    badge: {
+      name: 'Orbit Optimizer',
+      description: 'Smooth landings on every +5 mission.',
+      gradient: 'from-sky-300 via-indigo-400 to-purple-600',
+      accent: 'text-indigo-900',
+      icon: 'Rocket',
+    },
+  },
+  {
+    id: 'add-up-to-10',
+    label: 'Addition up to 10',
+    description: 'Finish the within-10 journey with automatic recall of all facts.',
+    maxAddend: 9,
+    minAddend: 1,
+    requiredHighAccuracyRuns: 3,
+    badge: {
+      name: 'Cosmic Crown',
+      description: 'All within-10 facts shine like constellations.',
+      gradient: 'from-fuchsia-400 via-purple-500 to-violet-700',
+      accent: 'text-violet-100',
+      icon: 'Crown',
+    },
+  },
+];
+
 const ICONS = {
   Sparkles,
   Rocket,
@@ -28,9 +76,50 @@ const pickIcon = (iconName) => {
 };
 
 const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
-  const orderedStages = useMemo(() => {
-    return [...stages].sort((a, b) => (a.maxAddend || 0) - (b.maxAddend || 0));
+  const normalizedStages = useMemo(() => {
+    if (Array.isArray(stages) && stages.length > 0) {
+      return stages.map((stage, index) => ({
+        requiredHighAccuracyRuns: stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0,
+        requiredPerfectRuns: stage.requiredPerfectRuns ?? stage.requiredHighAccuracyRuns ?? 0,
+        highAccuracyRuns: stage.highAccuracyRuns ?? stage.perfectRuns ?? 0,
+        unlocked: stage.unlocked ?? index === 0,
+        mastered: Boolean(stage.mastered),
+        accuracyMastered: Boolean(stage.accuracyMastered),
+        meetsHighAccuracyRequirement: Boolean(stage.meetsHighAccuracyRequirement ?? stage.meetsPerfectRunRequirement),
+        progressPercent: Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0,
+        totalStageRuns: Number.isFinite(stage.totalStageRuns)
+          ? stage.totalStageRuns
+          : Number.isFinite(stage.highAccuracyRuns)
+            ? stage.highAccuracyRuns
+            : 0,
+        bestAccuracy: Number.isFinite(stage.bestAccuracy) ? stage.bestAccuracy : null,
+        lastAccuracy: Number.isFinite(stage.lastAccuracy) ? stage.lastAccuracy : null,
+        badgeEarned: Boolean(stage.badgeEarned),
+        ...stage,
+      }));
+    }
+
+    return FALLBACK_STAGE_BLUEPRINT.map((stage, index) => ({
+      ...stage,
+      unlocked: index === 0,
+      mastered: false,
+      accuracyMastered: false,
+      meetsHighAccuracyRequirement: false,
+      progressPercent: 0,
+      totalStageRuns: 0,
+      bestAccuracy: null,
+      lastAccuracy: null,
+      badgeEarned: false,
+      highAccuracyRuns: 0,
+      requiredPerfectRuns: stage.requiredHighAccuracyRuns,
+    }));
   }, [stages]);
+
+  const orderedStages = useMemo(() => {
+    return [...normalizedStages].sort((a, b) => (a.maxAddend || 0) - (b.maxAddend || 0));
+  }, [normalizedStages]);
+
+  const hasProgressData = Array.isArray(stages) && stages.length > 0;
 
   const masteredCount = orderedStages.filter((stage) => stage.mastered).length;
   const totalCount = orderedStages.length;
@@ -123,12 +212,19 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-8 py-6">
+          {!hasProgressData && (
+            <div className="mb-6 rounded-3xl border-2 border-purple-100 bg-white/70 p-6 text-sm text-purple-700 shadow">
+              <p className="font-semibold text-purple-900">Preview the badge journey</p>
+              <p className="mt-1">
+                You haven&apos;t logged any achievements yet, but here&apos;s a peek at every badge waiting to be unlocked.
+                Keep practicing—each stage will glow in full color once you earn it!
+              </p>
+            </div>
+          )}
           {orderedStages.length === 0 ? (
             <div className="rounded-3xl border-2 border-purple-100 bg-white/70 p-8 text-center text-purple-700 shadow">
-              <p className="text-lg font-semibold">No badges earned yet</p>
-              <p className="mt-2 text-sm">
-                Complete your first practice run to start earning mini badges and stage achievements.
-              </p>
+              <p className="text-lg font-semibold">No badges available</p>
+              <p className="mt-2 text-sm">Check back later for new achievements.</p>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2">
@@ -144,6 +240,9 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                 const accuracyPercent = Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0;
                 const mastered = Boolean(stage.mastered);
                 const locked = !stage.unlocked;
+                const lockMessage = locked
+                  ? 'Locked · Earn the previous badge to unlock'
+                  : 'In progress';
                 const badges = miniBadgeRows(stage);
 
                 return (
@@ -159,10 +258,10 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                         <h3 className="text-2xl font-bold text-purple-900">{stage.label}</h3>
                         <p className="text-sm text-purple-800/80">{stage.badge?.description || stage.description}</p>
                       </div>
-                      <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${mastered ? 'bg-emerald-500/20 text-emerald-700' : 'bg-purple-500/15 text-purple-700'}`}>
-                        <BadgeIcon className="h-4 w-4" />
-                        {mastered ? 'Badge unlocked' : 'In progress'}
-                      </div>
+                        <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${mastered ? 'bg-emerald-500/20 text-emerald-700' : 'bg-purple-500/15 text-purple-700'}`}>
+                          <BadgeIcon className="h-4 w-4" />
+                          {mastered ? 'Badge unlocked' : lockMessage}
+                        </div>
                     </div>
                     <div className="rounded-2xl bg-white/80 p-4 shadow-inner">
                       <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
@@ -183,7 +282,6 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                         <div className="mt-4 flex items-center gap-2">
                           {badges.map((earned, idx) => (
                             <div
-                              // eslint-disable-next-line react/no-array-index-key
                               key={idx}
                               className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${earned
                                 ? 'border-emerald-300 bg-emerald-400/90 text-white shadow'
@@ -203,7 +301,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                       <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm">
                         <div className="flex items-center gap-2 rounded-full border-2 border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-700">
                           <Lock size={16} />
-                          Locked until badge earned
+                          Earn the previous badge to unlock
                         </div>
                       </div>
                     )}
