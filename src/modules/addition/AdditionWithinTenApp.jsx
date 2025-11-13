@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, Lock, Sparkles, Rocket, Crown, Award, PartyPopper } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, Lock, Sparkles, Rocket, Crown, Award, PartyPopper, Gem } from 'lucide-react';
 import StageBadgeShowcase from '../../components/achievements/StageBadgeShowcase.jsx';
 import ConfettiBurst from '../../components/achievements/ConfettiBurst.jsx';
 import NextUpCard from '../../components/NextUpCard';
@@ -382,11 +382,32 @@ const ADDITION_STAGE_SEQUENCE = [
     masteryThreshold: 0.9,
     requiredPerfectRuns: 3,
     badge: {
-      name: 'Stellar Start',
-      description: 'Perfect hero of the +3 galaxy sprint.',
-      gradient: 'from-amber-300 via-pink-400 to-purple-500',
-      accent: 'text-purple-900',
+      name: 'Aurora Initiate',
+      description: 'Ignite the nebula ring with fearless +3 adventures.',
+      gradient: 'from-amber-300 via-rose-400 to-fuchsia-500',
+      accent: 'text-rose-900',
       icon: 'Sparkles',
+      cardGradient: 'from-rose-50 via-amber-50/70 to-purple-50',
+      haloGradient: 'from-amber-200/90 via-rose-300/60 to-purple-300/70',
+      coreGradient: 'from-amber-400 via-rose-500 to-purple-600',
+      innerGlowGradient: 'from-white/85 via-rose-200/50 to-transparent',
+      frameColor: 'border-amber-100/80',
+      pattern:
+        'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.85), rgba(255,255,255,0) 55%), radial-gradient(circle at 80% 35%, rgba(255,255,255,0.35), rgba(255,255,255,0) 60%)',
+      ribbonGradient: 'from-amber-400 via-rose-500 to-purple-600',
+      sparkleGradientEarned: 'linear-gradient(135deg, #fde68a 0%, #f472b6 45%, #7c3aed 100%)',
+      sparkleGradientLocked: 'linear-gradient(135deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.2) 100%)',
+      sparkleShadow: 'rgba(244,114,182,0.45)',
+      sparklePalette: ['rgba(251,191,36,0.6)', 'rgba(244,114,182,0.55)', 'rgba(167,139,250,0.5)'],
+      progressGradient: 'from-amber-400 via-rose-500 to-purple-600',
+      runProgressGradient: 'from-emerald-400 via-emerald-500 to-teal-400',
+      beamGradient: 'from-amber-200/80 via-rose-200/50 to-transparent',
+      iconColor: 'text-white',
+      iconBackdrop: 'bg-white/20',
+      iconRing: 'ring-2 ring-rose-100/70',
+      iconShadow: 'drop-shadow-[0_6px_12px_rgba(225,29,72,0.45)]',
+      cardBorder: 'border-rose-200/70',
+      shadow: 'shadow-[0_24px_50px_rgba(244,114,182,0.25)]',
     },
   },
   {
@@ -400,11 +421,32 @@ const ADDITION_STAGE_SEQUENCE = [
     prerequisites: ['add-up-to-3'],
     requiredPerfectRuns: 3,
     badge: {
-      name: 'Orbit Optimizer',
-      description: 'Smooth landings on every +5 mission.',
-      gradient: 'from-sky-300 via-indigo-400 to-purple-600',
+      name: 'Nebula Navigator',
+      description: 'Chart shimmering pathways through every +5 combination.',
+      gradient: 'from-sky-300 via-indigo-500 to-purple-700',
       accent: 'text-indigo-900',
       icon: 'Rocket',
+      cardGradient: 'from-sky-50 via-indigo-50/80 to-purple-50',
+      haloGradient: 'from-sky-200/80 via-indigo-300/50 to-purple-400/60',
+      coreGradient: 'from-sky-400 via-indigo-500 to-purple-600',
+      innerGlowGradient: 'from-white/80 via-sky-200/50 to-transparent',
+      frameColor: 'border-sky-100/80',
+      pattern:
+        'radial-gradient(circle at 25% 25%, rgba(255,255,255,0.75), rgba(255,255,255,0) 55%), radial-gradient(circle at 70% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 60%)',
+      ribbonGradient: 'from-sky-400 via-indigo-500 to-purple-700',
+      sparkleGradientEarned: 'linear-gradient(135deg, #bae6fd 0%, #60a5fa 40%, #a855f7 100%)',
+      sparkleGradientLocked: 'linear-gradient(135deg, rgba(255,255,255,0.65) 0%, rgba(209,213,219,0.35) 100%)',
+      sparkleShadow: 'rgba(96,165,250,0.4)',
+      sparklePalette: ['rgba(125,211,252,0.55)', 'rgba(99,102,241,0.5)', 'rgba(129,140,248,0.45)'],
+      progressGradient: 'from-sky-400 via-indigo-500 to-purple-600',
+      runProgressGradient: 'from-cyan-400 via-sky-400 to-emerald-400',
+      beamGradient: 'from-sky-200/80 via-indigo-200/50 to-transparent',
+      iconColor: 'text-white',
+      iconBackdrop: 'bg-white/25',
+      iconRing: 'ring-2 ring-sky-100/70',
+      iconShadow: 'drop-shadow-[0_6px_12px_rgba(30,64,175,0.5)]',
+      cardBorder: 'border-sky-200/70',
+      shadow: 'shadow-[0_24px_50px_rgba(79,70,229,0.28)]',
     },
   },
   {
@@ -418,11 +460,32 @@ const ADDITION_STAGE_SEQUENCE = [
     prerequisites: ['add-up-to-5'],
     requiredPerfectRuns: 3,
     badge: {
-      name: 'Cosmic Crown',
-      description: 'All within-10 facts shine like constellations.',
+      name: 'Celestial Laureate',
+      description: 'Crown every within-10 fact with radiant automaticity.',
       gradient: 'from-fuchsia-400 via-purple-500 to-violet-700',
-      accent: 'text-violet-100',
-      icon: 'Crown',
+      accent: 'text-violet-900',
+      icon: 'Gem',
+      cardGradient: 'from-violet-50 via-fuchsia-50/80 to-indigo-50',
+      haloGradient: 'from-fuchsia-200/80 via-purple-300/60 to-indigo-400/70',
+      coreGradient: 'from-fuchsia-400 via-purple-500 to-violet-600',
+      innerGlowGradient: 'from-white/85 via-fuchsia-200/50 to-transparent',
+      frameColor: 'border-fuchsia-100/80',
+      pattern:
+        'radial-gradient(circle at 28% 22%, rgba(255,255,255,0.8), rgba(255,255,255,0) 55%), radial-gradient(circle at 70% 35%, rgba(255,255,255,0.4), rgba(255,255,255,0) 60%)',
+      ribbonGradient: 'from-fuchsia-500 via-purple-600 to-violet-700',
+      sparkleGradientEarned: 'linear-gradient(135deg, #f5d0fe 0%, #f472b6 35%, #6366f1 100%)',
+      sparkleGradientLocked: 'linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(214,188,250,0.35) 100%)',
+      sparkleShadow: 'rgba(192,132,252,0.45)',
+      sparklePalette: ['rgba(251,207,232,0.6)', 'rgba(196,181,253,0.55)', 'rgba(244,114,182,0.55)'],
+      progressGradient: 'from-fuchsia-400 via-purple-500 to-indigo-600',
+      runProgressGradient: 'from-emerald-400 via-teal-400 to-cyan-400',
+      beamGradient: 'from-fuchsia-200/80 via-purple-200/50 to-transparent',
+      iconColor: 'text-white',
+      iconBackdrop: 'bg-white/25',
+      iconRing: 'ring-2 ring-fuchsia-100/70',
+      iconShadow: 'drop-shadow-[0_6px_14px_rgba(134,25,143,0.5)]',
+      cardBorder: 'border-fuchsia-200/70',
+      shadow: 'shadow-[0_24px_55px_rgba(162,28,175,0.28)]',
     },
   },
 ];
@@ -434,6 +497,7 @@ const BADGE_ICON_MAP = {
   Trophy,
   Award,
   PartyPopper,
+  Gem,
 };
 
 const parseCounter = (value) => {
@@ -1412,69 +1476,6 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
             </div>
         </div>
       </div>
-      {achievementsOpen && (
-        <StageBadgeShowcase
-          stages={additionStages}
-          runThresholdPercent={HIGH_ACCURACY_RUN_PERCENT}
-          onClose={() => onCloseAchievements?.()}
-        />
-      )}
-      {badgeSpotlight && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-6">
-          <div
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-            onClick={handleCloseSpotlight}
-          />
-          <div
-            className={`relative z-10 w-full max-w-lg rounded-3xl border-4 border-purple-200 p-8 text-center shadow-2xl bg-gradient-to-br ${
-              badgeSpotlight.gradient || 'from-purple-200 via-pink-200 to-indigo-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={handleCloseSpotlight}
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
-              aria-label="Close badge celebration"
-            >
-              <X size={20} />
-            </button>
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/85 shadow-inner">
-              <SpotlightIcon size={40} className="text-purple-700" />
-            </div>
-            <h3 className="text-3xl font-extrabold text-purple-900 drop-shadow">{badgeSpotlight.badgeName}</h3>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.25em] text-purple-800">{badgeSpotlight.stageLabel}</p>
-            {badgeSpotlight.description && (
-              <p className="mt-4 text-base text-purple-900/90">{badgeSpotlight.description}</p>
-            )}
-            <p className="mt-4 text-sm font-semibold text-purple-900">
-              <span className="inline-flex items-center gap-2">
-                <PartyPopper size={18} />
-                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns} high-accuracy runs ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% complete
-              </span>
-            </p>
-            <p className="mt-2 text-xs text-purple-900/70">
-              Keep weaving confident check-ins to keep your cosmic badge glowing bright.
-            </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <button
-                type="button"
-                onClick={handleViewAchievements}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/90 px-5 py-3 text-sm font-semibold text-purple-700 shadow hover:bg-white"
-              >
-                <Award size={18} />
-                View achievements
-              </button>
-              <button
-                type="button"
-                onClick={handleCloseSpotlight}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-white/70 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-white/10"
-              >
-                Keep practicing
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   </div>
 );
@@ -1548,11 +1549,6 @@ const ModeSelection = ({
   const handleCloseSpotlight = useCallback(() => {
     onDismissBadgeSpotlight?.();
   }, [onDismissBadgeSpotlight]);
-
-  const spotlightStage = useMemo(() => {
-    if (!badgeSpotlight) return null;
-    return additionStages.find((stage) => stage.id === badgeSpotlight.stageId) || null;
-  }, [additionStages, badgeSpotlight]);
 
   const SpotlightIcon = badgeSpotlight?.icon && BADGE_ICON_MAP[badgeSpotlight.icon]
     ? BADGE_ICON_MAP[badgeSpotlight.icon]
@@ -2310,6 +2306,69 @@ const ModeSelection = ({
           </div>
         </div>
       </div>
+      {achievementsOpen && (
+        <StageBadgeShowcase
+          stages={additionStages}
+          runThresholdPercent={HIGH_ACCURACY_RUN_PERCENT}
+          onClose={() => onCloseAchievements?.()}
+        />
+      )}
+      {badgeSpotlight && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={handleCloseSpotlight}
+          />
+          <div
+            className={`relative z-10 w-full max-w-lg rounded-3xl border-4 border-purple-200 p-8 text-center shadow-2xl bg-gradient-to-br ${
+              badgeSpotlight.gradient || 'from-purple-200 via-pink-200 to-indigo-200'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={handleCloseSpotlight}
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
+              aria-label="Close badge celebration"
+            >
+              <X size={20} />
+            </button>
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/85 shadow-inner">
+              <SpotlightIcon size={40} className="text-purple-700" />
+            </div>
+            <h3 className="text-3xl font-extrabold text-purple-900 drop-shadow">{badgeSpotlight.badgeName}</h3>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.25em] text-purple-800">{badgeSpotlight.stageLabel}</p>
+            {badgeSpotlight.description && (
+              <p className="mt-4 text-base text-purple-900/90">{badgeSpotlight.description}</p>
+            )}
+            <p className="mt-4 text-sm font-semibold text-purple-900">
+              <span className="inline-flex items-center gap-2">
+                <PartyPopper size={18} />
+                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns} high-accuracy runs ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% complete
+              </span>
+            </p>
+            <p className="mt-2 text-xs text-purple-900/70">
+              Keep weaving confident check-ins to keep your cosmic badge glowing bright.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <button
+                type="button"
+                onClick={handleViewAchievements}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/90 px-5 py-3 text-sm font-semibold text-purple-700 shadow hover:bg-white"
+              >
+                <Award size={18} />
+                View achievements
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseSpotlight}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-white/70 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-white/10"
+              >
+                Keep practicing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
