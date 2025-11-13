@@ -1,4 +1,9 @@
-import { useMemo } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { X, Sparkles, Rocket, Crown, Award, Lock, CircleCheckBig } from 'lucide-react';
 
 const ICONS = {
@@ -30,6 +35,52 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
   const masteredCount = orderedStages.filter((stage) => stage.mastered).length;
   const totalCount = orderedStages.length;
 
+  const [allowClose, setAllowClose] = useState(false);
+
+  useEffect(() => {
+    let frameId = null;
+    if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+      frameId = window.requestAnimationFrame(() => setAllowClose(true));
+    } else {
+      frameId = setTimeout(() => setAllowClose(true), 0);
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.cancelAnimationFrame && frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      } else if (frameId != null) {
+        clearTimeout(frameId);
+      }
+    };
+  }, []);
+
+  const handleRequestClose = useCallback(() => {
+    if (!allowClose) return;
+    onClose?.();
+  }, [allowClose, onClose]);
+
+  const handleBackdropClick = useCallback(
+    (event) => {
+      if (!allowClose) return;
+      if (event.target === event.currentTarget) {
+        handleRequestClose();
+      }
+    },
+    [allowClose, handleRequestClose],
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        handleRequestClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleRequestClose]);
+
   const miniBadgeRows = (stage) => {
     const target = stage?.requiredHighAccuracyRuns ?? stage?.requiredPerfectRuns ?? 0;
     if (!target || target <= 0) return null;
@@ -38,10 +89,15 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+    >
       <div
         className="absolute inset-0 bg-slate-900/70 backdrop-blur"
-        onClick={() => onClose?.()}
+        aria-hidden="true"
+        onMouseDown={handleBackdropClick}
       />
       <div className="relative z-10 w-full max-w-4xl overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
         <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 px-8 py-6 text-white">
@@ -59,7 +115,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
           </div>
           <button
             type="button"
-            onClick={() => onClose?.()}
+            onClick={handleRequestClose}
             className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
             aria-label="Close achievements"
           >
