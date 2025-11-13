@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, Lock } from 'lucide-react';
+import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, Lock, Sparkles, Rocket, Crown, Award, PartyPopper } from 'lucide-react';
+import StageBadgeShowcase from '../../components/achievements/StageBadgeShowcase.jsx';
 import NextUpCard from '../../components/NextUpCard';
 import {
   ensurePersonalization,
@@ -293,6 +294,9 @@ const createDefaultGameState = () => ({
     lastPlan: null,
     sessionAttempts: [],
   },
+  achievements: {
+    stageBadges: {},
+  },
   sessionData: {
     currentSession: {
       startTime: null,
@@ -316,6 +320,14 @@ const migrateGameState = (raw) => {
       raw?.aiPersonalization,
       raw?.studentInfo ?? base.studentInfo,
     ),
+    achievements: {
+      ...base.achievements,
+      ...(raw?.achievements || {}),
+      stageBadges: {
+        ...(base.achievements?.stageBadges || {}),
+        ...(raw?.achievements?.stageBadges || {}),
+      },
+    },
     sessionData: { ...base.sessionData, ...(raw?.sessionData || {}) },
   };
   // ensure arrays and maps exist
@@ -355,6 +367,14 @@ const ADDITION_STAGE_SEQUENCE = [
     maxAddend: 3,
     minAddend: 1,
     masteryThreshold: 0.9,
+    requiredPerfectRuns: 3,
+    badge: {
+      name: 'Stellar Start',
+      description: 'Perfect hero of the +3 galaxy sprint.',
+      gradient: 'from-amber-300 via-pink-400 to-purple-500',
+      accent: 'text-purple-900',
+      icon: 'Sparkles',
+    },
   },
   {
     id: 'add-up-to-5',
@@ -365,6 +385,14 @@ const ADDITION_STAGE_SEQUENCE = [
     minAddend: 1,
     masteryThreshold: 0.9,
     prerequisites: ['add-up-to-3'],
+    requiredPerfectRuns: 3,
+    badge: {
+      name: 'Orbit Optimizer',
+      description: 'Smooth landings on every +5 mission.',
+      gradient: 'from-sky-300 via-indigo-400 to-purple-600',
+      accent: 'text-indigo-900',
+      icon: 'Rocket',
+    },
   },
   {
     id: 'add-up-to-10',
@@ -375,8 +403,25 @@ const ADDITION_STAGE_SEQUENCE = [
     minAddend: 1,
     masteryThreshold: 0.9,
     prerequisites: ['add-up-to-5'],
+    requiredPerfectRuns: 3,
+    badge: {
+      name: 'Cosmic Crown',
+      description: 'All within-10 facts shine like constellations.',
+      gradient: 'from-fuchsia-400 via-purple-500 to-violet-700',
+      accent: 'text-violet-100',
+      icon: 'Crown',
+    },
   },
 ];
+
+const BADGE_ICON_MAP = {
+  Sparkles,
+  Rocket,
+  Crown,
+  Trophy,
+  Award,
+  PartyPopper,
+};
 
 const computeNumberMasteryPercent = (node) => {
   if (!node || typeof node !== 'object') return 0;
@@ -386,7 +431,7 @@ const computeNumberMasteryPercent = (node) => {
   return (correct / attempts) * 100;
 };
 
-const computeAdditionStageProgress = (masteryTracking = {}) => {
+const computeAdditionStageProgress = (masteryTracking = {}, stageAchievements = {}) => {
   const stages = [];
 
   ADDITION_STAGE_SEQUENCE.forEach((stageConfig, index) => {
@@ -399,6 +444,8 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
       minAddend = 1,
       masteryThreshold = 0.9,
       prerequisites = [],
+      requiredPerfectRuns = 0,
+      badge = null,
     } = stageConfig;
 
     const addends = [];
@@ -460,10 +507,19 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
       ? Math.round(summary.percentSum / addends.length)
       : 0;
 
-    const stageMastered = addends.length > 0
+    const accuracyMastered = addends.length > 0
       && summary.blockerCount === 0
       && summary.unseenCount === 0
       && summary.masteredCount === addends.length;
+
+    const stageBadge = stageAchievements?.[id] || {};
+    const perfectRuns = Math.max(0, Number.isFinite(stageBadge.perfectRuns) ? stageBadge.perfectRuns : (parseInt(stageBadge.perfectRuns, 10) || 0));
+    const totalStageRuns = Math.max(0, Number.isFinite(stageBadge.attempts) ? stageBadge.attempts : (parseInt(stageBadge.attempts, 10) || 0));
+    const lastAccuracy = Number.isFinite(stageBadge.lastAccuracy) ? stageBadge.lastAccuracy : null;
+    const bestAccuracy = Number.isFinite(stageBadge.bestAccuracy) ? stageBadge.bestAccuracy : null;
+    const meetsPerfectRunRequirement = requiredPerfectRuns <= 0 || perfectRuns >= requiredPerfectRuns;
+    const stageMastered = accuracyMastered && meetsPerfectRunRequirement;
+    const badgeEarnedAt = Number.isFinite(stageBadge.badgeEarnedAt) ? stageBadge.badgeEarnedAt : stageBadge.badgeEarnedAt || null;
 
     const prerequisitesMet = prerequisites.every((reqId) => {
       const prerequisiteStage = stages.find((entry) => entry.id === reqId);
@@ -485,6 +541,8 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
       unlocked,
       prerequisitesMet,
       mastered: stageMastered,
+      accuracyMastered,
+      meetsPerfectRunRequirement,
       progressPercent: avgPercent,
       totalAttempts: summary.totalAttempts,
       totalCorrect: summary.totalCorrect,
@@ -494,6 +552,14 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
       blockerCount: summary.blockerCount,
       unseenCount: summary.unseenCount,
       highestMasteredAddend: summary.highestMasteredAddend,
+      perfectRuns,
+      requiredPerfectRuns,
+      badge,
+      badgeEarned: Boolean(badgeEarnedAt),
+      badgeEarnedAt,
+      totalStageRuns,
+      lastAccuracy,
+      bestAccuracy,
     });
   });
 
@@ -516,8 +582,8 @@ const clampAddendLimit = (value) => {
   return Math.max(0, Math.min(9, value));
 };
 
-const resolveUnlockedAddendLimit = (masteryTracking = {}) => {
-  const stageSnapshot = computeAdditionStageProgress(masteryTracking || {});
+const resolveUnlockedAddendLimit = (masteryTracking = {}, stageAchievements = {}) => {
+  const stageSnapshot = computeAdditionStageProgress(masteryTracking || {}, stageAchievements || {});
   const rawLimit = resolveMaxUnlockedAddend(stageSnapshot);
   return clampAddendLimit(rawLimit);
 };
@@ -1312,11 +1378,73 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
                 <p className="text-gray-600 text-center py-4">🎉 No struggles detected! Excellent work!</p>
               )}
             </div>
-          </div>
         </div>
       </div>
+      {achievementsOpen && (
+        <StageBadgeShowcase
+          stages={additionStages}
+          onClose={() => onCloseAchievements?.()}
+        />
+      )}
+      {badgeSpotlight && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={handleCloseSpotlight}
+          />
+          <div
+            className={`relative z-10 w-full max-w-lg rounded-3xl border-4 border-purple-200 p-8 text-center shadow-2xl bg-gradient-to-br ${
+              badgeSpotlight.gradient || 'from-purple-200 via-pink-200 to-indigo-200'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={handleCloseSpotlight}
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
+              aria-label="Close badge celebration"
+            >
+              <X size={20} />
+            </button>
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/85 shadow-inner">
+              <SpotlightIcon size={40} className="text-purple-700" />
+            </div>
+            <h3 className="text-3xl font-extrabold text-purple-900 drop-shadow">{badgeSpotlight.badgeName}</h3>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.25em] text-purple-800">{badgeSpotlight.stageLabel}</p>
+            {badgeSpotlight.description && (
+              <p className="mt-4 text-base text-purple-900/90">{badgeSpotlight.description}</p>
+            )}
+            <p className="mt-4 text-sm font-semibold text-purple-900">
+              <span className="inline-flex items-center gap-2">
+                <PartyPopper size={18} />
+                {badgeSpotlight.perfectRuns}/{badgeSpotlight.requiredPerfectRuns} perfect runs complete
+              </span>
+            </p>
+            <p className="mt-2 text-xs text-purple-900/70">
+              Keep the streak alive with gentle review runs to keep your cosmic badge glowing.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <button
+                type="button"
+                onClick={handleViewAchievements}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/90 px-5 py-3 text-sm font-semibold text-purple-700 shadow hover:bg-white"
+              >
+                <Award size={18} />
+                View achievements
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseSpotlight}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-white/70 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-white/10"
+              >
+                Keep practicing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 };
 
 // Mode selection screen (with Mastery Gates)
@@ -1344,6 +1472,11 @@ const ModeSelection = ({
   aiBadgeActive,
   narrationNotice,
   stageProgress,
+  achievementsOpen,
+  onOpenAchievements,
+  onCloseAchievements,
+  badgeSpotlight,
+  onDismissBadgeSpotlight,
 }) => {
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
@@ -1367,8 +1500,29 @@ const ModeSelection = ({
     if (Array.isArray(stageProgress) && stageProgress.length) {
       return stageProgress;
     }
-    return computeAdditionStageProgress(gameState?.masteryTracking || {});
-  }, [gameState?.masteryTracking, stageProgress]);
+    return computeAdditionStageProgress(
+      gameState?.masteryTracking || {},
+      gameState?.achievements?.stageBadges || {},
+    );
+  }, [gameState?.achievements?.stageBadges, gameState?.masteryTracking, stageProgress]);
+
+  const handleViewAchievements = useCallback(() => {
+    onOpenAchievements?.();
+    onDismissBadgeSpotlight?.();
+  }, [onDismissBadgeSpotlight, onOpenAchievements]);
+
+  const handleCloseSpotlight = useCallback(() => {
+    onDismissBadgeSpotlight?.();
+  }, [onDismissBadgeSpotlight]);
+
+  const spotlightStage = useMemo(() => {
+    if (!badgeSpotlight) return null;
+    return additionStages.find((stage) => stage.id === badgeSpotlight.stageId) || null;
+  }, [additionStages, badgeSpotlight]);
+
+  const SpotlightIcon = badgeSpotlight?.icon && BADGE_ICON_MAP[badgeSpotlight.icon]
+    ? BADGE_ICON_MAP[badgeSpotlight.icon]
+    : Sparkles;
 
   const defaultRangeLimit = useMemo(
     () => resolveMaxUnlockedAddend(additionStages),
@@ -1562,6 +1716,14 @@ const ModeSelection = ({
           >
             <Download className="text-green-600" size={20} />
             <span className="font-semibold">Export Progress</span>
+          </button>
+
+          <button
+            onClick={() => onOpenAchievements?.()}
+            className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-purple-200"
+          >
+            <Award className="text-purple-600" size={20} />
+            <span className="font-semibold">Achievements &amp; Badges</span>
           </button>
 
           <button
@@ -1877,10 +2039,26 @@ const ModeSelection = ({
                   .map((id) => additionStages.find((entry) => entry.id === id))
                   .find(Boolean);
                 const prerequisiteThreshold = Math.round(((prerequisiteStage?.masteryThreshold ?? stage.masteryThreshold ?? 0.9) || 0.9) * 100);
+                const perfectTarget = stage.requiredPerfectRuns || 0;
+                const perfectProgress = perfectTarget > 0
+                  ? Math.min(stage.perfectRuns ?? 0, perfectTarget)
+                  : stage.perfectRuns ?? 0;
+                const perfectPercent = perfectTarget > 0
+                  ? Math.min(100, Math.round((perfectProgress / perfectTarget) * 100))
+                  : 100;
+                const perfectProgressLabel = perfectTarget > 0
+                  ? `${perfectProgress}/${perfectTarget}`
+                  : `${perfectProgress}`;
+                const BadgeIcon = stage.badge?.icon && BADGE_ICON_MAP[stage.badge.icon]
+                  ? BADGE_ICON_MAP[stage.badge.icon]
+                  : Sparkles;
+                const bestAccuracyLabel = Number.isFinite(stage.bestAccuracy)
+                  ? `${stage.bestAccuracy}% best`
+                  : 'No run data yet';
                 const supportingMessage = stage.mastered
-                  ? 'Maintain mastery with spaced review and checkpoints.'
+                  ? `Badge unlocked! Keep weaving perfect check-ins to keep ${stage.badge?.name || 'your badge'} shining.`
                   : stage.unlocked
-                    ? `Reach ${thresholdPercent}% accuracy on addends up to +${stage.maxAddend} to earn the badge.`
+                    ? `Reach ${thresholdPercent}% accuracy and log ${perfectTarget || 1} perfect run${perfectTarget === 1 ? '' : 's'} (${perfectProgressLabel}) to claim the ${stage.badge?.name || 'badge'}.`
                     : prerequisiteStage
                       ? `Locked · Finish ${prerequisiteStage.label} (≥${prerequisiteThreshold}% accuracy).`
                       : `Locked · Finish addends up to +${stage.maxAddend - 1}.`;
@@ -1895,6 +2073,16 @@ const ModeSelection = ({
                         <div className="text-sm font-semibold text-indigo-500 uppercase tracking-widest">Stage</div>
                         <h3 className="text-xl font-bold text-gray-800">{stage.label}</h3>
                         <p className="text-sm text-gray-600 mt-1">{stage.description}</p>
+                        {stage.badge && (
+                          <div className="mt-3">
+                            <span
+                              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold text-white shadow ${stage.badge.gradient ? `bg-gradient-to-r ${stage.badge.gradient}` : 'bg-indigo-500'}`}
+                            >
+                              <BadgeIcon size={14} className="drop-shadow" />
+                              {stage.badge.name}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${statusMeta.tone}`}>
                         {statusMeta.label}
@@ -1910,12 +2098,30 @@ const ModeSelection = ({
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
                         Goal: ≥{thresholdPercent}% accuracy
                       </span>
+                      <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
+                        {perfectTarget > 0 ? `Perfect: ${perfectProgressLabel}` : `Perfect runs: ${perfectProgress}`}
+                      </span>
+                      <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">{bestAccuracyLabel}</span>
                       {stage.nextTarget != null && (
                         <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
                           Next focus: +{stage.nextTarget}
                         </span>
                       )}
                     </div>
+                    {perfectTarget > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-semibold text-indigo-600">
+                          <span>Perfect mastery runs</span>
+                          <span>{perfectProgressLabel}</span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-indigo-100 overflow-hidden">
+                          <div
+                            className={`h-2 rounded-full ${stage.mastered ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                            style={{ width: `${perfectPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                     <p className="text-sm text-gray-600 dark:text-gray-300">{supportingMessage}</p>
                     {!stage.unlocked && !stage.mastered && (
                       <div
@@ -2075,6 +2281,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     totalCorrect: 0,
     status: 'idle',
   });
+  const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [badgeSpotlight, setBadgeSpotlight] = useState(null);
   const inputRef = useRef(null);
   const gameStateRef = useRef(gameState);
   const narrationCooldownRef = useRef(0);
@@ -2094,6 +2302,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const streakProgressRef = useRef(0);
   const checkpointStatusRef = useRef('idle');
   const spokenModeRef = useRef(null);
+  const stageRunRef = useRef(null);
   const aiBadgeActive = useMemo(() => Boolean(aiRuntime.aiEnabled), [aiRuntime.aiEnabled]);
 
   const openSettings = useCallback(() => {
@@ -2136,9 +2345,49 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   }, [aiPersonalization]);
 
   const stageProgress = useMemo(
-    () => computeAdditionStageProgress(gameState.masteryTracking || {}),
-    [gameState.masteryTracking],
+    () => computeAdditionStageProgress(
+      gameState.masteryTracking || {},
+      gameState.achievements?.stageBadges || {},
+    ),
+    [gameState.achievements?.stageBadges, gameState.masteryTracking],
   );
+
+  useEffect(() => {
+    if (!Array.isArray(stageProgress) || !stageProgress.length) return;
+    const newlyMastered = stageProgress.filter((stage) => stage.mastered && !stage.badgeEarned);
+    if (!newlyMastered.length) return;
+    const awardedAt = Date.now();
+    setGameState((prev) => {
+      const achievements = {
+        ...(prev.achievements || { stageBadges: {} }),
+        stageBadges: { ...(prev.achievements?.stageBadges || {}) },
+      };
+      newlyMastered.forEach((stage) => {
+        const current = achievements.stageBadges[stage.id] || {};
+        if (!current.badgeEarnedAt) {
+          achievements.stageBadges[stage.id] = {
+            ...current,
+            badgeEarnedAt: awardedAt,
+          };
+        }
+      });
+      return { ...prev, achievements };
+    });
+    const spotlightStage = newlyMastered[0];
+    if (!spotlightStage) return;
+    if (badgeSpotlight && badgeSpotlight.stageId === spotlightStage.id) return;
+    setBadgeSpotlight({
+      stageId: spotlightStage.id,
+      stageLabel: spotlightStage.label,
+      badgeName: spotlightStage.badge?.name || spotlightStage.shortLabel,
+      description: spotlightStage.badge?.description,
+      gradient: spotlightStage.badge?.gradient,
+      accent: spotlightStage.badge?.accent,
+      icon: spotlightStage.badge?.icon,
+      perfectRuns: spotlightStage.perfectRuns,
+      requiredPerfectRuns: spotlightStage.requiredPerfectRuns,
+    });
+  }, [badgeSpotlight, setGameState, stageProgress]);
 
   const defaultRangeLimit = useMemo(
     () => resolveMaxUnlockedAddend(stageProgress),
@@ -2740,6 +2989,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     if (window.confirm('Do you want to save your progress before logging out?')) {
       exportGameState();
     }
+    setAchievementsOpen(false);
+    setBadgeSpotlight(null);
     setGameState(createDefaultGameState());
     localStorage.removeItem('additionFlashcardsLastUser');
   };
@@ -2752,8 +3003,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const { reviewCards, remaining } = pickReviewDue(currentState.adaptiveLearning);
     const difficulty = currentState.adaptiveLearning.currentDifficulty || 'medium';
 
-    const stageSnapshot = computeAdditionStageProgress(currentState.masteryTracking || {});
-    const defaultLimit = resolveMaxUnlockedAddend(stageSnapshot);
+    const defaultLimit = resolveUnlockedAddendLimit(
+      currentState.masteryTracking || {},
+      currentState.achievements?.stageBadges || {},
+    );
     const activeLimit = Number.isFinite(rangeLimit) ? rangeLimit : defaultLimit;
     const limit = Math.max(0, Math.min(9, activeLimit));
 
@@ -2805,6 +3058,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const generatedDeck = [...filteredReviewCards, ...newCards];
 
     setCards(generatedDeck);
+    if (gameMode && gameMode.startsWith('stage-')) {
+      const stageId = gameMode.slice('stage-'.length);
+      stageRunRef.current = { stageId, attempts: 0, correct: 0 };
+    } else {
+      stageRunRef.current = null;
+    }
     setCurrentCard(0);
     setGuidedHelp({ active: false, step: 0, complete: false });
     setCheckpointState({
@@ -3361,6 +3620,17 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         };
       }
 
+      if (gameMode && gameMode.startsWith('stage-')) {
+        const stageId = gameMode.slice('stage-'.length);
+        const currentRun =
+          stageRunRef.current && stageRunRef.current.stageId === stageId
+            ? stageRunRef.current
+            : { stageId, attempts: 0, correct: 0 };
+        currentRun.attempts += 1;
+        if (correct) currentRun.correct += 1;
+        stageRunRef.current = currentRun;
+      }
+
       const updatedAi = updatePersonalizationAfterAttempt(ai, {
         a: card.a,
         b: card.b,
@@ -3458,6 +3728,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     setAiSessionMeta(null);
     setRangeLimit(null);
     setActiveStageId(null);
+    stageRunRef.current = null;
     setGameState((prev) => {
       const ai = ensurePersonalization(prev.aiPersonalization, prev.studentInfo);
       if (!ai.activeSession) return prev;
@@ -3520,6 +3791,53 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     setFeedback(correct ? 'correct' : 'incorrect');
 
     recordProblemAttempt(cards[currentCard], correct, timeSpent);
+
+    const stageModeActive = gameMode && gameMode.startsWith('stage-');
+    const stageId = stageModeActive ? gameMode.slice('stage-'.length) : null;
+    const isLastCard = currentCard >= cards.length - 1;
+
+    if (stageId && correct && isLastCard) {
+      const runSnapshot =
+        stageRunRef.current && stageRunRef.current.stageId === stageId
+          ? stageRunRef.current
+          : { stageId, attempts: 0, correct: 0 };
+      const attempts = Math.max(0, runSnapshot.attempts || 0);
+      const correctAttempts = Math.max(0, runSnapshot.correct || 0);
+      const accuracy = attempts > 0 ? Math.round((correctAttempts / attempts) * 100) : 0;
+      const perfect = attempts > 0 && correctAttempts === attempts;
+      const timestamp = Date.now();
+      const parseNumber = (value, fallback = 0) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      };
+
+      if (attempts > 0) {
+        setGameState((prev) => {
+          const achievements = {
+            ...(prev.achievements || { stageBadges: {} }),
+            stageBadges: { ...(prev.achievements?.stageBadges || {}) },
+          };
+          const prevEntry = achievements.stageBadges[stageId] || {};
+          const nextPerfectRuns = perfect
+            ? parseNumber(prevEntry.perfectRuns) + 1
+            : parseNumber(prevEntry.perfectRuns);
+          const nextAttempts = parseNumber(prevEntry.attempts) + 1;
+          const nextBest = Math.max(parseNumber(prevEntry.bestAccuracy), accuracy);
+          achievements.stageBadges[stageId] = {
+            ...prevEntry,
+            attempts: nextAttempts,
+            lastAccuracy: accuracy,
+            bestAccuracy: nextBest,
+            perfectRuns: nextPerfectRuns,
+            lastRunAt: timestamp,
+            ...(perfect ? { lastPerfectAt: timestamp } : {}),
+          };
+          return { ...prev, achievements };
+        });
+      }
+
+      stageRunRef.current = null;
+    }
 
     if (correct) {
       setShowCelebration(true);
@@ -3656,6 +3974,11 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         aiBadgeActive={aiBadgeActive}
         narrationNotice={narrationNotice}
         stageProgress={stageProgress}
+        achievementsOpen={achievementsOpen}
+        onOpenAchievements={() => setAchievementsOpen(true)}
+        onCloseAchievements={() => setAchievementsOpen(false)}
+        badgeSpotlight={badgeSpotlight}
+        onDismissBadgeSpotlight={() => setBadgeSpotlight(null)}
       />
     );
   }
