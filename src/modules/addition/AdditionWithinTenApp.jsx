@@ -343,6 +343,9 @@ const ageBands = [
   { maxAge: Infinity, label: 'Upper Elementary (8+)', levelIndex: 4, detail: 'Ready for multi-digit addition and subtraction.' },
 ];
 
+const MASTERED_REQUIRED_ATTEMPTS = 3;
+const PERFECT_SAMPLE_ATTEMPTS = 2;
+
 const ADDITION_STAGE_SEQUENCE = [
   {
     id: 'add-up-to-3',
@@ -409,9 +412,13 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
         const percent = computeNumberMasteryPercent(node);
         const attempts = Number.isFinite(node.totalAttempts) ? node.totalAttempts : 0;
         const correct = Number.isFinite(node.correctAttempts) ? node.correctAttempts : 0;
+        const hasEnoughAttempts = attempts >= MASTERED_REQUIRED_ATTEMPTS;
+        const hasPerfectSample = attempts >= PERFECT_SAMPLE_ATTEMPTS && correct === attempts && attempts > 0;
+        const meetsThreshold = attempts > 0 && percent >= masteryThreshold * 100;
         const mastered =
           node.level === 'mastered' ||
-          (attempts >= 3 && percent >= masteryThreshold * 100);
+          (hasEnoughAttempts && meetsThreshold) ||
+          hasPerfectSample;
 
         acc.totalAttempts += attempts;
         acc.totalCorrect += correct;
@@ -419,9 +426,19 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
         acc.masteredCount += mastered ? 1 : 0;
         if (!mastered) {
           acc.allMastered = false;
+          if (attempts === 0) {
+            acc.unseenCount += 1;
+          } else if (hasEnoughAttempts) {
+            acc.blockerCount += 1;
+          } else {
+            acc.pendingCount += 1;
+          }
         }
         if (!mastered && acc.nextTarget === null) {
           acc.nextTarget = addend;
+        }
+        if (mastered) {
+          acc.highestMasteredAddend = Math.max(acc.highestMasteredAddend, addend);
         }
         return acc;
       },
@@ -430,14 +447,23 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
         totalCorrect: 0,
         percentSum: 0,
         masteredCount: 0,
-        allMastered: addends.length === 0,
+        allMastered: true,
         nextTarget: null,
+        pendingCount: 0,
+        blockerCount: 0,
+        unseenCount: 0,
+        highestMasteredAddend: -1,
       },
     );
 
     const avgPercent = addends.length > 0
       ? Math.round(summary.percentSum / addends.length)
       : 0;
+
+    const stageMastered = addends.length > 0
+      && summary.blockerCount === 0
+      && summary.unseenCount === 0
+      && summary.masteredCount === addends.length;
 
     const prerequisitesMet = prerequisites.every((reqId) => {
       const prerequisiteStage = stages.find((entry) => entry.id === reqId);
@@ -458,12 +484,16 @@ const computeAdditionStageProgress = (masteryTracking = {}) => {
       addends,
       unlocked,
       prerequisitesMet,
-      mastered: summary.allMastered && addends.length > 0,
+      mastered: stageMastered,
       progressPercent: avgPercent,
       totalAttempts: summary.totalAttempts,
       totalCorrect: summary.totalCorrect,
       masteredCount: summary.masteredCount,
       nextTarget: summary.nextTarget,
+      pendingCount: summary.pendingCount,
+      blockerCount: summary.blockerCount,
+      unseenCount: summary.unseenCount,
+      highestMasteredAddend: summary.highestMasteredAddend,
     });
   });
 
