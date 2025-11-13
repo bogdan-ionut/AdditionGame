@@ -229,7 +229,7 @@ const updateSpriteCacheEntryFromUi = (cacheKey, updater) => {
 };
 
 const createDefaultGameState = () => ({
-  version: "1.3.0",
+  version: "1.4.0",
   studentInfo: {
     name: "",
     age: 3.5,
@@ -336,7 +336,16 @@ const migrateGameState = (raw) => {
   if (!Array.isArray(gs.adaptiveLearning.needsReview)) gs.adaptiveLearning.needsReview = [];
   if (!Array.isArray(gs.adaptiveLearning.recentAttempts)) gs.adaptiveLearning.recentAttempts = [];
   if (!gs.adaptiveLearning.checkpoint) gs.adaptiveLearning.checkpoint = { pending: false, inProgress: false };
-    gs.version = '1.3.0';
+  if (gs.achievements?.stageBadges && typeof gs.achievements.stageBadges === 'object') {
+    Object.keys(gs.achievements.stageBadges).forEach((key) => {
+      const entry = gs.achievements.stageBadges[key];
+      if (entry && typeof entry === 'object' && entry.highAccuracyRuns == null && entry.perfectRuns != null) {
+        entry.highAccuracyRuns = entry.perfectRuns;
+      }
+    });
+  }
+
+  gs.version = '1.4.0';
   return gs;
 };
 
@@ -357,6 +366,9 @@ const ageBands = [
 
 const MASTERED_REQUIRED_ATTEMPTS = 3;
 const PERFECT_SAMPLE_ATTEMPTS = 2;
+
+const HIGH_ACCURACY_RUN_THRESHOLD = 0.85;
+const HIGH_ACCURACY_RUN_PERCENT = Math.round(HIGH_ACCURACY_RUN_THRESHOLD * 100);
 
 const ADDITION_STAGE_SEQUENCE = [
   {
@@ -421,6 +433,19 @@ const BADGE_ICON_MAP = {
   Trophy,
   Award,
   PartyPopper,
+};
+
+const parseCounter = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, parsed);
+    }
+  }
+  return 0;
 };
 
 const computeNumberMasteryPercent = (node) => {
@@ -513,12 +538,14 @@ const computeAdditionStageProgress = (masteryTracking = {}, stageAchievements = 
       && summary.masteredCount === addends.length;
 
     const stageBadge = stageAchievements?.[id] || {};
-    const perfectRuns = Math.max(0, Number.isFinite(stageBadge.perfectRuns) ? stageBadge.perfectRuns : (parseInt(stageBadge.perfectRuns, 10) || 0));
+    const highAccuracyRuns = stageBadge.highAccuracyRuns != null
+      ? parseCounter(stageBadge.highAccuracyRuns)
+      : parseCounter(stageBadge.perfectRuns);
     const totalStageRuns = Math.max(0, Number.isFinite(stageBadge.attempts) ? stageBadge.attempts : (parseInt(stageBadge.attempts, 10) || 0));
     const lastAccuracy = Number.isFinite(stageBadge.lastAccuracy) ? stageBadge.lastAccuracy : null;
     const bestAccuracy = Number.isFinite(stageBadge.bestAccuracy) ? stageBadge.bestAccuracy : null;
-    const meetsPerfectRunRequirement = requiredPerfectRuns <= 0 || perfectRuns >= requiredPerfectRuns;
-    const stageMastered = accuracyMastered && meetsPerfectRunRequirement;
+    const meetsHighAccuracyRequirement = requiredPerfectRuns <= 0 || highAccuracyRuns >= requiredPerfectRuns;
+    const stageMastered = accuracyMastered && meetsHighAccuracyRequirement;
     const badgeEarnedAt = Number.isFinite(stageBadge.badgeEarnedAt) ? stageBadge.badgeEarnedAt : stageBadge.badgeEarnedAt || null;
 
     const prerequisitesMet = prerequisites.every((reqId) => {
@@ -542,7 +569,8 @@ const computeAdditionStageProgress = (masteryTracking = {}, stageAchievements = 
       prerequisitesMet,
       mastered: stageMastered,
       accuracyMastered,
-      meetsPerfectRunRequirement,
+      meetsPerfectRunRequirement: meetsHighAccuracyRequirement,
+      meetsHighAccuracyRequirement,
       progressPercent: avgPercent,
       totalAttempts: summary.totalAttempts,
       totalCorrect: summary.totalCorrect,
@@ -552,8 +580,11 @@ const computeAdditionStageProgress = (masteryTracking = {}, stageAchievements = 
       blockerCount: summary.blockerCount,
       unseenCount: summary.unseenCount,
       highestMasteredAddend: summary.highestMasteredAddend,
-      perfectRuns,
+      perfectRuns: highAccuracyRuns,
       requiredPerfectRuns,
+      highAccuracyRuns,
+      requiredHighAccuracyRuns: requiredPerfectRuns,
+      highAccuracyRunThreshold: HIGH_ACCURACY_RUN_PERCENT,
       badge,
       badgeEarned: Boolean(badgeEarnedAt),
       badgeEarnedAt,
@@ -1383,6 +1414,7 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
       {achievementsOpen && (
         <StageBadgeShowcase
           stages={additionStages}
+          runThresholdPercent={HIGH_ACCURACY_RUN_PERCENT}
           onClose={() => onCloseAchievements?.()}
         />
       )}
@@ -1416,11 +1448,11 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
             <p className="mt-4 text-sm font-semibold text-purple-900">
               <span className="inline-flex items-center gap-2">
                 <PartyPopper size={18} />
-                {badgeSpotlight.perfectRuns}/{badgeSpotlight.requiredPerfectRuns} perfect runs complete
+                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns} high-accuracy runs ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% complete
               </span>
             </p>
             <p className="mt-2 text-xs text-purple-900/70">
-              Keep the streak alive with gentle review runs to keep your cosmic badge glowing.
+              Keep weaving confident check-ins to keep your cosmic badge glowing bright.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
@@ -2063,7 +2095,7 @@ const ModeSelection = ({
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">Mastery Milestones</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Conquer each stage with 90% accuracy before unlocking the next range.
+                  Conquer each stage with 90% accuracy and {HIGH_ACCURACY_RUN_PERCENT}%+ run streaks before unlocking the next range.
                 </p>
               </div>
               <div className="px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-semibold text-indigo-700">
@@ -2082,16 +2114,20 @@ const ModeSelection = ({
                   .map((id) => additionStages.find((entry) => entry.id === id))
                   .find(Boolean);
                 const prerequisiteThreshold = Math.round(((prerequisiteStage?.masteryThreshold ?? stage.masteryThreshold ?? 0.9) || 0.9) * 100);
-                const perfectTarget = stage.requiredPerfectRuns || 0;
-                const perfectProgress = perfectTarget > 0
-                  ? Math.min(stage.perfectRuns ?? 0, perfectTarget)
-                  : stage.perfectRuns ?? 0;
-                const perfectPercent = perfectTarget > 0
-                  ? Math.min(100, Math.round((perfectProgress / perfectTarget) * 100))
+                const runTarget = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
+                const completedRunsRaw = stage.highAccuracyRuns ?? stage.perfectRuns ?? 0;
+                const runProgress = runTarget > 0
+                  ? Math.min(completedRunsRaw, runTarget)
+                  : completedRunsRaw;
+                const runPercent = runTarget > 0
+                  ? Math.min(100, Math.round((runProgress / runTarget) * 100))
                   : 100;
-                const perfectProgressLabel = perfectTarget > 0
-                  ? `${perfectProgress}/${perfectTarget}`
-                  : `${perfectProgress}`;
+                const runProgressLabel = runTarget > 0
+                  ? `${runProgress}/${runTarget}`
+                  : `${runProgress}`;
+                const runBadgeSlots = runTarget > 0
+                  ? Array.from({ length: runTarget }, (_, idx) => idx < runProgress)
+                  : null;
                 const BadgeIcon = stage.badge?.icon && BADGE_ICON_MAP[stage.badge.icon]
                   ? BADGE_ICON_MAP[stage.badge.icon]
                   : Sparkles;
@@ -2099,9 +2135,9 @@ const ModeSelection = ({
                   ? `${stage.bestAccuracy}% best`
                   : 'No run data yet';
                 const supportingMessage = stage.mastered
-                  ? `Badge unlocked! Keep weaving perfect check-ins to keep ${stage.badge?.name || 'your badge'} shining.`
+                  ? `Badge unlocked! Keep weaving confident check-ins to keep ${stage.badge?.name || 'your badge'} shining.`
                   : stage.unlocked
-                    ? `Reach ${thresholdPercent}% accuracy and log ${perfectTarget || 1} perfect run${perfectTarget === 1 ? '' : 's'} (${perfectProgressLabel}) to claim the ${stage.badge?.name || 'badge'}.`
+                    ? `Reach ${thresholdPercent}% accuracy and complete ${runTarget || 1} high-accuracy run${runTarget === 1 ? '' : 's'} (${runProgressLabel}) at ≥${stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT}% to claim the ${stage.badge?.name || 'badge'}.`
                     : prerequisiteStage
                       ? `Locked · Finish ${prerequisiteStage.label} (≥${prerequisiteThreshold}% accuracy).`
                       : `Locked · Finish addends up to +${stage.maxAddend - 1}.`;
@@ -2142,7 +2178,7 @@ const ModeSelection = ({
                         Goal: ≥{thresholdPercent}% accuracy
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
-                        {perfectTarget > 0 ? `Perfect: ${perfectProgressLabel}` : `Perfect runs: ${perfectProgress}`}
+                        {runTarget > 0 ? `High-accuracy runs: ${runProgressLabel}` : `High-accuracy runs: ${runProgress}`}
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">{bestAccuracyLabel}</span>
                       {stage.nextTarget != null && (
@@ -2151,18 +2187,33 @@ const ModeSelection = ({
                         </span>
                       )}
                     </div>
-                    {perfectTarget > 0 && (
+                    {runTarget > 0 && (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-xs font-semibold text-indigo-600">
-                          <span>Perfect mastery runs</span>
-                          <span>{perfectProgressLabel}</span>
+                          <span>High-accuracy stage runs</span>
+                          <span>{runProgressLabel}</span>
                         </div>
                         <div className="w-full h-2 rounded-full bg-indigo-100 overflow-hidden">
                           <div
                             className={`h-2 rounded-full ${stage.mastered ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                            style={{ width: `${perfectPercent}%` }}
+                            style={{ width: `${runPercent}%` }}
                           />
                         </div>
+                        {runBadgeSlots && (
+                          <div className="flex items-center gap-2 pt-1">
+                            {runBadgeSlots.map((earned, idx) => (
+                              // eslint-disable-next-line react/no-array-index-key
+                              <div
+                                key={idx}
+                                className={`flex h-7 w-7 items-center justify-center rounded-full border ${earned
+                                  ? 'border-emerald-400 bg-emerald-400/90 text-white shadow'
+                                  : 'border-indigo-200 bg-white/80 text-indigo-400'}`}
+                              >
+                                <Sparkles className="h-3.5 w-3.5" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     <p className="text-sm text-gray-600 dark:text-gray-300">{supportingMessage}</p>
@@ -2427,8 +2478,9 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       gradient: spotlightStage.badge?.gradient,
       accent: spotlightStage.badge?.accent,
       icon: spotlightStage.badge?.icon,
-      perfectRuns: spotlightStage.perfectRuns,
-      requiredPerfectRuns: spotlightStage.requiredPerfectRuns,
+      highAccuracyRuns: spotlightStage.highAccuracyRuns,
+      requiredHighAccuracyRuns: spotlightStage.requiredHighAccuracyRuns,
+      runThresholdPercent: spotlightStage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT,
     });
   }, [badgeSpotlight, setGameState, stageProgress]);
 
@@ -3848,6 +3900,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       const correctAttempts = Math.max(0, runSnapshot.correct || 0);
       const accuracy = attempts > 0 ? Math.round((correctAttempts / attempts) * 100) : 0;
       const perfect = attempts > 0 && correctAttempts === attempts;
+      const highAccuracy = attempts > 0 && (correctAttempts / attempts) >= HIGH_ACCURACY_RUN_THRESHOLD;
       const timestamp = Date.now();
       const parseNumber = (value, fallback = 0) => {
         const parsed = Number(value);
@@ -3861,9 +3914,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             stageBadges: { ...(prev.achievements?.stageBadges || {}) },
           };
           const prevEntry = achievements.stageBadges[stageId] || {};
-          const nextPerfectRuns = perfect
-            ? parseNumber(prevEntry.perfectRuns) + 1
-            : parseNumber(prevEntry.perfectRuns);
+          const prevPerfectRuns = parseNumber(prevEntry.perfectRuns);
+          const prevHighAccuracyRuns = prevEntry.highAccuracyRuns != null
+            ? parseNumber(prevEntry.highAccuracyRuns)
+            : prevPerfectRuns;
+          const nextPerfectRuns = perfect ? prevPerfectRuns + 1 : prevPerfectRuns;
+          const nextHighAccuracyRuns = highAccuracy ? prevHighAccuracyRuns + 1 : prevHighAccuracyRuns;
           const nextAttempts = parseNumber(prevEntry.attempts) + 1;
           const nextBest = Math.max(parseNumber(prevEntry.bestAccuracy), accuracy);
           achievements.stageBadges[stageId] = {
@@ -3872,8 +3928,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             lastAccuracy: accuracy,
             bestAccuracy: nextBest,
             perfectRuns: nextPerfectRuns,
+            highAccuracyRuns: nextHighAccuracyRuns,
             lastRunAt: timestamp,
             ...(perfect ? { lastPerfectAt: timestamp } : {}),
+            ...(highAccuracy ? { lastHighAccuracyAt: timestamp } : {}),
           };
           return { ...prev, achievements };
         });
