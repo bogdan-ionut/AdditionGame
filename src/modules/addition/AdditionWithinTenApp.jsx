@@ -926,10 +926,10 @@ const CountableObjects = ({ digit, type, theme = null }) => {
         className="grid gap-3 items-center justify-items-center"
         style={{
           gridTemplateColumns: `repeat(${cols || 1}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`
+          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
         }}
       >
-        {Array.from({ length: itemsToRender }, (_, i) => theme ? renderThemedObject(i) : renderObject(i))}
+        {Array.from({ length: itemsToRender }, (_, i) => (theme ? renderThemedObject(i) : renderObject(i)))}
       </div>
     </div>
   );
@@ -1595,17 +1595,41 @@ const ModeSelection = ({
         </div>
 
         {/* Personalized Learning Journey */}
-        <div className="bg-gradient-to-br from-indigo-50 via-sky-50 to-purple-50 p-8 rounded-3xl shadow-lg border-2 border-indigo-200 mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800">Personalized Learning Journey</h2>
-              <p className="text-gray-600 mt-1">
-                AI unlocked practice based on {metrics.overallAccuracy}% accuracy, a streak of {metrics.streak}, and {metrics.avgTime}s average response time.
-              </p>
+        <div className="bg-gradient-to-br from-indigo-50 via-sky-50 to-purple-50 p-6 md:p-7 rounded-3xl shadow-lg border border-indigo-200/80 mb-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">Personalized Learning Journey</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  AI unlocked practice from {metrics.overallAccuracy}% accuracy, a streak of {metrics.streak}, and {metrics.avgTime}s average response time.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-white/80 px-3 py-1 font-semibold text-indigo-700 shadow-sm">
+                  <Star size={14} className="text-indigo-500" /> Highest mastery: {learningInsights.highestMastered >= 0 ? learningInsights.highestMastered : 'None yet'}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-white/80 px-3 py-1 font-semibold text-indigo-700 shadow-sm">
+                  <Brain size={14} className="text-indigo-500" /> Targets in queue: {focusRecommendations.length}
+                </span>
+              </div>
             </div>
-            <div className="bg-white border-2 border-indigo-200 rounded-2xl px-4 py-2 text-sm text-indigo-700 font-semibold shadow">
-              Highest mastery badge: {learningInsights.highestMastered >= 0 ? learningInsights.highestMastered : 'None yet'}
-            </div>
+            {focusRecommendations.length > 0 && (
+              <div className="grid w-full gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-2 font-medium">
+                  <Check size={14} className="text-emerald-500" />
+                  Accuracy goal ≥ {Math.round(TARGET_SUCCESS_BAND[0] * 100)}%
+                </div>
+                <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-2 font-medium">
+                  <Zap size={14} className="text-indigo-500" />
+                  Avg. solve {metrics.avgTime}s
+                </div>
+                <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-2 font-medium">
+                  <Target size={14} className="text-indigo-500" />
+                  Focus streak {metrics.streak}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {showAbout && (
@@ -1644,70 +1668,89 @@ const ModeSelection = ({
           </div>
         )}
 
-        <div className="space-y-4">
-          {focusRecommendations.map((item) => {
-              const badgeStyles = {
-                mastered: 'bg-green-100 text-green-700 border-green-300',
-                proficient: 'bg-blue-100 text-blue-700 border-blue-300',
-                learning: 'bg-yellow-100 text-yellow-700 border-yellow-300',
-                struggling: 'bg-red-100 text-red-700 border-red-300',
-                'not-started': 'bg-slate-100 text-slate-700 border-slate-300',
-              };
-              const levelBadgeClass = badgeStyles[item.level] || badgeStyles['not-started'];
-              const recommendationLockInfo = getLockInfo(item.number);
-              const recommendationLocked = recommendationLockInfo.locked;
-              return (
-                <div key={`focus-${item.number}`} className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center text-3xl font-bold">
+        <section className="space-y-6">
+          <div className="space-y-3">
+            {focusRecommendations.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {focusRecommendations.map((item) => {
+                const badgeStyles = {
+                  mastered: 'bg-green-100 text-green-700 border-green-300',
+                  proficient: 'bg-blue-100 text-blue-700 border-blue-300',
+                  learning: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+                  struggling: 'bg-red-100 text-red-700 border-red-300',
+                  'not-started': 'bg-slate-100 text-slate-700 border-slate-300',
+                };
+                const levelBadgeClass = badgeStyles[item.level] || badgeStyles['not-started'];
+                const recommendationLockInfo = getLockInfo(item.number);
+                const recommendationLocked = recommendationLockInfo.locked;
+
+                return (
+                  <div
+                    key={`focus-${item.number}`}
+                    className="flex h-full flex-col gap-2 rounded-2xl border border-indigo-200/80 bg-white/90 p-3 shadow-sm"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-100 text-xl font-bold text-indigo-700">
                         {item.number}
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-semibold text-gray-800">
-                            {item.level === 'mastered' ? 'Maintain mastery' : item.level === 'struggling' ? 'Review focus' : 'Focus on'} +{item.number}
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-800">
+                            {item.level === 'mastered'
+                              ? 'Maintain mastery'
+                              : item.level === 'struggling'
+                              ? 'Review focus'
+                              : 'Focus on'} +{item.number}
                           </span>
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${levelBadgeClass}`}>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${levelBadgeClass}`}>
                             {item.level.replace('-', ' ')}
                           </span>
                           {item.recommended && (
-                            <span className="text-xs font-semibold px-2 py-1 rounded-full border bg-green-50 text-green-700 border-green-300">
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-green-50 text-green-700 border-green-300">
                               AI recommended
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">{item.reason}</p>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
-                          <span className="px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-full">Mastery: {item.masteryPercent}%</span>
-                          <span className="px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-full">Accuracy: {item.accuracy}% ({item.attempts} attempts)</span>
-                        </div>
+                        <p className="mt-0.5 text-xs text-gray-600 leading-relaxed">{item.reason}</p>
                       </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                      <span className="inline-flex items-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-2 py-1 font-medium">
+                        Mastery {item.masteryPercent}%
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-2 py-1 font-medium">
+                        Accuracy {item.accuracy}%
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-2 py-1 font-medium">
+                        {item.attempts} attempts
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (recommendationLocked) {
+                          alert(
+                            recommendationLockInfo.message || 'This practice set is locked until prerequisites are mastered.',
+                          );
+                          return;
+                        }
+                        onSelectMode(`focus-${item.number}`, item.number);
+                      }}
+                      disabled={recommendationLocked}
+                      title={recommendationLocked ? recommendationLockInfo.tooltip : ''}
+                      className={`mt-auto w-full rounded-xl px-3 py-2 text-xs font-semibold transition ${recommendationLocked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                    >
+                      Practice +{item.number}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      if (recommendationLocked) {
-                        alert(recommendationLockInfo.message || 'This practice set is locked until prerequisites are mastered.');
-                        return;
-                      }
-                      onSelectMode(`focus-${item.number}`, item.number);
-                    }}
-                    disabled={recommendationLocked}
-                    title={recommendationLocked ? recommendationLockInfo.tooltip : ''}
-                    className={`self-start md:self-center px-5 py-2 rounded-xl font-semibold transition ${recommendationLocked ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-                  >
-                    Practice +{item.number}
-                  </button>
-                </div>
-              );
-            })}
-            {focusRecommendations.length === 0 && (
-              <div className="bg-white border-2 border-indigo-200 rounded-3xl p-6 text-center text-gray-600">
-                We need a few more data points to personalize the journey. Start any mode to unlock tailored recommendations.
+                );
+                })}
               </div>
-            )}
-          </div>
+          ) : (
+            <div className="bg-white border-2 border-indigo-200 rounded-3xl p-6 text-center text-gray-600">
+              We need a few more data points to personalize the journey. Start any mode to unlock tailored recommendations.
+            </div>
+          )}
+        </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
             <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm flex flex-col gap-4">
               <div>
@@ -1827,7 +1870,7 @@ const ModeSelection = ({
               />
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Main modes */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
