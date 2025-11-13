@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Check, X, RotateCcw, Star, Trophy, Shuffle, Hash, ArrowLeft, Download, Upload, BarChart3, Brain, Zap, Target, User, UserRound, Wand2, Info, Lock, Sparkles, Rocket, Crown, Award, PartyPopper } from 'lucide-react';
 import StageBadgeShowcase from '../../components/achievements/StageBadgeShowcase.jsx';
+import ConfettiBurst from '../../components/achievements/ConfettiBurst.jsx';
 import NextUpCard from '../../components/NextUpCard';
 import {
   ensurePersonalization,
@@ -1507,6 +1508,7 @@ const ModeSelection = ({
   achievementsOpen,
   onOpenAchievements,
   onCloseAchievements,
+  showBadgeCelebration,
   badgeSpotlight,
   onDismissBadgeSpotlight,
 }) => {
@@ -1671,6 +1673,7 @@ const ModeSelection = ({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
+      {showBadgeCelebration && <ConfettiBurst />}
       <div className="max-w-5xl w-full">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <button
@@ -2377,6 +2380,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   });
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [badgeSpotlight, setBadgeSpotlight] = useState(null);
+  const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
   const inputRef = useRef(null);
   const gameStateRef = useRef(gameState);
   const narrationCooldownRef = useRef(0);
@@ -2470,6 +2474,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const spotlightStage = newlyMastered[0];
     if (!spotlightStage) return;
     if (badgeSpotlight && badgeSpotlight.stageId === spotlightStage.id) return;
+    setShowBadgeCelebration(true);
     setBadgeSpotlight({
       stageId: spotlightStage.id,
       stageLabel: spotlightStage.label,
@@ -2483,6 +2488,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       runThresholdPercent: spotlightStage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT,
     });
   }, [badgeSpotlight, setGameState, stageProgress]);
+
+  useEffect(() => {
+    if (!showBadgeCelebration) return undefined;
+    const timeout = setTimeout(() => setShowBadgeCelebration(false), 5000);
+    return () => clearTimeout(timeout);
+  }, [showBadgeCelebration]);
 
   const defaultRangeLimit = useMemo(
     () => resolveMaxUnlockedAddend(stageProgress),
@@ -3086,6 +3097,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     }
     setAchievementsOpen(false);
     setBadgeSpotlight(null);
+    setShowBadgeCelebration(false);
     setGameState(createDefaultGameState());
     localStorage.removeItem('additionFlashcardsLastUser');
   };
@@ -4078,6 +4090,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         achievementsOpen={achievementsOpen}
         onOpenAchievements={() => setAchievementsOpen(true)}
         onCloseAchievements={() => setAchievementsOpen(false)}
+        showBadgeCelebration={showBadgeCelebration}
         badgeSpotlight={badgeSpotlight}
         onDismissBadgeSpotlight={() => setBadgeSpotlight(null)}
       />
