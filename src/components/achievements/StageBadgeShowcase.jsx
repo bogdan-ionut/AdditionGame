@@ -22,13 +22,20 @@ const pickIcon = (iconName) => {
   return Sparkles;
 };
 
-const StageBadgeShowcase = ({ stages = [], onClose }) => {
+const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
   const orderedStages = useMemo(() => {
     return [...stages].sort((a, b) => (a.maxAddend || 0) - (b.maxAddend || 0));
   }, [stages]);
 
   const masteredCount = orderedStages.filter((stage) => stage.mastered).length;
   const totalCount = orderedStages.length;
+
+  const miniBadgeRows = (stage) => {
+    const target = stage?.requiredHighAccuracyRuns ?? stage?.requiredPerfectRuns ?? 0;
+    if (!target || target <= 0) return null;
+    const completed = Math.min(stage?.highAccuracyRuns ?? stage?.perfectRuns ?? 0, target);
+    return Array.from({ length: target }, (_, idx) => idx < completed);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
@@ -41,7 +48,9 @@ const StageBadgeShowcase = ({ stages = [], onClose }) => {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-3xl font-extrabold tracking-tight">Badge Gallery</h2>
-              <p className="text-sm opacity-90">Earn three perfect mastery runs (90%+ accuracy) in each stage to unlock the next adventure.</p>
+              <p className="text-sm opacity-90">
+                Reach 90% mastery and log {runThresholdPercent}%+ accuracy runs in each stage to unlock the next adventure.
+              </p>
             </div>
             <div className="flex items-center gap-3 rounded-2xl bg-white/20 px-4 py-2 text-sm font-semibold">
               <CircleCheckBig className="h-5 w-5" />
@@ -58,23 +67,33 @@ const StageBadgeShowcase = ({ stages = [], onClose }) => {
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-8 py-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            {orderedStages.map((stage) => {
-              const perfectTarget = stage.requiredPerfectRuns || 0;
-              const perfectRuns = Math.max(0, stage.perfectRuns || 0);
-              const completedPerfect = perfectTarget > 0 ? Math.min(perfectRuns, perfectTarget) : perfectRuns;
-              const perfectPercent = perfectTarget > 0
-                ? Math.min(100, Math.round((completedPerfect / perfectTarget) * 100))
-                : 100;
-              const BadgeIcon = pickIcon(stage.badge?.icon);
-              const accuracyPercent = Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0;
-              const mastered = Boolean(stage.mastered);
-              const locked = !stage.unlocked;
+          {orderedStages.length === 0 ? (
+            <div className="rounded-3xl border-2 border-purple-100 bg-white/70 p-8 text-center text-purple-700 shadow">
+              <p className="text-lg font-semibold">No badges earned yet</p>
+              <p className="mt-2 text-sm">
+                Complete your first practice run to start earning mini badges and stage achievements.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2">
+              {orderedStages.map((stage) => {
+                const runTarget = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
+                const completedRuns = runTarget > 0
+                  ? Math.min(stage.highAccuracyRuns ?? stage.perfectRuns ?? 0, runTarget)
+                  : stage.highAccuracyRuns ?? stage.perfectRuns ?? 0;
+                const runPercent = runTarget > 0
+                  ? Math.min(100, Math.round((completedRuns / runTarget) * 100))
+                  : 100;
+                const BadgeIcon = pickIcon(stage.badge?.icon);
+                const accuracyPercent = Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0;
+                const mastered = Boolean(stage.mastered);
+                const locked = !stage.unlocked;
+                const badges = miniBadgeRows(stage);
 
-              return (
-                <div
-                  key={stage.id}
-                  className={`relative overflow-hidden rounded-3xl border-2 border-purple-100 p-6 shadow-lg transition transform hover:-translate-y-1 ${gradientBackground(stage)}`}
+                return (
+                  <div
+                    key={stage.id}
+                    className={`relative overflow-hidden rounded-3xl border-2 border-purple-100 p-6 shadow-lg transition transform hover:-translate-y-1 ${gradientBackground(stage)}`}
                 >
                   <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
                   <div className="relative flex flex-col gap-4">
@@ -98,16 +117,31 @@ const StageBadgeShowcase = ({ stages = [], onClose }) => {
                         <div className={`h-full rounded-full ${mastered ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${Math.min(100, accuracyPercent)}%` }} />
                       </div>
                       <div className="mt-4 flex items-center justify-between text-xs font-semibold text-purple-900">
-                        <span>Perfect runs</span>
-                        <span>{completedPerfect}{perfectTarget ? `/${perfectTarget}` : ''}</span>
+                        <span>High-accuracy runs ≥{runThresholdPercent}%</span>
+                        <span>{completedRuns}{runTarget ? `/${runTarget}` : ''}</span>
                       </div>
                       <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-purple-100">
-                        <div className={`h-full rounded-full ${completedPerfect >= perfectTarget && perfectTarget > 0 ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${perfectPercent}%` }} />
+                        <div className={`h-full rounded-full ${completedRuns >= runTarget && runTarget > 0 ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${runPercent}%` }} />
                       </div>
+                      {badges && (
+                        <div className="mt-4 flex items-center gap-2">
+                          {badges.map((earned, idx) => (
+                            <div
+                              // eslint-disable-next-line react/no-array-index-key
+                              key={idx}
+                              className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${earned
+                                ? 'border-emerald-300 bg-emerald-400/90 text-white shadow'
+                                : 'border-purple-200 bg-white/80 text-purple-400'}`}
+                            >
+                              <Sparkles className="h-4 w-4" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center justify-between text-xs font-semibold text-purple-900/80">
                       <span>Highest accuracy: {Number.isFinite(stage.bestAccuracy) ? `${stage.bestAccuracy}%` : '—'}</span>
-                      <span>Runs logged: {stage.totalStageRuns || perfectRuns || 0}</span>
+                      <span>Runs logged: {stage.totalStageRuns || stage.highAccuracyRuns || stage.perfectRuns || 0}</span>
                     </div>
                     {locked && !mastered && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm">
@@ -119,9 +153,10 @@ const StageBadgeShowcase = ({ stages = [], onClose }) => {
                     )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
