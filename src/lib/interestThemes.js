@@ -18,6 +18,18 @@ const FALLBACK_THEME_PRESETS = [
     source: 'fallback-preset',
   },
   {
+    key: 'city-heroes',
+    label: 'City Heroes',
+    matchers: ['police', 'officer', 'patrol', 'cop', 'law', 'sheriff', 'detective', 'responder'],
+    icons: ['🚓', '👮', '🚔', '🛡️', '🐕‍🦺'],
+    swatches: [
+      { bg: '#e0f2fe', border: '#0ea5e9', text: '#0c4a6e', shadow: '0 12px 24px rgba(14,165,233,0.18)' },
+      { bg: '#eff6ff', border: '#3b82f6', text: '#1e3a8a', shadow: '0 10px 22px rgba(59,130,246,0.18)' },
+      { bg: '#f8fafc', border: '#60a5fa', text: '#1d4ed8', shadow: '0 10px 20px rgba(96,165,250,0.16)' },
+    ],
+    source: 'fallback-preset',
+  },
+  {
     key: 'dinosaur-discovery',
     label: 'Dinosaur Discovery',
     matchers: ['dino', 'dinosaur', 'jurassic', 'raptor', 'prehistoric'],
@@ -88,12 +100,12 @@ const FALLBACK_THEME_PRESETS = [
     ],
     source: 'fallback-preset',
   },
-    {
+  {
     key: 'farm-life',
     label: 'Farm Life',
     matchers: ['farm', 'animal', 'tractor', 'barn', 'cow', 'pig'],
     icons: ['🧑‍🌾', '🚜', '🏡', '🐮', '🐷'],
-     swatches: [
+    swatches: [
       { bg: '#f0fdf4', border: '#4ade80', text: '#047857', shadow: '0 8px 18px rgba(74,222,128,0.18)' },
       { bg: '#dcfce7', border: '#22c55e', text: '#166534', shadow: '0 10px 22px rgba(34,197,94,0.18)' },
     ],
@@ -192,15 +204,20 @@ function createProceduralSwatches(seed = 'interest', paletteHint) {
 
 function chooseIconsForInterest(interest = '') {
   const normalized = interest.toLowerCase();
-  const preset = FALLBACK_THEME_PRESETS.find((entry) =>
-    entry.matchers.some((matcher) => normalized.includes(matcher)),
-  );
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  const tokenSet = new Set(tokens);
+
+  const matches = (entry) =>
+    entry.matchers.some((matcher) => {
+      const lowerMatcher = matcher.toLowerCase();
+      return normalized.includes(lowerMatcher) || tokenSet.has(lowerMatcher);
+    });
+
+  const preset = FALLBACK_THEME_PRESETS.find(matches);
   if (preset) {
     return preset.icons;
   }
-  const catalogHit = ADDITIONAL_ICON_CATALOG.find((entry) =>
-    entry.matchers.some((matcher) => normalized.includes(matcher)),
-  );
+  const catalogHit = ADDITIONAL_ICON_CATALOG.find(matches);
   if (catalogHit) {
     return catalogHit.icons;
   }
