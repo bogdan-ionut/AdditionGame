@@ -322,6 +322,19 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     fetchCatalog(false);
   }, [fetchCatalog]);
 
+  const prevNarrationLanguageRef = useRef(settings.narrationLanguage);
+  const prevNarrationVoiceRef = useRef(settings.narrationVoiceId);
+
+  useEffect(() => {
+    const languageChanged = settings.narrationLanguage !== prevNarrationLanguageRef.current;
+    const voiceChanged = settings.narrationVoiceId !== prevNarrationVoiceRef.current;
+    if (languageChanged || voiceChanged) {
+      prevNarrationLanguageRef.current = settings.narrationLanguage;
+      prevNarrationVoiceRef.current = settings.narrationVoiceId;
+      fetchCatalog(true);
+    }
+  }, [fetchCatalog, settings.narrationLanguage, settings.narrationVoiceId]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handleUpdate = (event: Event) => {
