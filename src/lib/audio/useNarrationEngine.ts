@@ -15,7 +15,6 @@ import {
   PRAISE_LINES_EN,
   PRAISE_LINES_RO,
   UI_TEXT,
-  buildCountingPrompt,
   buildProblemPrompt,
 } from './phrases';
 
@@ -97,8 +96,6 @@ type CountingPromptOptions = {
   mode?: CountingPromptMode;
 };
 
-const OFFLINE_MESSAGE = 'Vocea AI nu este disponibilă. Adaugă cheia Gemini în setările AI pentru a folosi narațiunea.';
-
 const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
   success: ['success', 'celebration', 'correct', 'victory'],
   error: ['error', 'incorrect', 'retry', 'try-again'],
@@ -137,7 +134,7 @@ const formatCountingSteps = (languageKey: string, steps: number[]): string | nul
   return `Then ${head}, and ${last}.`;
 };
 
-const buildCountingPrompt = (
+const buildCountingPromptForCard = (
   languageKey: string,
   card: ProblemCard,
   { includeFinal = false, mode = 'prompt' }: CountingPromptOptions = {},
@@ -228,7 +225,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
             console.warn('[audio] Unable to fetch TTS models', error);
             return null;
           }),
-          fetchTtsVoices({ mode: settings.sfxLowStimMode ? 'low-stim' : undefined }).catch((error) => {
+          fetchTtsVoices({ lang: settings.narrationLanguage || undefined }).catch((error) => {
             console.warn('[audio] Unable to fetch TTS voices', error);
             return null;
           }),
@@ -318,7 +315,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
         setCatalogError(error instanceof Error ? error.message : OFFLINE_MESSAGE);
       }
     },
-    [catalogStatus, settings.sfxLowStimMode],
+    [catalogStatus, settings.sfxLowStimMode, settings.narrationLanguage],
   );
 
   useEffect(() => {
@@ -421,7 +418,7 @@ export function useNarrationEngine({ runtime }: NarrationEngineOptions) {
     async (card: ProblemCard, options: CountingPromptOptions = {}) => {
       if (!settings.narrationEnabled) return;
       const languageKey = toLanguageKey(settings.narrationLanguage);
-      const prompt = buildCountingPrompt(languageKey, card, options);
+      const prompt = buildCountingPromptForCard(languageKey, card, options);
       if (!prompt) return;
       await speakText({ text: prompt, type: 'counting', speakingRate: settings.speakingRate * 0.95 });
     },
