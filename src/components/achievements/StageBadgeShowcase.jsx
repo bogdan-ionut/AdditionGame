@@ -398,7 +398,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         aria-hidden="true"
         onMouseDown={handleBackdropClick}
       />
-      <div className="relative z-10 w-full max-w-6xl overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
+      <div className="relative z-10 w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1500px] overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
         <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 px-8 py-6 text-white">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -437,7 +437,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
               <p className="mt-2 text-sm">Revino mai târziu pentru noi realizări.</p>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4 xl:auto-rows-fr">
+            <div className="grid gap-6 xl:gap-8 md:grid-cols-2 xl:grid-cols-4 xl:auto-rows-fr">
               {orderedStages.map((stage, index) => {
                 const runTarget = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
                 const completedRuns = runTarget > 0
@@ -547,7 +547,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                       aria-hidden="true"
                     />
                     <div className="relative z-10 flex h-full flex-col gap-6">
-                      <div className="flex flex-col items-center gap-5 text-center xl:flex-row xl:items-start xl:text-left xl:gap-6">
+                      <div className="flex flex-col items-center gap-5 text-center xl:flex-row xl:items-start xl:text-left xl:gap-8">
                         <div className="relative flex h-44 w-44 shrink-0 items-center justify-center">
                           <div
                             className={`pointer-events-none absolute inset-[-25%] rounded-full bg-gradient-to-br ${visual.haloGradient} opacity-80 blur-3xl`}
@@ -695,7 +695,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                             {statusLabel}
                           </span>
                         </div>
-                        <div className="space-y-2 xl:max-w-[14rem]">
+                        <div className="space-y-2 xl:max-w-[18rem] 2xl:max-w-[20rem]">
                           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-purple-500">{stage.label}</p>
                           <h3 className={`text-2xl font-black tracking-tight ${accentTextClass}`}>{stage.badge?.name}</h3>
                           <p className="text-sm text-purple-900/75 leading-relaxed">{stage.badge?.description || stage.description}</p>
