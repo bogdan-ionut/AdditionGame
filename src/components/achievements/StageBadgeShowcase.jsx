@@ -188,11 +188,14 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
           mastered: Boolean(stage.mastered),
           accuracyMastered: Boolean(stage.accuracyMastered),
           perAddendAccuracyMastered: Boolean(stage.perAddendAccuracyMastered ?? stage.accuracyMastered),
+          accuracyRequirementsMet: Boolean(stage.accuracyRequirementsMet ?? stage.mastered),
           stageAccuracy: Number.isFinite(stage.stageAccuracy)
             ? stage.stageAccuracy
-            : Number.isFinite(stage.bestAccuracy)
-              ? stage.bestAccuracy
-              : null,
+            : Number.isFinite(stage.lastAccuracy)
+              ? stage.lastAccuracy
+              : Number.isFinite(stage.bestAccuracy)
+                ? stage.bestAccuracy
+                : null,
           stageAccuracyMastered: Boolean(stage.stageAccuracyMastered),
           meetsHighAccuracyRequirement: Boolean(stage.meetsHighAccuracyRequirement ?? stage.meetsPerfectRunRequirement),
           progressPercent: Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0,
@@ -203,7 +206,11 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
             ? stage.highAccuracyRuns
             : 0,
           bestAccuracy: Number.isFinite(stage.bestAccuracy) ? stage.bestAccuracy : null,
-          lastAccuracy: Number.isFinite(stage.lastAccuracy) ? stage.lastAccuracy : null,
+          lastAccuracy: Number.isFinite(stage.lastAccuracy)
+            ? stage.lastAccuracy
+            : Number.isFinite(stage.stageAccuracy)
+              ? stage.stageAccuracy
+              : null,
           badgeEarned: Boolean(stage.badgeEarned),
           ...stage,
         };
@@ -215,6 +222,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
       unlocked: index === 0,
       mastered: false,
       accuracyMastered: false,
+      accuracyRequirementsMet: false,
       perAddendAccuracyMastered: false,
       stageAccuracy: null,
       stageAccuracyMastered: false,
@@ -224,6 +232,8 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
       totalStageRuns: 0,
       bestAccuracy: null,
       lastAccuracy: null,
+      pendingCount: 0,
+      blockerCount: 0,
       badgeEarned: false,
       highAccuracyRuns: 0,
       requiredPerfectRuns: stage.requiredHighAccuracyRuns,
@@ -352,7 +362,22 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                   ? Math.min(100, Math.round((completedRuns / runTarget) * 100))
                   : 100;
                 const accuracyPercent = Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0;
-                const stageAccuracyScore = Number.isFinite(stage.stageAccuracy) ? stage.stageAccuracy : null;
+                const masteryPercentRequirement = Number.isFinite(stage.masteryThreshold)
+                  ? Math.round(stage.masteryThreshold * 100)
+                  : 90;
+                const lastAccuracy = Number.isFinite(stage.lastAccuracy) ? stage.lastAccuracy : null;
+                const bestAccuracy = Number.isFinite(stage.bestAccuracy) ? stage.bestAccuracy : null;
+                const lastAccuracyBelowThreshold = lastAccuracy != null && lastAccuracy < masteryPercentRequirement;
+                const focusSegments = [];
+                if (stage.nextTarget != null) {
+                  focusSegments.push(`+${stage.nextTarget}`);
+                }
+                if (Number.isFinite(stage.pendingCount) && stage.pendingCount > 0) {
+                  focusSegments.push(`${stage.pendingCount} aproape`);
+                }
+                if (Number.isFinite(stage.blockerCount) && stage.blockerCount > 0) {
+                  focusSegments.push(`${stage.blockerCount} blocat${stage.blockerCount === 1 ? '' : 'e'}`);
+                }
                 const mastered = Boolean(stage.mastered);
                 const locked = !stage.unlocked;
                 const badges = miniBadgeRows(stage);
@@ -360,9 +385,6 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                 const visual = buildBadgeVisual(stage.badge || {});
                 const accentTextClass = visual.accent || 'text-purple-900';
                 const stageIndex = index + 1;
-                const masteryPercentRequirement = Number.isFinite(stage.masteryThreshold)
-                  ? Math.round(stage.masteryThreshold * 100)
-                  : 90;
                 const statusLabel = mastered ? 'Insignă deblocată' : locked ? 'Blocat' : 'În progres';
                 const statusTone = mastered
                   ? 'bg-emerald-500/15 text-emerald-700 border-emerald-200/70'
@@ -380,8 +402,8 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                   {
                     key: 'last',
                     label: 'Ultima rundă',
-                    value: Number.isFinite(stage.lastAccuracy) ? `${stage.lastAccuracy}%` : '—',
-                    tone: 'purple',
+                    value: lastAccuracy != null ? `${lastAccuracy}%` : '—',
+                    tone: lastAccuracy == null ? 'slate' : lastAccuracyBelowThreshold ? 'amber' : 'emerald',
                   },
                   {
                     key: 'runs',
@@ -396,6 +418,14 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                     tone: mastered ? 'emerald' : locked ? 'slate' : 'purple',
                   },
                 ];
+                if (focusSegments.length > 0) {
+                  statCards.push({
+                    key: 'focus',
+                    label: 'Ținta următoare',
+                    value: focusSegments.join(' · '),
+                    tone: 'purple',
+                  });
+                }
 
                 return (
                   <div
@@ -482,9 +512,21 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                                 ? 'Bravo! Fiecare termen atinge deja pragul de stăpânire.'
                                 : 'Continuă să exersezi termenii mai fragili pentru a atinge pragul pe toată linia.'}
                             </span>
-                            {stageAccuracyScore != null && (
+                            {lastAccuracy != null && (
+                              <span
+                                className={`block mt-1 ${lastAccuracyBelowThreshold ? 'text-amber-600/90' : 'text-emerald-600/90'}`}
+                              >
+                                Ultima rundă: {lastAccuracy}% {lastAccuracyBelowThreshold ? '(sub țintă)' : '(peste țintă)'}.
+                              </span>
+                            )}
+                            {bestAccuracy != null && (
                               <span className="block text-purple-700/80 mt-1">
-                                Cea mai bună rundă de etapă: {stageAccuracyScore}% acuratețe.
+                                Record personal: {bestAccuracy}%.
+                              </span>
+                            )}
+                            {focusSegments.length > 0 && (
+                              <span className="block text-purple-700/80 mt-1">
+                                Următorul focus: {focusSegments.join(' · ')}.
                               </span>
                             )}
                           </p>
@@ -531,9 +573,11 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                         {statCards.map((stat) => {
                           const valueClass = stat.tone === 'emerald'
                             ? 'text-emerald-600'
-                            : stat.tone === 'slate'
-                              ? 'text-slate-700'
-                              : 'text-purple-700';
+                            : stat.tone === 'amber'
+                              ? 'text-amber-600'
+                              : stat.tone === 'slate'
+                                ? 'text-slate-700'
+                                : 'text-purple-700';
                           return (
                             <div key={stat.key} className="rounded-2xl border border-white/40 bg-white/60 px-4 py-3 shadow-inner">
                               <div className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-purple-500">{stat.label}</div>

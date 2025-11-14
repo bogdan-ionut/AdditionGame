@@ -690,15 +690,41 @@ const ModeSelection = ({
                   ? BADGE_ICON_MAP[stage.badge.icon]
                   : Sparkles;
                 const bestAccuracyLabel = Number.isFinite(stage.bestAccuracy)
-                  ? `${stage.bestAccuracy}% record personal`
+                  ? `Record personal: ${stage.bestAccuracy}%`
                   : 'Fără date despre runde';
-                const supportingMessage = stage.mastered
-                  ? `Insigna este deblocată! Continuă verificările încrezătoare ca ${stage.badge?.name || 'insigna ta'} să rămână strălucitoare.`
-                  : stage.unlocked
-                    ? `Atige ${thresholdPercent}% acuratețe și finalizează ${runTarget || 1} rund${runTarget === 1 ? 'ă' : 'e'} cu precizie ridicată (${runProgressLabel}) la ≥${stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT}% pentru a obține ${stage.badge?.name || 'insigna'}.`
-                    : prerequisiteStage
-                      ? `Blocat · Finalizează ${prerequisiteStage.label} (≥${prerequisiteThreshold}% acuratețe).`
-                      : `Blocat · Termină adunările până la +${stage.maxAddend - 1}.`;
+                const lastAccuracy = Number.isFinite(stage.lastAccuracy) ? stage.lastAccuracy : null;
+                const lastAccuracyBelowThreshold = lastAccuracy != null && lastAccuracy < thresholdPercent;
+                const lastAccuracyChipTone = lastAccuracy == null
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                  : lastAccuracyBelowThreshold
+                    ? 'bg-amber-50 border-amber-200 text-amber-700'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-700';
+                const focusSegments = [];
+                if (stage.nextTarget != null) {
+                  focusSegments.push(`+${stage.nextTarget}`);
+                }
+                if (Number.isFinite(stage.pendingCount) && stage.pendingCount > 0) {
+                  focusSegments.push(`${stage.pendingCount} aproape`);
+                }
+                if (Number.isFinite(stage.blockerCount) && stage.blockerCount > 0) {
+                  focusSegments.push(`${stage.blockerCount} blocat${stage.blockerCount === 1 ? '' : 'e'}`);
+                }
+                const focusSummary = focusSegments.length > 0 ? `Focus actual: ${focusSegments.join(' · ')}.` : '';
+                const slumpReminder = focusSegments.length > 0
+                  ? focusSegments.join(', ')
+                  : 'faptele esențiale';
+                let supportingMessage;
+                if (stage.mastered) {
+                  supportingMessage = lastAccuracyBelowThreshold
+                    ? `Insigna este deblocată, dar ultima rundă a coborât sub ${thresholdPercent}%. Reîmprospătează ${slumpReminder} pentru a păstra strălucirea.${focusSummary ? ` ${focusSummary}` : ''}`
+                    : `Insigna este deblocată! Continuă verificările încrezătoare ca ${stage.badge?.name || 'insigna ta'} să rămână strălucitoare.${focusSummary ? ` ${focusSummary}` : ''}`;
+                } else if (stage.unlocked) {
+                  supportingMessage = `Atige ${thresholdPercent}% acuratețe și finalizează ${runTarget || 1} rund${runTarget === 1 ? 'ă' : 'e'} cu precizie ridicată (${runProgressLabel}) la ≥${stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT}% pentru a obține ${stage.badge?.name || 'insigna'}.${focusSummary ? ` ${focusSummary}` : ''}`;
+                } else {
+                  supportingMessage = prerequisiteStage
+                    ? `Blocat · Finalizează ${prerequisiteStage.label} (≥${prerequisiteThreshold}% acuratețe).`
+                    : `Blocat · Termină adunările până la +${stage.maxAddend - 1}.`;
+                }
 
                 return (
                   <div
@@ -739,9 +765,22 @@ const ModeSelection = ({
                         {runTarget > 0 ? `Runde precise: ${runProgressLabel}` : `Runde precise: ${runProgress}`}
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">{bestAccuracyLabel}</span>
+                      <span className={`px-2 py-1 rounded-full border ${lastAccuracyChipTone}`}>
+                        {lastAccuracy != null ? `Ultima rundă: ${lastAccuracy}%` : 'Ultima rundă: —'}
+                      </span>
                       {stage.nextTarget != null && (
                         <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
                           Următorul focus: +{stage.nextTarget}
+                        </span>
+                      )}
+                      {Number.isFinite(stage.pendingCount) && stage.pendingCount > 0 && (
+                        <span className="px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700">
+                          Aproape: {stage.pendingCount}
+                        </span>
+                      )}
+                      {Number.isFinite(stage.blockerCount) && stage.blockerCount > 0 && (
+                        <span className="px-2 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700">
+                          Necesită atenție: {stage.blockerCount}
                         </span>
                       )}
                     </div>
