@@ -173,25 +173,41 @@ const SPARKLE_POSITIONS = [
 const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
   const normalizedStages = useMemo(() => {
     if (Array.isArray(stages) && stages.length > 0) {
-      return stages.map((stage, index) => ({
-        requiredHighAccuracyRuns: stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0,
-        requiredPerfectRuns: stage.requiredPerfectRuns ?? stage.requiredHighAccuracyRuns ?? 0,
-        highAccuracyRuns: stage.highAccuracyRuns ?? stage.perfectRuns ?? 0,
-        unlocked: stage.unlocked ?? index === 0,
-        mastered: Boolean(stage.mastered),
-        accuracyMastered: Boolean(stage.accuracyMastered),
-        meetsHighAccuracyRequirement: Boolean(stage.meetsHighAccuracyRequirement ?? stage.meetsPerfectRunRequirement),
-        progressPercent: Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0,
-        totalStageRuns: Number.isFinite(stage.totalStageRuns)
+      return stages.map((stage, index) => {
+        const requiredRuns = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
+        const currentRuns = stage.highAccuracyRuns ?? stage.perfectRuns ?? 0;
+        const badgeProgressPercent = requiredRuns > 0
+          ? Math.min(100, Math.round((Math.min(currentRuns, requiredRuns) / requiredRuns) * 100))
+          : 0;
+
+        return {
+          requiredHighAccuracyRuns: requiredRuns,
+          requiredPerfectRuns: stage.requiredPerfectRuns ?? stage.requiredHighAccuracyRuns ?? 0,
+          highAccuracyRuns: currentRuns,
+          unlocked: stage.unlocked ?? index === 0,
+          mastered: Boolean(stage.mastered),
+          accuracyMastered: Boolean(stage.accuracyMastered),
+          perAddendAccuracyMastered: Boolean(stage.perAddendAccuracyMastered ?? stage.accuracyMastered),
+          stageAccuracy: Number.isFinite(stage.stageAccuracy)
+            ? stage.stageAccuracy
+            : Number.isFinite(stage.bestAccuracy)
+              ? stage.bestAccuracy
+              : null,
+          stageAccuracyMastered: Boolean(stage.stageAccuracyMastered),
+          meetsHighAccuracyRequirement: Boolean(stage.meetsHighAccuracyRequirement ?? stage.meetsPerfectRunRequirement),
+          progressPercent: Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0,
+          badgeProgressPercent,
+          totalStageRuns: Number.isFinite(stage.totalStageRuns)
           ? stage.totalStageRuns
           : Number.isFinite(stage.highAccuracyRuns)
             ? stage.highAccuracyRuns
             : 0,
-        bestAccuracy: Number.isFinite(stage.bestAccuracy) ? stage.bestAccuracy : null,
-        lastAccuracy: Number.isFinite(stage.lastAccuracy) ? stage.lastAccuracy : null,
-        badgeEarned: Boolean(stage.badgeEarned),
-        ...stage,
-      }));
+          bestAccuracy: Number.isFinite(stage.bestAccuracy) ? stage.bestAccuracy : null,
+          lastAccuracy: Number.isFinite(stage.lastAccuracy) ? stage.lastAccuracy : null,
+          badgeEarned: Boolean(stage.badgeEarned),
+          ...stage,
+        };
+      });
     }
 
     return FALLBACK_STAGE_BLUEPRINT.map((stage, index) => ({
@@ -199,8 +215,12 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
       unlocked: index === 0,
       mastered: false,
       accuracyMastered: false,
+      perAddendAccuracyMastered: false,
+      stageAccuracy: null,
+      stageAccuracyMastered: false,
       meetsHighAccuracyRequirement: false,
       progressPercent: 0,
+      badgeProgressPercent: 0,
       totalStageRuns: 0,
       bestAccuracy: null,
       lastAccuracy: null,
@@ -332,6 +352,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                   ? Math.min(100, Math.round((completedRuns / runTarget) * 100))
                   : 100;
                 const accuracyPercent = Number.isFinite(stage.progressPercent) ? stage.progressPercent : 0;
+                const stageAccuracyScore = Number.isFinite(stage.stageAccuracy) ? stage.stageAccuracy : null;
                 const mastered = Boolean(stage.mastered);
                 const locked = !stage.unlocked;
                 const badges = miniBadgeRows(stage);
@@ -454,7 +475,18 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                             <div className={`h-full rounded-full bg-gradient-to-r ${visual.progressGradient}`} style={{ width: `${Math.min(100, accuracyPercent)}%` }} />
                           </div>
                           <p className="mt-3 text-xs text-purple-800/80">
-                            Stăpânirea cere {masteryPercentRequirement}% acuratețe pentru fiecare termen din această etapă.
+                            <span className="block">
+                              Stăpânirea cere {masteryPercentRequirement}% acuratețe pentru fiecare termen din această etapă.
+                              {' '}
+                              {stage.perAddendAccuracyMastered
+                                ? 'Bravo! Fiecare termen atinge deja pragul de stăpânire.'
+                                : 'Continuă să exersezi termenii mai fragili pentru a atinge pragul pe toată linia.'}
+                            </span>
+                            {stageAccuracyScore != null && (
+                              <span className="block text-purple-700/80 mt-1">
+                                Cea mai bună rundă de etapă: {stageAccuracyScore}% acuratețe.
+                              </span>
+                            )}
                           </p>
                         </div>
                         <div className="rounded-2xl border border-white/40 bg-white/60 p-4 shadow-inner">

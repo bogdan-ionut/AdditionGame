@@ -121,6 +121,8 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   const checkpointStatusRef = useRef('idle');
   const spokenModeRef = useRef(null);
   const stageRunRef = useRef(null);
+  const stageRunHistoryRef = useRef({});
+  const stageRunInitRef = useRef(false);
   const aiBadgeActive = useMemo(() => Boolean(aiRuntime.aiEnabled), [aiRuntime.aiEnabled]);
 
   const openSettings = useCallback(() => {
@@ -181,7 +183,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     });
     const spotlightStage = newlyMastered[0];
     if (!spotlightStage) return;
-    if (badgeSpotlight && badgeSpotlight.stageId === spotlightStage.id) return;
+    if (badgeSpotlight && badgeSpotlight.stageId === spotlightStage.id && !badgeSpotlight.progressOnly) return;
     setShowBadgeCelebration(true);
     setBadgeSpotlight({
       stageId: spotlightStage.id,
@@ -194,7 +196,15 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       highAccuracyRuns: spotlightStage.highAccuracyRuns,
       requiredHighAccuracyRuns: spotlightStage.requiredHighAccuracyRuns,
       runThresholdPercent: spotlightStage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT,
+      progressOnly: false,
     });
+    stageRunHistoryRef.current = {
+      ...stageRunHistoryRef.current,
+      [spotlightStage.id]: {
+        runs: spotlightStage.highAccuracyRuns ?? 0,
+        badgeEarned: true,
+      },
+    };
   }, [badgeSpotlight, setGameState, stageProgress]);
 
   useEffect(() => {
@@ -202,6 +212,69 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const timeout = setTimeout(() => setShowBadgeCelebration(false), 5000);
     return () => clearTimeout(timeout);
   }, [showBadgeCelebration]);
+
+  useEffect(() => {
+    if (!Array.isArray(stageProgress) || !stageProgress.length) {
+      return;
+    }
+
+    if (!stageRunInitRef.current) {
+      const initial = {};
+      stageProgress.forEach((stage) => {
+        initial[stage.id] = {
+          runs: Number.isFinite(stage.highAccuracyRuns) ? stage.highAccuracyRuns : 0,
+          badgeEarned: Boolean(stage.badgeEarned),
+        };
+      });
+      stageRunHistoryRef.current = initial;
+      stageRunInitRef.current = true;
+      return;
+    }
+
+    let progressSpotlight = null;
+    const history = { ...stageRunHistoryRef.current };
+
+    stageProgress.forEach((stage) => {
+      const currentRuns = Number.isFinite(stage.highAccuracyRuns) ? stage.highAccuracyRuns : 0;
+      const previous = history[stage.id] || { runs: 0, badgeEarned: false };
+      history[stage.id] = {
+        runs: currentRuns,
+        badgeEarned: Boolean(stage.badgeEarned),
+      };
+
+      if (stage.mastered) {
+        return;
+      }
+
+      if (currentRuns > previous.runs) {
+        const targetRuns = Number.isFinite(stage.requiredHighAccuracyRuns)
+          ? stage.requiredHighAccuracyRuns
+          : Number.isFinite(stage.requiredPerfectRuns)
+            ? stage.requiredPerfectRuns
+            : 0;
+        progressSpotlight = {
+          stageId: stage.id,
+          stageLabel: stage.label,
+          badgeName: stage.badge?.name || stage.shortLabel,
+          description: stage.badge?.description,
+          gradient: stage.badge?.gradient,
+          accent: stage.badge?.accent,
+          icon: stage.badge?.icon,
+          highAccuracyRuns: currentRuns,
+          requiredHighAccuracyRuns: targetRuns,
+          runThresholdPercent: stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT,
+          progressOnly: true,
+        };
+      }
+    });
+
+    stageRunHistoryRef.current = history;
+
+    if (progressSpotlight && !badgeSpotlight) {
+      setShowBadgeCelebration(true);
+      setBadgeSpotlight(progressSpotlight);
+    }
+  }, [badgeSpotlight, stageProgress]);
 
   const defaultRangeLimit = useMemo(
     () => resolveMaxUnlockedAddend(stageProgress),
