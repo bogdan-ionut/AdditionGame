@@ -215,9 +215,6 @@ export const computeAdditionStageProgress = (masteryTracking = {}, stageAchievem
 
     const avgPercent = addends.length > 0 ? Math.round(summary.percentSum / addends.length) : 0;
 
-    const accuracyMastered =
-      addends.length > 0 && summary.blockerCount === 0 && summary.unseenCount === 0 && summary.masteredCount === addends.length;
-
     const stageBadge = stageAchievements?.[id] || {};
     const highAccuracyRuns =
       stageBadge.highAccuracyRuns != null ? parseCounter(stageBadge.highAccuracyRuns) : parseCounter(stageBadge.perfectRuns);
@@ -228,7 +225,19 @@ export const computeAdditionStageProgress = (masteryTracking = {}, stageAchievem
     const lastAccuracy = Number.isFinite(stageBadge.lastAccuracy) ? stageBadge.lastAccuracy : null;
     const bestAccuracy = Number.isFinite(stageBadge.bestAccuracy) ? stageBadge.bestAccuracy : null;
     const meetsHighAccuracyRequirement = requiredPerfectRuns <= 0 || highAccuracyRuns >= requiredPerfectRuns;
-    const stageMastered = accuracyMastered && meetsHighAccuracyRequirement;
+    const perAddendMastered =
+      addends.length > 0 &&
+      summary.blockerCount === 0 &&
+      summary.unseenCount === 0 &&
+      summary.masteredCount === addends.length;
+    const stageAccuracy = Number.isFinite(bestAccuracy)
+      ? bestAccuracy
+      : Number.isFinite(lastAccuracy)
+        ? lastAccuracy
+        : avgPercent;
+    const stageAccuracyMastered = stageAccuracy >= masteryThreshold * 100;
+    const meetsAccuracyRequirement = perAddendMastered || stageAccuracyMastered;
+    const stageMastered = meetsAccuracyRequirement && meetsHighAccuracyRequirement;
     const badgeEarnedAt = Number.isFinite(stageBadge.badgeEarnedAt) ? stageBadge.badgeEarnedAt : stageBadge.badgeEarnedAt || null;
 
     const prerequisitesMet = prerequisites.every((reqId) => {
@@ -251,7 +260,10 @@ export const computeAdditionStageProgress = (masteryTracking = {}, stageAchievem
       unlocked,
       prerequisitesMet,
       mastered: stageMastered,
-      accuracyMastered,
+      accuracyMastered: meetsAccuracyRequirement,
+      perAddendAccuracyMastered: perAddendMastered,
+      stageAccuracy,
+      stageAccuracyMastered,
       meetsPerfectRunRequirement: meetsHighAccuracyRequirement,
       meetsHighAccuracyRequirement,
       progressPercent: avgPercent,

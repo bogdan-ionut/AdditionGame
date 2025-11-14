@@ -905,11 +905,23 @@ const ModeSelection = ({
             <p className="mt-4 text-sm font-semibold text-purple-900">
               <span className="inline-flex items-center gap-2">
                 <CelebrationIcon size={18} />
-                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns} runde cu acuratețe ridicată ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% finalizate
+                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns || badgeSpotlight.highAccuracyRuns} runde cu acuratețe ridicată ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% finalizate
               </span>
             </p>
-            <p className="mt-2 text-xs text-purple-900/70">
-              Continuă verificările încrezătoare ca insigna ta cosmică să rămână strălucitoare.
+            <p className="mt-2 text-xs text-purple-900/70 text-balance">
+              {badgeSpotlight.progressOnly
+                ? (() => {
+                    const remaining = Math.max(
+                      (badgeSpotlight.requiredHighAccuracyRuns || badgeSpotlight.highAccuracyRuns || 0)
+                        - (badgeSpotlight.highAccuracyRuns || 0),
+                      0,
+                    );
+                    if (remaining <= 0) {
+                      return 'Ești la un pas de insigna completă—mai finalizează o rundă pentru a o debloca definitiv!';
+                    }
+                    return `Excelent! Ai câștigat o stea de precizie. Mai ai ${remaining} rund${remaining === 1 ? 'ă' : 'e'} concentrate pentru a aprinde insigna completă și a debloca etapa următoare.`;
+                  })()
+                : 'Insigna este completă! Etapa următoare este acum deschisă—continuă să exersezi pentru a păstra strălucirea cosmică.'}
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
