@@ -398,7 +398,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         aria-hidden="true"
         onMouseDown={handleBackdropClick}
       />
-      <div className="relative z-10 w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1500px] overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
+      <div className="relative z-10 w-full max-w-7xl xl:max-w-[1500px] 2xl:max-w-[1700px] overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
         <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 px-8 py-6 text-white">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -421,7 +421,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
             <X size={20} />
           </button>
         </div>
-        <div className="max-h-[75vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-8 py-6">
+        <div className="max-h-[75vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-10 py-8">
           {!hasProgressData && (
             <div className="mb-6 rounded-3xl border-2 border-purple-100 bg-white/70 p-6 text-sm text-purple-700 shadow">
               <p className="font-semibold text-purple-900">Previzualizează drumul insignei</p>
@@ -437,7 +437,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
               <p className="mt-2 text-sm">Revino mai târziu pentru noi realizări.</p>
             </div>
           ) : (
-            <div className="grid gap-6 xl:gap-8 md:grid-cols-2 xl:grid-cols-4 xl:auto-rows-fr">
+            <div className="grid gap-8 xl:gap-10 md:grid-cols-2 xl:grid-cols-4 xl:auto-rows-fr">
               {orderedStages.map((stage, index) => {
                 const runTarget = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
                 const completedRuns = runTarget > 0
@@ -539,16 +539,16 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                 return (
                   <div
                     key={stage.id}
-                    className={`relative flex h-full flex-col overflow-hidden rounded-[2.5rem] border ${visual.cardBorder} bg-gradient-to-br ${visual.cardGradient} p-6 ${visual.shadow} transition-transform duration-300 hover:-translate-y-1`}
+                    className={`relative flex h-full flex-col overflow-hidden rounded-[2.5rem] border ${visual.cardBorder} bg-gradient-to-br ${visual.cardGradient} p-8 ${visual.shadow} transition-transform duration-300 hover:-translate-y-1`}
                   >
                     <div className="pointer-events-none absolute inset-0 bg-white/25 backdrop-blur-[2px]" aria-hidden="true" />
                     <div
                       className={`pointer-events-none absolute -left-16 right-[-16px] top-0 h-40 bg-gradient-to-br ${visual.beamGradient} opacity-60 blur-3xl`}
                       aria-hidden="true"
                     />
-                    <div className="relative z-10 flex h-full flex-col gap-6">
-                      <div className="flex flex-col items-center gap-5 text-center xl:flex-row xl:items-start xl:text-left xl:gap-8">
-                        <div className="relative flex h-44 w-44 shrink-0 items-center justify-center">
+                    <div className="relative z-10 flex h-full flex-col gap-8">
+                      <div className="flex flex-col items-center gap-6 text-center xl:flex-row xl:items-start xl:text-left xl:gap-10">
+                        <div className="relative flex h-48 w-48 shrink-0 items-center justify-center">
                           <div
                             className={`pointer-events-none absolute inset-[-25%] rounded-full bg-gradient-to-br ${visual.haloGradient} opacity-80 blur-3xl`}
                             aria-hidden="true"
