@@ -184,6 +184,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const spotlightStage = newlyMastered[0];
     if (!spotlightStage) return;
     if (badgeSpotlight && badgeSpotlight.stageId === spotlightStage.id && !badgeSpotlight.progressOnly) return;
+    const playerDisplayName = (studentInfo?.preferredName || studentInfo?.nickname || studentInfo?.name || '')
+      .toString()
+      .trim();
+
     setShowBadgeCelebration(true);
     setBadgeSpotlight({
       stageId: spotlightStage.id,
@@ -197,6 +201,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       requiredHighAccuracyRuns: spotlightStage.requiredHighAccuracyRuns,
       runThresholdPercent: spotlightStage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT,
       progressOnly: false,
+      playerName: playerDisplayName || 'Exploratorule',
     });
     stageRunHistoryRef.current = {
       ...stageRunHistoryRef.current,
@@ -252,6 +257,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           : Number.isFinite(stage.requiredPerfectRuns)
             ? stage.requiredPerfectRuns
             : 0;
+        const playerDisplayName = (studentInfo?.preferredName || studentInfo?.nickname || studentInfo?.name || '')
+          .toString()
+          .trim();
+
         progressSpotlight = {
           stageId: stage.id,
           stageLabel: stage.label,
@@ -264,6 +273,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           requiredHighAccuracyRuns: targetRuns,
           runThresholdPercent: stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT,
           progressOnly: true,
+          playerName: playerDisplayName || 'Exploratorule',
         };
       }
     });

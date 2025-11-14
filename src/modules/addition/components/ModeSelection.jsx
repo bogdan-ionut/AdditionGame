@@ -104,6 +104,13 @@ const ModeSelection = ({
     ? BADGE_ICON_MAP[badgeSpotlight.icon]
     : Sparkles;
   const CelebrationIcon = BADGE_ICON_MAP.PartyPopper || BADGE_ICON_MAP.Sparkles || Sparkles;
+  const playerDisplayName = (() => {
+    const candidate = badgeSpotlight?.playerName
+      || gameState?.studentInfo?.preferredName
+      || gameState?.studentInfo?.nickname
+      || gameState?.studentInfo?.name;
+    return candidate ? candidate.toString().trim() : '';
+  })();
 
   const defaultRangeLimit = useMemo(
     () => resolveMaxUnlockedAddend(additionStages),
@@ -936,6 +943,9 @@ const ModeSelection = ({
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/85 shadow-inner">
               <SpotlightIcon size={40} className="text-purple-700" />
             </div>
+            <p className="text-lg font-semibold text-purple-900/90">
+              {playerDisplayName ? `Felicitări, ${playerDisplayName}!` : 'Felicitări!'}
+            </p>
             <h3 className="text-3xl font-extrabold text-purple-900 drop-shadow">{badgeSpotlight.badgeName}</h3>
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.25em] text-purple-800">{badgeSpotlight.stageLabel}</p>
             {badgeSpotlight.description && (
@@ -956,11 +966,11 @@ const ModeSelection = ({
                       0,
                     );
                     if (remaining <= 0) {
-                      return 'Ești la un pas de insigna completă—mai finalizează o rundă pentru a o debloca definitiv!';
+                      return `${playerDisplayName ? `${playerDisplayName}, ` : ''}Ești la un pas de insigna completă—mai finalizează o rundă pentru a o debloca definitiv!`;
                     }
-                    return `Excelent! Ai câștigat o stea de precizie. Mai ai ${remaining} rund${remaining === 1 ? 'ă' : 'e'} concentrate pentru a aprinde insigna completă și a debloca etapa următoare.`;
+                    return `${playerDisplayName ? `${playerDisplayName}, ` : ''}Excelent! Ai câștigat o stea de precizie. Mai ai ${remaining} rund${remaining === 1 ? 'ă' : 'e'} concentrate pentru a aprinde insigna completă și a debloca etapa următoare.`;
                   })()
-                : 'Insigna este completă! Etapa următoare este acum deschisă—continuă să exersezi pentru a păstra strălucirea cosmică.'}
+                : `${playerDisplayName ? `Bravo, ${playerDisplayName}! ` : ''}Insigna este completă! Etapa următoare este acum deschisă—continuă să exersezi pentru a păstra strălucirea cosmică.`}
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
