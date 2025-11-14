@@ -20,6 +20,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gradient: 'from-amber-300 via-rose-400 to-fuchsia-500',
       accent: 'text-rose-900',
       icon: 'Sparkles',
+      ringPalette: ['#fde68a', '#f472b6', '#c084fc'],
       cardGradient: 'from-rose-50 via-amber-50/70 to-purple-50',
       haloGradient: 'from-amber-200/90 via-rose-300/60 to-purple-300/70',
       coreGradient: 'from-amber-400 via-rose-500 to-purple-600',
@@ -56,6 +57,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gradient: 'from-sky-300 via-indigo-500 to-purple-700',
       accent: 'text-indigo-900',
       icon: 'Rocket',
+      ringPalette: ['#bae6fd', '#60a5fa', '#a855f7'],
       cardGradient: 'from-sky-50 via-indigo-50/80 to-purple-50',
       haloGradient: 'from-sky-200/80 via-indigo-300/50 to-purple-400/60',
       coreGradient: 'from-sky-400 via-indigo-500 to-purple-600',
@@ -92,6 +94,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gradient: 'from-fuchsia-400 via-purple-500 to-violet-700',
       accent: 'text-violet-900',
       icon: 'Gem',
+      ringPalette: ['#f5d0fe', '#f472b6', '#6366f1'],
       cardGradient: 'from-violet-50 via-fuchsia-50/80 to-indigo-50',
       haloGradient: 'from-fuchsia-200/80 via-purple-300/60 to-indigo-400/70',
       coreGradient: 'from-fuchsia-400 via-purple-500 to-violet-600',
@@ -146,6 +149,10 @@ const buildBadgeVisual = (badge = {}) => {
     pattern: badge.pattern || null,
     ribbonGradient: badge.ribbonGradient || 'from-indigo-500 via-purple-600 to-fuchsia-600',
     sparklePalette: palette,
+    ringPalette: Array.isArray(badge.ringPalette) && badge.ringPalette.length > 0
+      ? badge.ringPalette
+      : ['#c4b5fd', '#a855f7', '#f472b6'],
+    ringTrackColor: badge.ringTrackColor || 'rgba(255,255,255,0.18)',
     sparkleGradientEarned: badge.sparkleGradientEarned
       || 'linear-gradient(135deg, rgba(129,140,248,0.9) 0%, rgba(236,72,153,0.9) 50%, rgba(253,224,71,0.9) 100%)',
     sparkleGradientLocked: badge.sparkleGradientLocked
@@ -169,6 +176,31 @@ const SPARKLE_POSITIONS = [
   { top: '18%', right: '12%' },
   { bottom: '12%', left: '20%' },
 ];
+
+const clampPercent = (value) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+
+const buildRingProgressGradient = (palette, percent, trackColor, locked) => {
+  const safePercent = clampPercent(percent);
+  const clampedPalette = Array.isArray(palette) && palette.length > 0 ? palette : ['#c4b5fd', '#a855f7', '#f472b6'];
+  const arcDegrees = (safePercent / 100) * 360;
+  const mutedTrack = locked ? 'rgba(148,163,184,0.25)' : trackColor;
+
+  if (safePercent <= 0) {
+    return `conic-gradient(${mutedTrack} 0deg 360deg)`;
+  }
+
+  const segments = clampedPalette.map((color, index) => {
+    const start = (arcDegrees * index) / clampedPalette.length;
+    const end = (arcDegrees * (index + 1)) / clampedPalette.length;
+    return `${color} ${start}deg ${end}deg`;
+  });
+
+  if (safePercent < 100) {
+    segments.push(`${mutedTrack} ${arcDegrees}deg 360deg`);
+  }
+
+  return `conic-gradient(from -90deg, ${segments.join(', ')})`;
+};
 
 const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
   const normalizedStages = useMemo(() => {
@@ -313,7 +345,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         aria-hidden="true"
         onMouseDown={handleBackdropClick}
       />
-      <div className="relative z-10 w-full max-w-4xl overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
+      <div className="relative z-10 w-full max-w-6xl overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
         <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 px-8 py-6 text-white">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -336,7 +368,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
             <X size={20} />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-8 py-6">
+        <div className="max-h-[75vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-8 py-6">
           {!hasProgressData && (
             <div className="mb-6 rounded-3xl border-2 border-purple-100 bg-white/70 p-6 text-sm text-purple-700 shadow">
               <p className="font-semibold text-purple-900">Previzualizează drumul insignei</p>
@@ -352,7 +384,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
               <p className="mt-2 text-sm">Revino mai târziu pentru noi realizări.</p>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 xl:auto-rows-fr">
               {orderedStages.map((stage, index) => {
                 const runTarget = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
                 const completedRuns = runTarget > 0
@@ -392,6 +424,20 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                     ? 'bg-slate-200/40 text-slate-600 border-slate-200/70'
                     : 'bg-purple-500/15 text-purple-700 border-purple-200/70';
                 const StatusIcon = locked ? Lock : BadgeIcon;
+                const ringProgressPercent = clampPercent(stage.badgeProgressPercent ?? runPercent ?? 0);
+                const ringBackground = buildRingProgressGradient(
+                  visual.ringPalette,
+                  ringProgressPercent,
+                  visual.ringTrackColor,
+                  locked,
+                );
+                const sparkleOpacity = locked ? 0.2 : 0.35 + (ringProgressPercent / 100) * 0.45;
+                const innerGlowOpacity = locked ? 0.35 : 0.5 + (ringProgressPercent / 100) * 0.35;
+                const progressMedallionClass = locked
+                  ? 'bg-white/50 text-slate-600'
+                  : mastered
+                    ? 'bg-white/90 text-emerald-600'
+                    : 'bg-white/80 text-purple-700';
                 const statCards = [
                   {
                     key: 'best',
@@ -430,16 +476,16 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                 return (
                   <div
                     key={stage.id}
-                    className={`relative overflow-hidden rounded-[2.5rem] border ${visual.cardBorder} bg-gradient-to-br ${visual.cardGradient} p-6 ${visual.shadow} transition-transform duration-300 hover:-translate-y-1`}
+                    className={`relative flex h-full flex-col overflow-hidden rounded-[2.5rem] border ${visual.cardBorder} bg-gradient-to-br ${visual.cardGradient} p-6 ${visual.shadow} transition-transform duration-300 hover:-translate-y-1`}
                   >
                     <div className="pointer-events-none absolute inset-0 bg-white/25 backdrop-blur-[2px]" aria-hidden="true" />
                     <div
                       className={`pointer-events-none absolute -left-16 right-[-16px] top-0 h-40 bg-gradient-to-br ${visual.beamGradient} opacity-60 blur-3xl`}
                       aria-hidden="true"
                     />
-                    <div className="relative z-10 flex flex-col gap-6">
-                      <div className="flex flex-col items-center gap-5 text-center">
-                        <div className="relative flex h-44 w-44 items-center justify-center">
+                    <div className="relative z-10 flex h-full flex-col gap-6">
+                      <div className="flex flex-col items-center gap-5 text-center xl:flex-row xl:items-start xl:text-left xl:gap-6">
+                        <div className="relative flex h-44 w-44 shrink-0 items-center justify-center">
                           <div
                             className={`pointer-events-none absolute inset-[-25%] rounded-full bg-gradient-to-br ${visual.haloGradient} opacity-80 blur-3xl`}
                             aria-hidden="true"
@@ -449,14 +495,15 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                             return (
                               <span
                                 key={`${stage.id}-sparkle-${sparkleIndex}`}
-                                className="pointer-events-none absolute h-12 w-12 rounded-full opacity-70 blur-[18px]"
-                                style={{ background: color, ...position }}
+                                className="pointer-events-none absolute h-12 w-12 rounded-full blur-[18px]"
+                                style={{ background: color, ...position, opacity: sparkleOpacity }}
                                 aria-hidden="true"
                               />
                             );
                           })}
                           <div
-                            className={`relative z-10 flex h-full w-full items-center justify-center rounded-full border-[6px] ${visual.frameColor} bg-gradient-to-br ${visual.coreGradient} shadow-[0_12px_30px_rgba(45,17,90,0.25)]`}
+                            className={`relative z-10 flex h-full w-full items-center justify-center rounded-full border-[6px] ${visual.frameColor} shadow-[0_12px_30px_rgba(45,17,90,0.25)]`}
+                            style={{ backgroundImage: ringBackground }}
                           >
                             {visual.pattern && (
                               <div
@@ -464,10 +511,20 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                                 style={{ backgroundImage: visual.pattern, backgroundSize: '160% 160%' }}
                               />
                             )}
-                            <div className={`absolute inset-[16%] rounded-full bg-gradient-to-br ${visual.innerGlowGradient} opacity-90`} />
+                            <div
+                              className={`absolute inset-[16%] rounded-full bg-gradient-to-br ${visual.innerGlowGradient}`}
+                              style={{ opacity: innerGlowOpacity }}
+                            />
                             <div className="absolute inset-[10%] rounded-full border border-white/20" />
                             <div className={`relative z-20 flex h-16 w-16 items-center justify-center rounded-full ${visual.iconBackdrop} backdrop-blur-md ${visual.iconRing}`}>
                               <BadgeIcon className={`h-9 w-9 ${visual.iconColor} ${visual.iconShadow}`} strokeWidth={1.6} />
+                            </div>
+                            <div className={`pointer-events-none absolute inset-[28%] flex flex-col items-center justify-center rounded-full text-center drop-shadow ${progressMedallionClass}`}>
+                              <span className="text-xs font-bold uppercase tracking-wide">
+                                {completedRuns}
+                                {runTarget ? `/${runTarget}` : ''}
+                              </span>
+                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] opacity-80">Runde</span>
                             </div>
                           </div>
                           {visual.ribbonGradient && (
@@ -478,7 +535,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                             </div>
                           )}
                         </div>
-                        <div className="flex flex-wrap items-center justify-center gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-purple-600">
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-purple-600 xl:justify-start">
                           <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Etapa {stageIndex}</span>
                           <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Termen maxim {stage.maxAddend}</span>
                           {runTarget > 0 && (
@@ -489,10 +546,10 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                             {statusLabel}
                           </span>
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-2 xl:max-w-[14rem]">
                           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-purple-500">{stage.label}</p>
                           <h3 className={`text-2xl font-black tracking-tight ${accentTextClass}`}>{stage.badge?.name}</h3>
-                          <p className="text-sm text-purple-900/75">{stage.badge?.description || stage.description}</p>
+                          <p className="text-sm text-purple-900/75 leading-relaxed">{stage.badge?.description || stage.description}</p>
                         </div>
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
