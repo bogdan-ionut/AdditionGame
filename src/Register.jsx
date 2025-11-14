@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { Upload } from 'lucide-react';
+import { showToast } from './lib/ui/toast';
 
 const Register = ({ onRegister, onImport }) => {
   const [name, setName] = useState('');
@@ -26,7 +27,7 @@ const Register = ({ onRegister, onImport }) => {
       const age = calculateAge(birthDate);
       onRegister({ name, age, gender });
     } else {
-      alert('Completează toate câmpurile.');
+      showToast({ level: 'error', message: 'Completează toate câmpurile.' });
     }
   };
 
