@@ -30,10 +30,10 @@ const STATUS_STYLES = {
 };
 
 const defaultStatus = {
-  label: 'Coming Soon',
-  cta: 'Preview',
+  label: 'În curând',
+  cta: 'Previzualizare',
   tone: 'slate',
-  message: 'We are drafting this learning path now.',
+  message: 'Lucrăm la acest traseu de învățare chiar acum.',
 };
 
 const buildStatusMeta = (statusKey) => {
@@ -105,7 +105,7 @@ const LearningPathCard = ({ path, onSelect }) => {
         )}
 
         <div className="space-y-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Recommended: {path.recommendedAges}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Recomandat: {path.recommendedAges}</div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-sm text-slate-500 flex-1">{statusMeta.message}</p>
             <button
@@ -113,7 +113,7 @@ const LearningPathCard = ({ path, onSelect }) => {
               disabled={!isAvailable}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition ${buttonStyles}`}
             >
-              <span>{isAvailable ? 'Launch Path' : statusMeta.cta}</span>
+              <span>{isAvailable ? 'Pornește traseul' : statusMeta.cta}</span>
               <ArrowRight size={18} />
             </button>
           </div>

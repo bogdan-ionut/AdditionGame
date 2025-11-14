@@ -9,14 +9,14 @@ import { X, Sparkles, Rocket, Crown, Award, Lock, CircleCheckBig, Gem } from 'lu
 const FALLBACK_STAGE_BLUEPRINT = [
   {
     id: 'add-up-to-3',
-    label: 'Addition up to 3',
-    description: 'Lock in counting-all strategies using addends from 1 to 3.',
+    label: 'Adunare până la 3',
+    description: 'Fixează strategiile de numărat complet folosind termeni de la 1 la 3.',
     maxAddend: 3,
     minAddend: 1,
     requiredHighAccuracyRuns: 3,
     badge: {
-      name: 'Aurora Initiate',
-      description: 'Ignite the nebula ring with fearless +3 adventures.',
+      name: 'Inițiat Aurora',
+      description: 'Aprinde inelul nebuloasei cu aventuri curajoase de +3.',
       gradient: 'from-amber-300 via-rose-400 to-fuchsia-500',
       accent: 'text-rose-900',
       icon: 'Sparkles',
@@ -45,14 +45,14 @@ const FALLBACK_STAGE_BLUEPRINT = [
   },
   {
     id: 'add-up-to-5',
-    label: 'Addition up to 5',
-    description: 'Build confidence with teen totals by adding numbers up to 5.',
+    label: 'Adunare până la 5',
+    description: 'Construiește încredere în sumele până la 10 adunând numere până la 5.',
     maxAddend: 5,
     minAddend: 1,
     requiredHighAccuracyRuns: 3,
     badge: {
-      name: 'Nebula Navigator',
-      description: 'Chart shimmering pathways through every +5 combination.',
+      name: 'Navigatorul Nebuloasei',
+      description: 'Trasează căi strălucitoare prin fiecare combinație de +5.',
       gradient: 'from-sky-300 via-indigo-500 to-purple-700',
       accent: 'text-indigo-900',
       icon: 'Rocket',
@@ -81,14 +81,14 @@ const FALLBACK_STAGE_BLUEPRINT = [
   },
   {
     id: 'add-up-to-10',
-    label: 'Addition up to 10',
-    description: 'Finish the within-10 journey with automatic recall of all facts.',
+    label: 'Adunare până la 10',
+    description: 'Încheie traseul până la 10 cu rechemare automată a tuturor faptelor.',
     maxAddend: 9,
     minAddend: 1,
     requiredHighAccuracyRuns: 3,
     badge: {
-      name: 'Celestial Laureate',
-      description: 'Crown every within-10 fact with radiant automaticity.',
+      name: 'Laureatul Celest',
+      description: 'Încoronează fiecare faptă până la 10 cu automatism strălucitor.',
       gradient: 'from-fuchsia-400 via-purple-500 to-violet-700',
       accent: 'text-violet-900',
       icon: 'Gem',
@@ -287,21 +287,21 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 px-8 py-6 text-white">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-3xl font-extrabold tracking-tight">Badge Gallery</h2>
+              <h2 className="text-3xl font-extrabold tracking-tight">Galerie de insigne</h2>
               <p className="text-sm opacity-90">
-                Reach 90% mastery and log {runThresholdPercent}%+ accuracy runs in each stage to unlock the next adventure.
+                Atinge 90% stăpânire și înregistrează runde cu acuratețe de peste {runThresholdPercent}% în fiecare etapă pentru a debloca următoarea aventură.
               </p>
             </div>
             <div className="flex items-center gap-3 rounded-2xl bg-white/20 px-4 py-2 text-sm font-semibold">
               <CircleCheckBig className="h-5 w-5" />
-              <span>{masteredCount}/{totalCount} badges earned</span>
+              <span>{masteredCount}/{totalCount} insigne câștigate</span>
             </div>
           </div>
           <button
             type="button"
             onClick={handleRequestClose}
             className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
-            aria-label="Close achievements"
+            aria-label="Închide insignele"
           >
             <X size={20} />
           </button>
@@ -309,17 +309,17 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         <div className="max-h-[70vh] overflow-y-auto bg-gradient-to-br from-white via-violet-50 to-white px-8 py-6">
           {!hasProgressData && (
             <div className="mb-6 rounded-3xl border-2 border-purple-100 bg-white/70 p-6 text-sm text-purple-700 shadow">
-              <p className="font-semibold text-purple-900">Preview the badge journey</p>
+              <p className="font-semibold text-purple-900">Previzualizează drumul insignei</p>
               <p className="mt-1">
-                You haven&apos;t logged any achievements yet, but here&apos;s a peek at every badge waiting to be unlocked.
-                Keep practicing—each stage will glow in full color once you earn it!
+                Nu ai înregistrat încă nicio realizare, dar iată o privire asupra fiecărei insigne care te așteaptă.
+                Continuă să exersezi—fiecare etapă va străluci în culori vii imediat ce o câștigi!
               </p>
             </div>
           )}
           {orderedStages.length === 0 ? (
             <div className="rounded-3xl border-2 border-purple-100 bg-white/70 p-8 text-center text-purple-700 shadow">
-              <p className="text-lg font-semibold">No badges available</p>
-              <p className="mt-2 text-sm">Check back later for new achievements.</p>
+              <p className="text-lg font-semibold">Nu există insigne disponibile</p>
+              <p className="mt-2 text-sm">Revino mai târziu pentru noi realizări.</p>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2">
@@ -342,7 +342,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                 const masteryPercentRequirement = Number.isFinite(stage.masteryThreshold)
                   ? Math.round(stage.masteryThreshold * 100)
                   : 90;
-                const statusLabel = mastered ? 'Badge unlocked' : locked ? 'Locked' : 'In progress';
+                const statusLabel = mastered ? 'Insignă deblocată' : locked ? 'Blocat' : 'În progres';
                 const statusTone = mastered
                   ? 'bg-emerald-500/15 text-emerald-700 border-emerald-200/70'
                   : locked
@@ -352,25 +352,25 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                 const statCards = [
                   {
                     key: 'best',
-                    label: 'Highest accuracy',
+                    label: 'Cea mai bună acuratețe',
                     value: Number.isFinite(stage.bestAccuracy) ? `${stage.bestAccuracy}%` : '—',
                     tone: 'purple',
                   },
                   {
                     key: 'last',
-                    label: 'Recent run',
+                    label: 'Ultima rundă',
                     value: Number.isFinite(stage.lastAccuracy) ? `${stage.lastAccuracy}%` : '—',
                     tone: 'purple',
                   },
                   {
                     key: 'runs',
-                    label: 'Runs logged',
+                    label: 'Runde înregistrate',
                     value: stage.totalStageRuns || stage.highAccuracyRuns || stage.perfectRuns || 0,
                     tone: 'slate',
                   },
                   {
                     key: 'status',
-                    label: 'Badge status',
+                    label: 'Starea insignei',
                     value: statusLabel,
                     tone: mastered ? 'emerald' : locked ? 'slate' : 'purple',
                   },
@@ -428,10 +428,10 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                           )}
                         </div>
                         <div className="flex flex-wrap items-center justify-center gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-purple-600">
-                          <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Stage {stageIndex}</span>
-                          <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Max addend {stage.maxAddend}</span>
+                          <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Etapa {stageIndex}</span>
+                          <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Termen maxim {stage.maxAddend}</span>
                           {runTarget > 0 && (
-                            <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Target runs {runTarget}</span>
+                            <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Runde țintă {runTarget}</span>
                           )}
                           <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${statusTone}`}>
                             <StatusIcon className="h-3.5 w-3.5" />
@@ -447,19 +447,19 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-white/40 bg-white/60 p-4 shadow-inner">
                           <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
-                            <span>Accuracy mastery</span>
+                            <span>Acuratețe pentru stăpânire</span>
                             <span>{accuracyPercent}%</span>
                           </div>
                           <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-white/40 shadow-inner">
                             <div className={`h-full rounded-full bg-gradient-to-r ${visual.progressGradient}`} style={{ width: `${Math.min(100, accuracyPercent)}%` }} />
                           </div>
                           <p className="mt-3 text-xs text-purple-800/80">
-                            Mastery requires {masteryPercentRequirement}% accuracy across every addend in this stage.
+                            Stăpânirea cere {masteryPercentRequirement}% acuratețe pentru fiecare termen din această etapă.
                           </p>
                         </div>
                         <div className="rounded-2xl border border-white/40 bg-white/60 p-4 shadow-inner">
                           <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
-                            <span>High-accuracy runs ≥{runThresholdPercent}%</span>
+                            <span>Runde cu acuratețe ≥{runThresholdPercent}%</span>
                             <span>{completedRuns}{runTarget ? `/${runTarget}` : ''}</span>
                           </div>
                           <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-white/40 shadow-inner">
@@ -491,7 +491,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                               ))}
                             </div>
                           ) : (
-                            <p className="mt-3 text-xs text-purple-800/70">Complete high-accuracy runs to light up this badge.</p>
+                            <p className="mt-3 text-xs text-purple-800/70">Finalizează runde precise pentru a aprinde această insignă.</p>
                           )}
                         </div>
                       </div>
@@ -515,7 +515,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
                         <div className="flex items-center gap-3 rounded-full border border-purple-200/80 bg-white px-5 py-2 text-sm font-semibold text-purple-700 shadow-lg">
                           <Lock className="h-5 w-5" />
-                          Earn the previous badge to unlock
+                          Câștigă insigna precedentă pentru a debloca
                         </div>
                       </div>
                     )}

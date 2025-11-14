@@ -15,9 +15,9 @@ interface GameStats {
 }
 
 const difficultyBands = [
-  { id: 'within-5', label: 'Within 5', max: 5 },
-  { id: 'within-10', label: 'Within 10', max: 10 },
-  { id: 'within-20', label: 'Within 20', max: 20 },
+  { id: 'within-5', label: 'Până la 5', max: 5 },
+  { id: 'within-10', label: 'Până la 10', max: 10 },
+  { id: 'within-20', label: 'Până la 20', max: 20 },
 ]
 
 function createDefaultStats(): GameStats {
@@ -80,10 +80,10 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const numericAnswer = Number.parseInt(answer, 10)
-      if (Number.isNaN(numericAnswer)) {
-        setFeedback('Please enter a number to submit your answer.')
-        return
-      }
+        if (Number.isNaN(numericAnswer)) {
+          setFeedback('Introdu un număr pentru a trimite răspunsul.')
+          return
+        }
 
       const expected = problem.a + problem.b
       const endTime = Date.now()
@@ -106,11 +106,11 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
         }
       })
 
-      if (numericAnswer === expected) {
-        setFeedback('Nice work! 🎉')
-      } else {
-        setFeedback(`Almost! ${problem.a} + ${problem.b} = ${expected}. Try the next one.`)
-      }
+        if (numericAnswer === expected) {
+          setFeedback('Bravo! 🎉')
+        } else {
+          setFeedback(`Aproape! ${problem.a} + ${problem.b} = ${expected}. Încearcă următorul exercițiu.`)
+        }
 
       startProblem()
     },
@@ -136,8 +136,8 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-50">
       <header className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Addition Adventure</h1>
-          <p className="text-sm text-slate-400">Practice quick math facts with adaptive feedback.</p>
+          <h1 className="text-2xl font-semibold text-white">Aventura adunării</h1>
+          <p className="text-sm text-slate-400">Exersează calcule rapide cu feedback adaptiv.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -145,14 +145,14 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
             onClick={handleRestart}
             className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
           >
-            Restart session
+            Repornește sesiunea
           </button>
           <button
             type="button"
             onClick={onExit}
             className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-400"
           >
-            Back to dashboard
+            Înapoi la tabloul de bord
           </button>
         </div>
       </header>
@@ -161,7 +161,7 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
         <section className="flex-1 space-y-6">
           <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-8 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-white">Solve the problem</h2>
+              <h2 className="text-xl font-semibold text-white">Rezolvă problema</h2>
               <div className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-4 py-1 text-xs font-medium text-slate-300">
                 {difficulty.label}
               </div>
@@ -169,7 +169,7 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
 
             <div className="flex flex-col items-center gap-6">
               <div className="rounded-3xl border border-slate-800 bg-slate-950 px-10 py-8 text-center shadow-inner">
-                <p className="text-sm uppercase tracking-[0.2em] text-slate-500">What is</p>
+                <p className="text-sm uppercase tracking-[0.2em] text-slate-500">Cât face</p>
                 <p className="text-6xl font-semibold text-white">
                   {problem.a} + {problem.b}
                 </p>
@@ -182,14 +182,14 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
                   value={answer}
                   onChange={(event) => setAnswer(event.target.value)}
                   className="h-12 w-full max-w-[160px] rounded-full border border-slate-700 bg-slate-900 px-6 text-center text-lg font-semibold text-white shadow focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                  placeholder="Your answer"
-                  aria-label="Your answer"
+                  placeholder="Răspunsul tău"
+                  aria-label="Răspunsul tău"
                 />
                 <button
                   type="submit"
                   className="inline-flex h-12 items-center rounded-full bg-emerald-500 px-8 text-base font-semibold text-emerald-950 shadow transition hover:bg-emerald-400"
                 >
-                  Check answer
+                  Verifică răspunsul
                 </button>
               </form>
 
@@ -200,7 +200,7 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
           </div>
 
           <div className="rounded-3xl border border-slate-800 bg-slate-900/40 p-6">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Choose challenge</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Alege provocarea</h3>
             <div className="grid gap-3 sm:grid-cols-3">
               {difficultyBands.map((band) => (
                 <button
@@ -222,41 +222,41 @@ export function AdditionGame({ onExit }: AdditionGameProps) {
 
         <aside className="flex w-full flex-col gap-6 lg:w-80">
           <div className="rounded-3xl border border-slate-800 bg-slate-900/50 p-6">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Session stats</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Statistici sesiune</h3>
             <dl className="mt-5 space-y-4">
               <div className="flex items-center justify-between">
-                <dt className="text-sm text-slate-400">Problems solved</dt>
+                <dt className="text-sm text-slate-400">Probleme rezolvate</dt>
                 <dd className="text-xl font-semibold text-white">{stats.attempts}</dd>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-sm text-slate-400">Correct answers</dt>
+                <dt className="text-sm text-slate-400">Răspunsuri corecte</dt>
                 <dd className="text-xl font-semibold text-emerald-300">{stats.correct}</dd>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-sm text-slate-400">Accuracy</dt>
+                <dt className="text-sm text-slate-400">Acuratețe</dt>
                 <dd className="text-xl font-semibold text-white">{accuracy}%</dd>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-sm text-slate-400">Current streak</dt>
+                <dt className="text-sm text-slate-400">Serie curentă</dt>
                 <dd className="text-xl font-semibold text-white">{stats.streak}</dd>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-sm text-slate-400">Best streak</dt>
+                <dt className="text-sm text-slate-400">Cea mai bună serie</dt>
                 <dd className="text-xl font-semibold text-white">{stats.longestStreak}</dd>
               </div>
               <div className="flex items-center justify-between">
-                <dt className="text-sm text-slate-400">Average time</dt>
+                <dt className="text-sm text-slate-400">Timp mediu</dt>
                 <dd className="text-xl font-semibold text-white">{averageDuration}s</dd>
               </div>
             </dl>
           </div>
 
           <div className="rounded-3xl border border-slate-800 bg-slate-900/30 p-6">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Quick tips</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Sfaturi rapide</h3>
             <ul className="mt-4 space-y-3 text-sm text-slate-300">
-              <li>Try counting on from the larger number for faster answers.</li>
-              <li>Use your fingers or nearby objects if you need a visual helper.</li>
-              <li>Beat your best streak by answering in under {averageDuration || 5} seconds!</li>
+              <li>Încearcă să numeri pornind de la numărul mai mare pentru un răspuns mai rapid.</li>
+              <li>Folosește degetele sau obiectele din jur dacă ai nevoie de un sprijin vizual.</li>
+              <li>Depășește-ți recordul răspunzând în mai puțin de {averageDuration || 5} secunde!</li>
             </ul>
           </div>
         </aside>

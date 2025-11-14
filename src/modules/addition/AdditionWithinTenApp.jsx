@@ -21,11 +21,11 @@ import { useNarrationEngine } from '../../lib/audio/useNarrationEngine';
 
 const DEFAULT_LEARNING_PATH_META = {
   id: 'addition-within-10',
-  title: 'Addition • 0-9 Sums',
-  description: 'Build fluency with single-digit addition using adaptive, story-driven practice.',
-  recommendedAges: 'Ages 3-6',
+  title: 'Adunare • Sume 0-9',
+  description: 'Dezvoltă fluența la adunarea cu o cifră prin exerciții adaptive și povești interactive.',
+  recommendedAges: 'Vârste 3-6',
   operation: 'addition',
-  operationLabel: 'Addition',
+  operationLabel: 'Adunare',
 };
 
 const resolveActiveLearningPath = (learningPath) => {
@@ -186,7 +186,7 @@ const describeSpriteUrl = (url = '') => {
   } catch (error) {
     // ignore parsing issues
   }
-  return 'sprite motif';
+  return 'motiv de personaj';
 };
 
 const SPRITE_CACHE_STORAGE_KEY = 'ai.sprite.cache';
@@ -351,18 +351,18 @@ const migrateGameState = (raw) => {
 };
 
 const knowledgeBands = [
-  { minNumber: -1, label: 'Pre-K Explorer', detail: 'Building counting and subitizing foundations.', levelIndex: 0 },
-  { minNumber: 3, label: 'Kindergarten Super Counter', detail: 'Comfortable with sums to 5 using manipulatives or fingers.', levelIndex: 1 },
-  { minNumber: 6, label: '1st Grade Number Ninja', detail: 'Fluent with single-digit facts up to +7 and ready to bridge tens.', levelIndex: 2 },
-  { minNumber: 8, label: '2nd Grade Math Adventurer', detail: 'Solid on high addends and preparing for double-digit reasoning.', levelIndex: 3 },
+  { minNumber: -1, label: 'Explorator preșcolar', detail: 'Construiește bazele pentru numărat și percepția cantității.', levelIndex: 0 },
+  { minNumber: 3, label: 'Super-numărător de grădiniță', detail: 'Se simte confortabil cu sume până la 5 folosind materiale sau degete.', levelIndex: 1 },
+  { minNumber: 6, label: 'Ninja al numerelor din clasa I', detail: 'Este fluent cu fapte de adunare până la +7 și pregătit să treacă de 10.', levelIndex: 2 },
+  { minNumber: 8, label: 'Aventurier matematic din clasa a II-a', detail: 'Stăpânește termenii mari și se pregătește pentru raționament cu două cifre.', levelIndex: 3 },
 ];
 
 const ageBands = [
-  { maxAge: 4.5, label: 'Pre-K (ages 3-4)', levelIndex: 0, detail: 'Exploring numbers through play.' },
-  { maxAge: 5.5, label: 'Kindergarten (ages 5-6)', levelIndex: 1, detail: 'Working within 5 and early addition.' },
-  { maxAge: 6.5, label: '1st Grade (ages 6-7)', levelIndex: 2, detail: 'Mastering facts within 10.' },
-  { maxAge: 7.5, label: '2nd Grade (ages 7-8)', levelIndex: 3, detail: 'Extending into regrouping and higher addends.' },
-  { maxAge: Infinity, label: 'Upper Elementary (8+)', levelIndex: 4, detail: 'Ready for multi-digit addition and subtraction.' },
+  { maxAge: 4.5, label: 'Preșcolar (3-4 ani)', levelIndex: 0, detail: 'Descoperă numerele prin joacă.' },
+  { maxAge: 5.5, label: 'Grădiniță (5-6 ani)', levelIndex: 1, detail: 'Lucrează cu sume până la 5 și primele adunări.' },
+  { maxAge: 6.5, label: 'Clasa I (6-7 ani)', levelIndex: 2, detail: 'Stăpânește faptele până la 10.' },
+  { maxAge: 7.5, label: 'Clasa a II-a (7-8 ani)', levelIndex: 3, detail: 'Extinde spre regrupare și termeni mai mari.' },
+  { maxAge: Infinity, label: 'Clase primare superioare (8+)', levelIndex: 4, detail: 'Gata pentru adunări și scăderi cu mai multe cifre.' },
 ];
 
 const MASTERED_REQUIRED_ATTEMPTS = 3;
@@ -374,16 +374,16 @@ const HIGH_ACCURACY_RUN_PERCENT = Math.round(HIGH_ACCURACY_RUN_THRESHOLD * 100);
 const ADDITION_STAGE_SEQUENCE = [
   {
     id: 'add-up-to-3',
-    label: 'Addition up to 3',
-    shortLabel: '+3 Mastery',
-    description: 'Lock in counting-all strategies using addends from 1 to 3.',
+    label: 'Adunare până la 3',
+    shortLabel: 'Stăpânire +3',
+    description: 'Fixează strategiile de numărat complet folosind termeni de la 1 la 3.',
     maxAddend: 3,
     minAddend: 1,
     masteryThreshold: 0.9,
     requiredPerfectRuns: 3,
     badge: {
-      name: 'Aurora Initiate',
-      description: 'Ignite the nebula ring with fearless +3 adventures.',
+      name: 'Inițiat Aurora',
+      description: 'Aprinde inelul nebuloasei cu aventuri curajoase de +3.',
       gradient: 'from-amber-300 via-rose-400 to-fuchsia-500',
       accent: 'text-rose-900',
       icon: 'Sparkles',
@@ -412,17 +412,17 @@ const ADDITION_STAGE_SEQUENCE = [
   },
   {
     id: 'add-up-to-5',
-    label: 'Addition up to 5',
-    shortLabel: '+5 Mastery',
-    description: 'Build confidence with teen totals by adding numbers up to 5.',
+    label: 'Adunare până la 5',
+    shortLabel: 'Stăpânire +5',
+    description: 'Construiește încredere în sumele până la 10 adunând numere până la 5.',
     maxAddend: 5,
     minAddend: 1,
     masteryThreshold: 0.9,
     prerequisites: ['add-up-to-3'],
     requiredPerfectRuns: 3,
     badge: {
-      name: 'Nebula Navigator',
-      description: 'Chart shimmering pathways through every +5 combination.',
+      name: 'Navigatorul Nebuloasei',
+      description: 'Trasează căi strălucitoare prin fiecare combinație de +5.',
       gradient: 'from-sky-300 via-indigo-500 to-purple-700',
       accent: 'text-indigo-900',
       icon: 'Rocket',
@@ -451,17 +451,17 @@ const ADDITION_STAGE_SEQUENCE = [
   },
   {
     id: 'add-up-to-10',
-    label: 'Addition up to 10',
-    shortLabel: '+10 Mastery',
-    description: 'Finish the within-10 journey with automatic recall of all facts.',
+    label: 'Adunare până la 10',
+    shortLabel: 'Stăpânire +10',
+    description: 'Încheie traseul până la 10 cu rechemare automată a tuturor faptelor.',
     maxAddend: 9,
     minAddend: 1,
     masteryThreshold: 0.9,
     prerequisites: ['add-up-to-5'],
     requiredPerfectRuns: 3,
     badge: {
-      name: 'Celestial Laureate',
-      description: 'Crown every within-10 fact with radiant automaticity.',
+      name: 'Laureatul Celest',
+      description: 'Încoronează fiecare faptă până la 10 cu automatism strălucitor.',
       gradient: 'from-fuchsia-400 via-purple-500 to-violet-700',
       accent: 'text-violet-900',
       icon: 'Gem',
@@ -719,18 +719,18 @@ const analyzeNumberPerformance = (gameState) => {
 
 const describeDelta = (diff) => {
   if (diff >= 2) {
-    return { label: '🚀 Far Ahead', tone: 'ahead', message: 'Operating well beyond age expectations—consider enrichment challenges!' };
+    return { label: '🚀 Mult înainte', tone: 'ahead', message: 'Depășește cu mult așteptările vârstei—propune provocări suplimentare!' };
   }
   if (diff === 1) {
-    return { label: '📈 Slightly Ahead', tone: 'ahead', message: 'Comfortably ahead of age-based benchmarks—keep the momentum.' };
+    return { label: '📈 Puțin înainte', tone: 'ahead', message: 'Este peste media vârstei—păstrează ritmul actual.' };
   }
   if (diff === 0) {
-    return { label: '✅ On Track', tone: 'balanced', message: 'Knowledge grade aligns with age expectations.' };
+    return { label: '✅ Pe traiectorie', tone: 'balanced', message: 'Nivelul de cunoștințe se potrivește cu așteptările pentru vârstă.' };
   }
   if (diff === -1) {
-    return { label: '🎯 Growth Zone', tone: 'support', message: 'A touch of extra practice will close the tiny gap.' };
+    return { label: '🎯 Zonă de creștere', tone: 'support', message: 'Un strop de exercițiu suplimentar va închide diferența mică.' };
   }
-  return { label: '🧭 Personalized Support Needed', tone: 'support', message: 'Focus reviews and manipulatives to accelerate catch-up.' };
+  return { label: '🧭 Necesită sprijin personalizat', tone: 'support', message: 'Concentrează recapitulările și folosește materiale concrete pentru a recupera.' };
 };
 
 const computeKnowledgeInsights = (gameState) => {
@@ -776,7 +776,7 @@ const computeKnowledgeInsights = (gameState) => {
   const studentAge = gameState.studentInfo?.age ?? null;
   const ageBand = (() => {
     if (typeof studentAge !== 'number' || Number.isNaN(studentAge)) {
-      return { ...ageBands[0], label: 'Age not set', detail: 'Update student profile to unlock comparisons.', levelIndex: 0 };
+      return { ...ageBands[0], label: 'Vârsta nu este setată', detail: 'Actualizează profilul copilului pentru comparații relevante.', levelIndex: 0 };
     }
     return ageBands.find((band) => studentAge <= band.maxAge) || ageBands[ageBands.length - 1];
   })();
@@ -854,27 +854,27 @@ const computeLearningPathInsights = (gameState) => {
     }
 
     if (entry.level === 'mastered') {
-      entry.reason = 'Maintain mastery with occasional spaced review.';
+      entry.reason = 'Menține stăpânirea cu recapitulări distanțate.';
       entry.priority = 10 + (9 - perf.number);
     } else if (entry.level === 'struggling') {
-      entry.reason = 'Frequent errors detected—schedule a focused review set.';
+      entry.reason = 'Identificăm erori dese—planifică o sesiune de recapitulare concentrată.';
       entry.priority = 110 - entry.masteryPercent;
     } else if (entry.level === 'learning') {
-      entry.reason = 'Active learning phase—keep momentum for a mastery badge.';
+      entry.reason = 'Ești în fază activă de învățare—păstrează ritmul pentru insigna de stăpânire.';
       entry.priority = 90 - entry.masteryPercent;
     } else if (entry.level === 'proficient') {
-      entry.reason = 'Solid performance—polish accuracy to earn full mastery.';
+      entry.reason = 'Performanță solidă—șlefuiește acuratețea pentru stăpânire deplină.';
       entry.priority = 70 - (entry.masteryPercent / 2);
     } else {
       if (recommendations.has(perf.number)) {
         if (perf.number === highestMastered + 1) {
-          entry.reason = 'Next sequential milestone after your latest mastery.';
+          entry.reason = 'Următorul reper secvențial după ultima stăpânire.';
         } else {
-          entry.reason = 'Unlocked early thanks to strong accuracy and focus streaks.';
+          entry.reason = 'Deblocat mai devreme datorită acurateții bune și seriilor de concentrare.';
         }
         entry.priority = 80 - perf.number;
       } else {
-        entry.reason = 'Still gated—watch for readiness signals or review earlier numbers.';
+        entry.reason = 'Încă blocat—urmărește semnalele de pregătire sau reia numerele anterioare.';
         entry.priority = 30 - perf.number;
       }
     }
@@ -1249,8 +1249,8 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
         <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-3xl">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-3xl font-bold mb-2">Parent Dashboard</h2>
-              <p className="text-blue-100">Detailed Learning Analytics</p>
+              <h2 className="text-3xl font-bold mb-2">Tablou pentru părinți</h2>
+              <p className="text-blue-100">Analiză detaliată a progresului</p>
             </div>
             <div className="flex items-center gap-3">
               <span
@@ -1264,7 +1264,7 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
                   className={`h-2 w-2 rounded-full ${aiRuntime?.aiEnabled ? 'bg-emerald-200' : 'bg-red-200'}`}
                   aria-hidden="true"
                 />
-                {aiRuntime?.aiEnabled ? 'AI Enabled' : 'AI Disabled'}
+                {aiRuntime?.aiEnabled ? 'AI activ' : 'AI dezactivat'}
               </span>
               <button onClick={onClose} className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg">
                 <X size={24} />
@@ -1277,27 +1277,27 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           {/* Key Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl border-2 border-green-200">
-              <div className="text-green-600 text-sm font-medium mb-1">Overall Accuracy</div>
+              <div className="text-green-600 text-sm font-medium mb-1">Acuratețe generală</div>
               <div className="text-3xl font-bold text-green-700">{overallAccuracy}%</div>
-              <div className="text-xs text-green-600 mt-1">Target: 70-95%</div>
+              <div className="text-xs text-green-600 mt-1">Țintă: 70-95%</div>
             </div>
 
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border-2 border-blue-200">
-              <div className="text-blue-600 text-sm font-medium mb-1">Avg Time/Problem</div>
+              <div className="text-blue-600 text-sm font-medium mb-1">Timp mediu / problemă</div>
               <div className="text-3xl font-bold text-blue-700">{avgTime}s</div>
-              <div className="text-xs text-blue-600 mt-1">Target: 30-60s</div>
+              <div className="text-xs text-blue-600 mt-1">Țintă: 30-60s</div>
             </div>
 
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-xl border-2 border-purple-200">
-                <div className="text-purple-600 text-sm font-medium mb-1">Today&apos;s Minutes</div>
+              <div className="text-purple-600 text-sm font-medium mb-1">Minute astăzi</div>
               <div className="text-3xl font-bold text-purple-700">{todayMinutes}</div>
-              <div className="text-xs text-purple-600 mt-1">Target: &lt;20 min</div>
+              <div className="text-xs text-purple-600 mt-1">Țintă: &lt;20 min</div>
             </div>
 
             <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-xl border-2 border-orange-200">
-              <div className="text-orange-600 text-sm font-medium mb-1">Growth Rate</div>
+              <div className="text-orange-600 text-sm font-medium mb-1">Ritmul de creștere</div>
               <div className="text-3xl font-bold text-orange-700">{growthRate}x</div>
-              <div className="text-xs text-orange-600 mt-1">vs typical child</div>
+              <div className="text-xs text-orange-600 mt-1">Comparativ cu media copiilor</div>
             </div>
           </div>
 
@@ -1305,17 +1305,17 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           <div className="bg-gradient-to-br from-sky-50 to-indigo-50 p-6 rounded-xl border-2 border-sky-200">
             <h3 className="text-xl font-bold text-indigo-700 mb-4 flex items-center gap-2">
               <Brain className="text-indigo-500" />
-              Knowledge Grade vs Age Grade
+              Nivel de cunoștințe vs nivelul așteptat pentru vârstă
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-white border-2 border-indigo-200 rounded-2xl p-4">
-                <div className="text-xs uppercase text-indigo-500 font-semibold tracking-wide">Knowledge Grade</div>
+                <div className="text-xs uppercase text-indigo-500 font-semibold tracking-wide">Nivel de cunoștințe</div>
                 <div className="text-2xl font-bold text-gray-800 mt-1">{knowledgeGrade.label}</div>
                 <p className="text-sm text-gray-600 mt-2">{knowledgeGrade.detail}</p>
                 <div className="mt-4">
                   <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>Progress</span>
-                    <span>{knowledgeGrade.progressPercent}% of single-digit map</span>
+                    <span>Progres</span>
+                    <span>{knowledgeGrade.progressPercent}% din harta numerelor 0-9</span>
                   </div>
                   <div className="h-2 bg-indigo-100 rounded-full overflow-hidden">
                     <div
@@ -1324,28 +1324,28 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
                     />
                   </div>
                   <div className="text-xs text-indigo-600 mt-2">
-                    Highest strong number: {knowledgeGrade.highestStrong >= 0 ? knowledgeGrade.highestStrong : 'in progress'} · Next focus: {knowledgeGrade.nextNumber}
+                    Cel mai bine stăpânit număr: {knowledgeGrade.highestStrong >= 0 ? knowledgeGrade.highestStrong : 'în curs'} · Următorul focus: {knowledgeGrade.nextNumber}
                   </div>
                 </div>
               </div>
 
               <div className="bg-white border-2 border-sky-200 rounded-2xl p-4">
-                <div className="text-xs uppercase text-sky-500 font-semibold tracking-wide">Age Expectation</div>
+                <div className="text-xs uppercase text-sky-500 font-semibold tracking-wide">Așteptarea pentru vârstă</div>
                 <div className="text-2xl font-bold text-gray-800 mt-1">{ageGrade.label}</div>
                 <p className="text-sm text-gray-600 mt-2">{ageGrade.detail}</p>
                 <div className="mt-4 text-xs text-sky-600">
-                  Student age: {typeof gameState.studentInfo?.age === 'number' ? `${gameState.studentInfo.age.toFixed(1)} years` : 'Not provided'}
+                  Vârsta copilului: {typeof gameState.studentInfo?.age === 'number' ? `${gameState.studentInfo.age.toFixed(1)} ani` : 'Necompletată'}
                 </div>
               </div>
 
               <div className={`rounded-2xl p-4 border-2 ${deltaClass}`}>
-                <div className="text-xs uppercase font-semibold tracking-wide">Alignment Snapshot</div>
+                <div className="text-xs uppercase font-semibold tracking-wide">Instantaneu de aliniere</div>
                 <div className="text-xl font-bold mt-1">{delta.label}</div>
                 <p className="text-sm mt-2">{delta.message}</p>
                 <div className="mt-4 text-xs font-semibold">
                   {aiRuntime?.aiEnabled
-                    ? `AI suggests leaning into +${knowledgeGrade.nextNumber} next to keep growth on pace.`
-                    : 'Local insights recommend continuing steady practice while AI features are paused.'}
+                    ? `AI sugerează să insiști pe +${knowledgeGrade.nextNumber} pentru a menține ritmul de creștere.`
+                    : 'Analiza locală recomandă să continui ritmul constant cât timp funcțiile AI sunt în pauză.'}
                 </div>
               </div>
             </div>
@@ -1354,7 +1354,7 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           {/* Coverage Bar */}
           <div className="bg-white p-4 rounded-xl border-2 border-gray-200">
             <div className="flex justify-between text-sm font-medium text-gray-700 mb-2">
-              <span>Coverage of (0..9)×(0..9) with ≥1 correct</span>
+              <span>Acoperire (0..9)×(0..9) cu ≥1 răspuns corect</span>
               <span>{coveragePct}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3">
@@ -1366,7 +1366,7 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           <div className="bg-white p-6 rounded-xl border-2 border-orange-200">
             <h3 className="text-xl font-bold text-orange-600 mb-4 flex items-center gap-2">
               <Target className="text-orange-500" />
-              Growth vs Typical Pace
+              Evoluție vs ritm obișnuit
             </h3>
             <div className="h-40 flex items-end gap-3">
               {last7Days.map((day, index) => {
@@ -1385,13 +1385,13 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
                       />
                     </div>
                     <div className="mt-2 text-xs font-semibold text-orange-700">{day.label}</div>
-                    <div className="text-[10px] text-orange-500">{day.attempts} attempts</div>
+                    <div className="text-[10px] text-orange-500">{day.attempts} încercări</div>
                   </div>
                 );
               })}
             </div>
             <p className="text-xs text-orange-600 mt-3 text-center">
-              Dashed line marks a typical daily pace (~{baselineDaily.toFixed(1)} attempts).
+              Linia întreruptă marchează un ritm zilnic tipic (~{baselineDaily.toFixed(1)} încercări).
             </p>
           </div>
 
@@ -1399,12 +1399,12 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           <div className="bg-gray-50 p-6 rounded-xl border-2 border-gray-200">
             <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Zap className="text-yellow-500" />
-              Learning Efficiency
+              Eficiența învățării
             </h3>
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-700">Focus Score</span>
+                  <span className="text-sm font-medium text-gray-700">Indice de concentrare</span>
                   <span className="text-sm font-bold text-gray-900">{(100 - parseFloat(wastePercentage)).toFixed(0)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3">
@@ -1413,16 +1413,16 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
                     style={{width: `${100 - parseFloat(wastePercentage)}%`}}
                   />
                 </div>
-                <p className="text-xs text-gray-600 mt-1">Waste: {wastePercentage}% (Target: &lt;20%)</p>
+                <p className="text-xs text-gray-600 mt-1">Risipă: {wastePercentage}% (Țintă: &lt;20%)</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <div className="bg-white p-3 rounded-lg">
-                  <div className="text-xs text-gray-600">Problems Solved</div>
+                  <div className="text-xs text-gray-600">Probleme rezolvate</div>
                   <div className="text-2xl font-bold text-gray-800">{totalProblems}</div>
                 </div>
                 <div className="bg-white p-3 rounded-lg">
-                  <div className="text-xs text-gray-600">Correct Answers</div>
+                  <div className="text-xs text-gray-600">Răspunsuri corecte</div>
                   <div className="text-2xl font-bold text-green-600">{correctProblems}</div>
                 </div>
               </div>
@@ -1433,7 +1433,7 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl border-2 border-indigo-200">
             <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Target className="text-indigo-600" />
-              Mastery Progress (by number)
+              Progresul stăpânirii (pe număr)
             </h3>
             <div className="grid grid-cols-5 gap-3">
               {Object.entries(mastery).map(([num, data]) => {
@@ -1450,7 +1450,7 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
                   }`}>
                     <div className="text-2xl font-bold mb-1">{num}</div>
                     <div className="text-xs font-medium">{masteryPercent}%</div>
-                    {isMastered && <div className="text-xs text-green-600 mt-1">✓ Mastered</div>}
+                    {isMastered && <div className="text-xs text-green-600 mt-1">✓ Stăpânit</div>}
                   </div>
                 );
               })}
@@ -1461,17 +1461,17 @@ const ParentDashboard = ({ gameState, aiRuntime, onClose }) => {
           <div className="bg-red-50 p-6 rounded-xl border-2 border-red-200">
             <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Brain className="text-red-600" />
-              Struggle Zones (Need Review)
+              Zone dificile (de reluat)
             </h3>
             <div className="space-y-2">
               {stats.strugglingProblems.slice(0, 10).map((problem, idx) => (
                 <div key={idx} className="bg-white p-3 rounded-lg flex justify-between items-center">
                   <span className="font-mono text-lg font-bold">{problem.a} + {problem.b}</span>
-                  <span className="text-sm text-red-600 font-medium">{problem.attempts} attempts</span>
+                  <span className="text-sm text-red-600 font-medium">{problem.attempts} încercări</span>
                 </div>
               ))}
               {stats.strugglingProblems.length === 0 && (
-                <p className="text-gray-600 text-center py-4">🎉 No struggles detected! Excellent work!</p>
+                <p className="text-gray-600 text-center py-4">🎉 Nicio dificultate detectată! Minunat!</p>
               )}
             </div>
         </div>
@@ -1516,10 +1516,10 @@ const ModeSelection = ({
   const fileInputRef = useRef(null);
   const [showAbout, setShowAbout] = useState(false);
   const pathMeta = {
-    title: 'Addition Flashcards',
-    description: 'AI-Powered Mastery Learning for sums within 10.',
-    recommendedAges: 'Ages 3-6',
-    operationLabel: 'Addition',
+    title: 'Carduri de Adunare',
+    description: 'Învățare asistată de AI pentru sume până la 10.',
+    recommendedAges: 'Vârste 3-6',
+    operationLabel: 'Adunare',
     ...learningPath,
   };
   const exitHandler = onExit ?? (() => {});
@@ -1540,6 +1540,12 @@ const ModeSelection = ({
       gameState?.achievements?.stageBadges || {},
     );
   }, [gameState?.achievements?.stageBadges, gameState?.masteryTracking, stageProgress]);
+
+  const difficultyLabels = {
+    easy: 'ușor',
+    medium: 'mediu',
+    hard: 'dificil',
+  };
 
   const handleViewAchievements = useCallback(() => {
     onOpenAchievements?.();
@@ -1589,15 +1595,15 @@ const ModeSelection = ({
   const safeMotifJobState = motifJobState || createDefaultMotifJobState();
 
   const modes = [
-    { id: 'sequential', name: 'All Numbers', desc: 'Practice all additions 0-9 in order', icon: Hash, color: 'blue' },
-    { id: 'random', name: 'Random Practice', desc: 'Random additions from 0-9', icon: Shuffle, color: 'purple' },
+    { id: 'sequential', name: 'Toate numerele', desc: 'Exersează toate adunările 0-9 în ordine', icon: Hash, color: 'blue' },
+    { id: 'random', name: 'Exerciții surpriză', desc: 'Adunări aleatoare din 0-9', icon: Shuffle, color: 'purple' },
   ];
 
   const numberModes = Array.from({ length: 10 }, (_, i) => ({
     id: `focus-${i}`,
     number: i,
-    name: `Adding with ${i}`,
-    desc: `Learn all additions with ${i}`,
+    name: `Adunări cu ${i}`,
+    desc: `Învață toate adunările cu ${i}`,
     color: ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'cyan', 'blue', 'purple'][i]
   }));
 
@@ -1610,7 +1616,7 @@ const ModeSelection = ({
           const data = JSON.parse(event.target.result);
           onImport(data);
         } catch (error) {
-          alert('Invalid file format!');
+          alert('Format de fișier invalid!');
         }
       };
       reader.readAsText(file);
@@ -1627,7 +1633,7 @@ const ModeSelection = ({
       if (addend <= defaultRangeLimit) {
         return { locked: false, message: '', tooltip: '' };
       }
-      const message = `Locked · Finish the current mastery path to reach +${addend}.`;
+      const message = `Blocat · Termină traseul de stăpânire curent pentru a ajunge la +${addend}.`;
       return {
         locked: true,
         message,
@@ -1646,12 +1652,12 @@ const ModeSelection = ({
     if (unmetPrerequisite) {
       const { minAddend, maxAddend, label, masteryThreshold } = unmetPrerequisite;
       const rangeLabel = Number.isInteger(minAddend) && Number.isInteger(maxAddend)
-        ? `+${minAddend} through +${maxAddend}`
-        : label || 'the prerequisite stage';
+        ? `+${minAddend} până la +${maxAddend}`
+        : label || 'etapa prealabilă';
       const prerequisiteLabel = label || rangeLabel;
       const accuracyTarget = Math.round(((masteryThreshold ?? stage.masteryThreshold ?? 0.9) || 0.9) * 100);
-      const message = `Locked · Finish ${prerequisiteLabel} to unlock +${addend}.`;
-      const tooltip = `Finish ${prerequisiteLabel} (≥${accuracyTarget}% accuracy) to unlock this focus number.`;
+      const message = `Blocat · Termină ${prerequisiteLabel} pentru a debloca +${addend}.`;
+      const tooltip = `Finalizați ${prerequisiteLabel} (≥${accuracyTarget}% acuratețe) pentru a debloca acest număr de focus.`;
       return {
         locked: true,
         message,
@@ -1661,8 +1667,8 @@ const ModeSelection = ({
       };
     }
 
-    const fallbackLabel = stage.label || `addends up to +${stage.maxAddend}`;
-    const fallback = `Locked · Finish ${fallbackLabel} to continue.`;
+    const fallbackLabel = stage.label || `adunările până la +${stage.maxAddend}`;
+    const fallback = `Blocat · Termină ${fallbackLabel} pentru a continua.`;
     return { locked: true, message: fallback, tooltip: fallback, stage };
   }, [defaultRangeLimit, stageMapByAddend, stageMapById]);
 
@@ -1677,10 +1683,10 @@ const ModeSelection = ({
             className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur rounded-xl shadow hover:shadow-lg transition"
           >
             <ArrowLeft size={18} />
-            <span>Learning Paths</span>
+            <span>Trasee de învățare</span>
           </button>
           <div className="text-sm text-gray-600 sm:text-right">
-            <div className="font-semibold uppercase tracking-wider text-indigo-500">{pathMeta.operationLabel || 'Operation'}</div>
+            <div className="font-semibold uppercase tracking-wider text-indigo-500">{pathMeta.operationLabel || 'Operație'}</div>
             <div>{pathMeta.recommendedAges}</div>
           </div>
         </div>
@@ -1718,16 +1724,16 @@ const ModeSelection = ({
                   <User className="text-blue-500" size={20} />
                 ) : (
                   <UserRound className="text-pink-500" size={20} />
-                )}
-                <span className="font-semibold">{gameState.studentInfo.name}</span>
-                <span className="text-gray-500">|</span>
-                <span className="text-sm">{gameState.studentInfo.age} years old</span>
+            )}
+            <span className="font-semibold">{gameState.studentInfo.name}</span>
+            <span className="text-gray-500">|</span>
+            <span className="text-sm">{gameState.studentInfo.age} ani</span>
             </div>
             <button
                 onClick={onLogout}
-                className="px-4 py-2 bg-red-500 text-white rounded-xl shadow-lg hover:bg-red-600 transition-all"
+            className="px-4 py-2 bg-red-500 text-white rounded-xl shadow-lg hover:bg-red-600 transition-all"
             >
-                Logout
+                Deconectare
             </button>
         </div>
 
@@ -1738,7 +1744,7 @@ const ModeSelection = ({
             className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-blue-200"
           >
             <BarChart3 className="text-blue-600" size={20} />
-            <span className="font-semibold">Parent Dashboard</span>
+            <span className="font-semibold">Tablou pentru părinți</span>
           </button>
 
           <button
@@ -1746,7 +1752,7 @@ const ModeSelection = ({
             className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-green-200"
           >
             <Download className="text-green-600" size={20} />
-            <span className="font-semibold">Export Progress</span>
+            <span className="font-semibold">Exportă progresul</span>
           </button>
 
           <button
@@ -1754,7 +1760,7 @@ const ModeSelection = ({
             className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-purple-200"
           >
             <Award className="text-purple-600" size={20} />
-            <span className="font-semibold">Achievements &amp; Badges</span>
+            <span className="font-semibold">Realizări și insigne</span>
           </button>
 
           <button
@@ -1762,7 +1768,7 @@ const ModeSelection = ({
             className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-purple-200"
           >
             <Upload className="text-purple-600" size={20} />
-            <span className="font-semibold">Import Progress</span>
+            <span className="font-semibold">Importă progresul</span>
           </button>
           <input
             ref={fileInputRef}
@@ -1776,14 +1782,14 @@ const ModeSelection = ({
             className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-indigo-200"
           >
             <Wand2 className="text-indigo-600" size={20} />
-            <span className="font-semibold">AI Settings</span>
+            <span className="font-semibold">Setări AI</span>
           </button>
           <button
             onClick={() => setShowAbout((prev) => !prev)}
             className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-amber-200"
           >
             <Info className="text-amber-600" size={20} />
-            <span className="font-semibold">{showAbout ? 'Hide About' : 'About & AI Guide'}</span>
+            <span className="font-semibold">{showAbout ? 'Ascunde detaliile' : 'Despre & ghid AI'}</span>
           </button>
         </div>
 
@@ -1792,17 +1798,17 @@ const ModeSelection = ({
           <div className="flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">Personalized Learning Journey</h2>
+                <h2 className="text-2xl font-bold text-gray-800">Călătorie de învățare personalizată</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  AI unlocked practice from {metrics.overallAccuracy}% accuracy, a streak of {metrics.streak}, and {metrics.avgTime}s average response time.
+                  AI a adaptat exercițiile pe baza unei acurateți de {metrics.overallAccuracy}%, a unei serii de {metrics.streak} și a unui timp mediu de răspuns de {metrics.avgTime}s.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-white/80 px-3 py-1 font-semibold text-indigo-700 shadow-sm">
-                  <Star size={14} className="text-indigo-500" /> Highest mastery: {learningInsights.highestMastered >= 0 ? learningInsights.highestMastered : 'None yet'}
+                  <Star size={14} className="text-indigo-500" /> Cel mai înalt nivel: {learningInsights.highestMastered >= 0 ? learningInsights.highestMastered : 'Încă nimic'}
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-white/80 px-3 py-1 font-semibold text-indigo-700 shadow-sm">
-                  <Brain size={14} className="text-indigo-500" /> Targets in queue: {focusRecommendations.length}
+                  <Brain size={14} className="text-indigo-500" /> Ținte în coadă: {focusRecommendations.length}
                 </span>
               </div>
             </div>
@@ -1810,15 +1816,15 @@ const ModeSelection = ({
               <div className="grid w-full gap-2 text-xs text-slate-600 sm:grid-cols-3">
                 <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-2 font-medium">
                   <Check size={14} className="text-emerald-500" />
-                  Accuracy goal ≥ {Math.round(TARGET_SUCCESS_BAND[0] * 100)}%
+                  Ținta de acuratețe ≥ {Math.round(TARGET_SUCCESS_BAND[0] * 100)}%
                 </div>
                 <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-2 font-medium">
                   <Zap size={14} className="text-indigo-500" />
-                  Avg. solve {metrics.avgTime}s
+                  Timp mediu {metrics.avgTime}s
                 </div>
                 <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/70 px-3 py-2 font-medium">
                   <Target size={14} className="text-indigo-500" />
-                  Focus streak {metrics.streak}
+                  Serie de concentrare {metrics.streak}
                 </div>
               </div>
             )}
@@ -1829,31 +1835,31 @@ const ModeSelection = ({
           <div className="bg-white rounded-3xl shadow-lg border-2 border-amber-200 p-8 mb-8">
             <div className="flex items-center gap-3 mb-4">
               <Info className="text-amber-600" size={24} />
-              <h3 className="text-2xl font-bold text-gray-800">About {pathMeta.title || 'Addition Flashcards'}</h3>
+              <h3 className="text-2xl font-bold text-gray-800">Despre {pathMeta.title || 'Carduri de Adunare'}</h3>
             </div>
             <p className="text-gray-600 mb-6">
-              {(pathMeta.title || 'Addition Flashcards')} blends classic fact practice with adaptive planning. Use this guide to see what is powered by AI and how to try it out.
+              {(pathMeta.title || 'Carduri de Adunare')} combină exercițiile clasice cu planificarea adaptivă. Folosește acest ghid ca să descoperi ce este alimentat de AI și cum poți testa rapid.
             </p>
             <div className="grid gap-6 md:grid-cols-2">
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-                <h4 className="text-lg font-semibold text-amber-800 mb-3">Core Gameplay</h4>
+                <h4 className="text-lg font-semibold text-amber-800 mb-3">Jocul de bază</h4>
                 <ul className="list-disc list-inside text-sm text-amber-900 space-y-2">
-                  <li>Choose All Numbers or Random Practice for traditional drills unlocked through <span className="font-semibold">sequential</span> and <span className="font-semibold">random</span> modes.</li>
-                  <li>Target specific fact families with the number tiles (e.g., <em>Adding with 5</em>) for focused repetition.</li>
-                  <li>Track progress, export sessions, and review insights in the Parent Dashboard.</li>
+                  <li>Alege <span className="font-semibold">Toate numerele</span> sau <span className="font-semibold">Exerciții surpriză</span> pentru antrenamentul clasic din modurile secvențial și aleatoriu.</li>
+                  <li>Țintește familii specifice de fapte cu dalele numerelor (de exemplu <em>Adunări cu 5</em>) pentru repetiții concentrate.</li>
+                  <li>Urmărește progresul, exportă sesiunile și analizează perspectivele în tabloul de bord pentru părinți.</li>
                 </ul>
               </div>
               <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5">
-                <h4 className="text-lg font-semibold text-indigo-800 mb-3">AI-Powered Experiences</h4>
+                <h4 className="text-lg font-semibold text-indigo-800 mb-3">Experiențe cu ajutorul AI</h4>
                 <ul className="list-disc list-inside text-sm text-indigo-900 space-y-2">
                   <li>
-                    <span className="font-semibold">AI-Driven Next Step card</span> previews the upcoming problem using the active plan queue. When a Gemini plan is available it shows the story, hints, and predicted success pulled from the AI response.
+                    <span className="font-semibold">Cardul „Pasul următor”</span> anticipează următoarea problemă folosind coada planului activ. Când există un plan Gemini, apar povestea, indiciile și șansa estimată de reușită.
                   </li>
                   <li>
-                    <span className="font-semibold">Start AI Path</span> requests 10-step sessions from Gemini based on weak fact families and interests. Without a key, it falls back to the local adaptive planner so practice never stops.
+                    <span className="font-semibold">Pornește traseul AI</span> solicită sesiuni de 10 pași din Gemini pe baza familiilor vulnerabile și a intereselor. Fără cheie, revine la planificatorul local pentru a continua ritmul.
                   </li>
                   <li>
-                    <span className="font-semibold">Interest motifs</span> transform the learner&apos;s interests into story hooks. Add interests in the panel above to send them to Gemini for motif generation (with local patterning as backup).
+                    <span className="font-semibold">Motivurile de interes</span> transformă pasiunile copilului în fire narative. Adaugă interese în panoul de mai sus pentru a le trimite la Gemini, iar modelarea locală rămâne ca rezervă.
                   </li>
                 </ul>
               </div>
@@ -1876,6 +1882,13 @@ const ModeSelection = ({
                 const levelBadgeClass = badgeStyles[item.level] || badgeStyles['not-started'];
                 const recommendationLockInfo = getLockInfo(item.number);
                 const recommendationLocked = recommendationLockInfo.locked;
+                const levelLabels = {
+                  mastered: 'Stăpânit',
+                  proficient: 'Sigur pe sine',
+                  learning: 'În învățare',
+                  struggling: 'În dificultate',
+                  'not-started': 'Neînceput',
+                };
 
                 return (
                   <div
@@ -1890,17 +1903,17 @@ const ModeSelection = ({
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-semibold text-gray-800">
                             {item.level === 'mastered'
-                              ? 'Maintain mastery'
+                              ? 'Menține stăpânirea'
                               : item.level === 'struggling'
-                              ? 'Review focus'
-                              : 'Focus on'} +{item.number}
+                              ? 'Revizuiește zona'
+                              : 'Concentrează-te pe'} +{item.number}
                           </span>
                           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${levelBadgeClass}`}>
-                            {item.level.replace('-', ' ')}
+                            {levelLabels[item.level] || levelLabels['not-started']}
                           </span>
                           {item.recommended && (
                             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-green-50 text-green-700 border-green-300">
-                              AI recommended
+                              Recomandat de AI
                             </span>
                           )}
                         </div>
@@ -1909,20 +1922,20 @@ const ModeSelection = ({
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
                       <span className="inline-flex items-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-2 py-1 font-medium">
-                        Mastery {item.masteryPercent}%
+                        Stăpânire {item.masteryPercent}%
                       </span>
                       <span className="inline-flex items-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-2 py-1 font-medium">
-                        Accuracy {item.accuracy}%
+                        Acuratețe {item.accuracy}%
                       </span>
                       <span className="inline-flex items-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-2 py-1 font-medium">
-                        {item.attempts} attempts
+                        {item.attempts} încercări
                       </span>
                     </div>
                     <button
                       onClick={() => {
                         if (recommendationLocked) {
                           alert(
-                            recommendationLockInfo.message || 'This practice set is locked until prerequisites are mastered.',
+                            recommendationLockInfo.message || 'Acest set de exerciții este blocat până când parcurgi etapele necesare.',
                           );
                           return;
                         }
@@ -1932,7 +1945,7 @@ const ModeSelection = ({
                       title={recommendationLocked ? recommendationLockInfo.tooltip : ''}
                       className={`mt-auto w-full rounded-xl px-3 py-2 text-xs font-semibold transition ${recommendationLocked ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                     >
-                      Practice +{item.number}
+                      Exersează +{item.number}
                     </button>
                   </div>
                 );
@@ -1940,7 +1953,7 @@ const ModeSelection = ({
               </div>
           ) : (
             <div className="bg-white border-2 border-indigo-200 rounded-3xl p-6 text-center text-gray-600">
-              We need a few more data points to personalize the journey. Start any mode to unlock tailored recommendations.
+              Avem nevoie de câteva date în plus pentru a personaliza parcursul. Pornește orice mod pentru a debloca recomandări dedicate.
             </div>
           )}
         </div>
@@ -1948,9 +1961,9 @@ const ModeSelection = ({
             <div className="bg-white border-2 border-indigo-200 rounded-3xl p-5 shadow-sm flex flex-col gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <Wand2 className="text-indigo-500" size={18} /> Learner Interests
+                  <Wand2 className="text-indigo-500" size={18} /> Interesele copilului
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">Add 2-4 interests to personalize stories and examples.</p>
+                <p className="text-sm text-gray-600 mt-1">Adaugă 2-4 interese pentru a personaliza poveștile și exemplele.</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {(aiPersonalization?.learnerProfile?.interests || []).map((interest) => (
@@ -1963,14 +1976,14 @@ const ModeSelection = ({
                       type="button"
                       className="text-indigo-500 hover:text-indigo-700"
                       onClick={() => onRemoveInterest?.(interest)}
-                      aria-label={`Remove ${interest}`}
+                      aria-label={`Elimină ${interest}`}
                     >
                       <X size={14} />
                     </button>
                   </span>
                 ))}
                 {!(aiPersonalization?.learnerProfile?.interests || []).length && (
-                  <span className="text-sm text-gray-500">No interests yet—add a few below!</span>
+                  <span className="text-sm text-gray-500">Încă nu există interese—adaugă câteva mai jos!</span>
                 )}
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
@@ -1978,14 +1991,14 @@ const ModeSelection = ({
                   type="text"
                   value={interestDraft}
                   onChange={(e) => onInterestDraftChange?.(e.target.value)}
-                  placeholder="e.g. dinosaurs, soccer, baking"
+                  placeholder="ex. dinozauri, fotbal, gătit"
                   className="flex-1 px-3 py-2 border-2 border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 />
                 <button
                   onClick={onAddInterest}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-semibold shadow hover:bg-indigo-700"
                 >
-                  Add
+                  Adaugă
                 </button>
               </div>
               {(() => {
@@ -2027,19 +2040,19 @@ const ModeSelection = ({
                     )}
                     {motifLabels.length > 0 && (
                       <div className="text-xs text-gray-500">
-                        Motifs: {motifLabels.slice(0, 6).join(', ')}
+                        Motivuri: {motifLabels.slice(0, 6).join(', ')}
                       </div>
                     )}
                     {safeMotifJobState.loading && (
-                      <div className="text-xs text-indigo-500">Generating AI sprites…</div>
+                      <div className="text-xs text-indigo-500">Generăm sprite-uri AI…</div>
                     )}
                     {!safeMotifJobState.loading && safeMotifJobState.jobId && total > 0 && (
                       <div className="text-xs text-indigo-500">
-                        Sprites ready: {ready} / {total}
+                        Sprite-uri pregătite: {ready} / {total}
                       </div>
                     )}
                     {safeMotifJobState.error && !safeMotifJobState.loading && (
-                      <div className="text-xs text-red-500">AI motif error: {safeMotifJobState.error}</div>
+                      <div className="text-xs text-red-500">Eroare sprite AI: {safeMotifJobState.error}</div>
                     )}
                   </>
                 );
@@ -2092,23 +2105,23 @@ const ModeSelection = ({
           <div className="bg-white p-8 rounded-3xl shadow-lg border-4 border-indigo-100 mb-8">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">Mastery Milestones</h2>
+                <h2 className="text-2xl font-bold text-gray-800">Repere de stăpânire</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Conquer each stage with 90% accuracy and {HIGH_ACCURACY_RUN_PERCENT}%+ run streaks before unlocking the next range.
+                  Cucerește fiecare etapă cu 90% acuratețe și serii de peste {HIGH_ACCURACY_RUN_PERCENT}% înainte de a debloca următorul interval.
                 </p>
               </div>
               <div className="px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-semibold text-indigo-700">
-                Current unlock: +{defaultRangeLimit}
+                Nivel deblocat: +{defaultRangeLimit}
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {additionStages.map((stage) => {
                 const thresholdPercent = Math.round((stage.masteryThreshold ?? 0.9) * 100);
                 const statusMeta = stage.mastered
-                  ? { label: 'Mastered', tone: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+                  ? { label: 'Stăpânit', tone: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
                   : stage.unlocked
-                    ? { label: 'In progress', tone: 'bg-amber-100 text-amber-700 border-amber-200' }
-                    : { label: 'Locked', tone: 'bg-slate-100 text-slate-600 border-slate-200' };
+                    ? { label: 'În progres', tone: 'bg-amber-100 text-amber-700 border-amber-200' }
+                    : { label: 'Blocat', tone: 'bg-slate-100 text-slate-600 border-slate-200' };
                 const prerequisiteStage = (stage.prerequisites || [])
                   .map((id) => additionStages.find((entry) => entry.id === id))
                   .find(Boolean);
@@ -2131,15 +2144,15 @@ const ModeSelection = ({
                   ? BADGE_ICON_MAP[stage.badge.icon]
                   : Sparkles;
                 const bestAccuracyLabel = Number.isFinite(stage.bestAccuracy)
-                  ? `${stage.bestAccuracy}% best`
-                  : 'No run data yet';
+                  ? `${stage.bestAccuracy}% record personal`
+                  : 'Fără date despre runde';
                 const supportingMessage = stage.mastered
-                  ? `Badge unlocked! Keep weaving confident check-ins to keep ${stage.badge?.name || 'your badge'} shining.`
+                  ? `Insigna este deblocată! Continuă verificările încrezătoare ca ${stage.badge?.name || 'insigna ta'} să rămână strălucitoare.`
                   : stage.unlocked
-                    ? `Reach ${thresholdPercent}% accuracy and complete ${runTarget || 1} high-accuracy run${runTarget === 1 ? '' : 's'} (${runProgressLabel}) at ≥${stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT}% to claim the ${stage.badge?.name || 'badge'}.`
+                    ? `Atige ${thresholdPercent}% acuratețe și finalizează ${runTarget || 1} rund${runTarget === 1 ? 'ă' : 'e'} cu precizie ridicată (${runProgressLabel}) la ≥${stage.highAccuracyRunThreshold || HIGH_ACCURACY_RUN_PERCENT}% pentru a obține ${stage.badge?.name || 'insigna'}.`
                     : prerequisiteStage
-                      ? `Locked · Finish ${prerequisiteStage.label} (≥${prerequisiteThreshold}% accuracy).`
-                      : `Locked · Finish addends up to +${stage.maxAddend - 1}.`;
+                      ? `Blocat · Finalizează ${prerequisiteStage.label} (≥${prerequisiteThreshold}% acuratețe).`
+                      : `Blocat · Termină adunările până la +${stage.maxAddend - 1}.`;
 
                 return (
                   <div
@@ -2148,7 +2161,7 @@ const ModeSelection = ({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-indigo-500 uppercase tracking-widest">Stage</div>
+                        <div className="text-sm font-semibold text-indigo-500 uppercase tracking-widest">Etapă</div>
                         <h3 className="text-xl font-bold text-gray-800">{stage.label}</h3>
                         <p className="text-sm text-gray-600 mt-1">{stage.description}</p>
                         {stage.badge && (
@@ -2168,28 +2181,28 @@ const ModeSelection = ({
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
-                        Progress: {stage.progressPercent}%
+                        Progres: {stage.progressPercent}%
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
-                        Mastered: {stage.masteredCount}/{stage.addends.length}
+                        Stăpânite: {stage.masteredCount}/{stage.addends.length}
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
-                        Goal: ≥{thresholdPercent}% accuracy
+                        Țintă: ≥{thresholdPercent}% acuratețe
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
-                        {runTarget > 0 ? `High-accuracy runs: ${runProgressLabel}` : `High-accuracy runs: ${runProgress}`}
+                        {runTarget > 0 ? `Runde precise: ${runProgressLabel}` : `Runde precise: ${runProgress}`}
                       </span>
                       <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">{bestAccuracyLabel}</span>
                       {stage.nextTarget != null && (
                         <span className="px-2 py-1 rounded-full bg-indigo-50 border border-indigo-200">
-                          Next focus: +{stage.nextTarget}
+                          Următorul focus: +{stage.nextTarget}
                         </span>
                       )}
                     </div>
                     {runTarget > 0 && (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-xs font-semibold text-indigo-600">
-                          <span>High-accuracy stage runs</span>
+                          <span>Runde de etapă cu acuratețe ridicată</span>
                           <span>{runProgressLabel}</span>
                         </div>
                         <div className="w-full h-2 rounded-full bg-indigo-100 overflow-hidden">
@@ -2221,7 +2234,7 @@ const ModeSelection = ({
                         className="pointer-events-none absolute inset-0 rounded-2xl bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center gap-2"
                       >
                         <Lock aria-hidden="true" className="text-indigo-500 dark:text-indigo-200" size={28} />
-                        <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-200">Locked</span>
+                        <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-200">Blocat</span>
                       </div>
                     )}
                     <button
@@ -2236,7 +2249,7 @@ const ModeSelection = ({
                           : 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-slate-700 dark:text-slate-300'
                       }`}
                     >
-                      {stage.mastered ? 'Review stage' : 'Practice stage'}
+                      {stage.mastered ? 'Revizuiește etapa' : 'Exersează etapa'}
                       {!stage.unlocked && (
                         <Lock aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-slate-300" size={18} />
                       )}
@@ -2250,7 +2263,7 @@ const ModeSelection = ({
 
         {/* Number-specific modes with Mastery Gates */}
         <div className="bg-white p-8 rounded-3xl shadow-lg">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Practice with Specific Numbers</h2>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Exersează cu numere alese</h2>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             {numberModes.map((mode) => {
               const mastery = gameState.masteryTracking[mode.number];
@@ -2267,7 +2280,7 @@ const ModeSelection = ({
                   key={mode.id}
                   onClick={() => {
                     if (locked) {
-                      alert(lockInfo.message || 'This practice set is locked. Master the prerequisite path first.');
+                      alert(lockInfo.message || 'Acest set de exerciții este blocat. Parcurge mai întâi etapa necesară.');
                       return;
                     }
                     onSelectMode(mode.id, mode.number);
@@ -2284,11 +2297,11 @@ const ModeSelection = ({
                     </div>
                   )}
                   {mastery && mastery.totalAttempts > 0 && (
-                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-2">{masteryPercent}% mastered</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-2">{masteryPercent}% stăpânit</div>
                   )}
                   {aiRecommended && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded-full shadow">
-                      AI Recommended
+                      Recomandare AI
                     </div>
                   )}
                   {locked && (
@@ -2297,7 +2310,7 @@ const ModeSelection = ({
                       className="absolute inset-0 rounded-2xl border-2 border-red-300/60 dark:border-red-500/50 pointer-events-none bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center gap-2"
                     >
                       <Lock aria-hidden="true" className="text-red-500 dark:text-red-300" size={26} />
-                      <span className="text-sm font-semibold text-red-600 dark:text-red-200">Locked</span>
+                      <span className="text-sm font-semibold text-red-600 dark:text-red-200">Blocat</span>
                     </div>
                   )}
                 </button>
@@ -2328,7 +2341,7 @@ const ModeSelection = ({
               type="button"
               onClick={handleCloseSpotlight}
               className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
-              aria-label="Close badge celebration"
+              aria-label="Închide celebrarea insignei"
             >
               <X size={20} />
             </button>
@@ -2343,11 +2356,11 @@ const ModeSelection = ({
             <p className="mt-4 text-sm font-semibold text-purple-900">
               <span className="inline-flex items-center gap-2">
                 <PartyPopper size={18} />
-                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns} high-accuracy runs ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% complete
+                {badgeSpotlight.highAccuracyRuns}/{badgeSpotlight.requiredHighAccuracyRuns} runde cu acuratețe ridicată ≥{badgeSpotlight.runThresholdPercent || HIGH_ACCURACY_RUN_PERCENT}% finalizate
               </span>
             </p>
             <p className="mt-2 text-xs text-purple-900/70">
-              Keep weaving confident check-ins to keep your cosmic badge glowing bright.
+              Continuă verificările încrezătoare ca insigna ta cosmică să rămână strălucitoare.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
@@ -2356,14 +2369,14 @@ const ModeSelection = ({
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/90 px-5 py-3 text-sm font-semibold text-purple-700 shadow hover:bg-white"
               >
                 <Award size={18} />
-                View achievements
+                Vezi realizările
               </button>
               <button
                 type="button"
                 onClick={handleCloseSpotlight}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-white/70 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-white/10"
               >
-                Keep practicing
+                Continuă exercițiile
               </button>
             </div>
           </div>
@@ -2800,7 +2813,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const successTarget = ai.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint;
     const runtimeTtsModel = aiRuntime.audioModel || aiRuntime.defaultTtsModel || '';
     const planRequest = {
-      userId: ai.learnerProfile.learnerId || (current.studentInfo?.name || 'learner'),
+      userId: ai.learnerProfile.learnerId || (current.studentInfo?.name || 'elev'),
       grade: resolveLearnerGrade(current.studentInfo),
       interests: interestList,
       mastery: masterySnapshot,
@@ -2812,7 +2825,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         weakFamilies,
         motifs: motifHints,
         needItems: 10,
-        learnerName: current.studentInfo?.name || 'Learner',
+        learnerName: current.studentInfo?.name || 'Elev',
       },
     };
     const modelsPayload = {};
@@ -3077,7 +3090,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           };
         });
       } else {
-        alert('We need a bit more data before the AI path can start. Try a few practice rounds first.');
+        alert('Avem nevoie de mai multe date înainte să pornim traseul AI. Mai parcurge câteva runde de exerciții.');
       }
       return;
     }
@@ -3291,28 +3304,28 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     if (gameMode === 'ai-path') {
       intro = isRomanian
         ? 'Am pregătit o aventură adaptată special pentru tine. Ascultă indiciile și răspunde cu voce tare!'
-        : 'I prepared a special adventure just for you. Listen carefully and say each answer out loud!';
+        : 'Am pregătit o aventură adaptată special pentru tine. Ascultă indiciile și răspunde cu voce tare!';
     } else if (gameMode === 'random') {
       intro = isRomanian
         ? 'Începem o sesiune cu exerciții surpriză. Spune rezultatul și mergem mai departe!'
-        : 'Let’s dive into surprise addition challenges. Say the answer and we will keep going!';
+        : 'Începem o sesiune cu exerciții surpriză. Spune rezultatul și mergem mai departe!';
     } else if (gameMode === 'sequential') {
       intro = isRomanian
         ? 'Vom parcurge toate adunările pe rând. Respira adânc și spune răspunsul corect!'
-        : 'We will go through every addition in order. Take a breath and tell me the right answer!';
+        : 'Vom parcurge toate adunările pe rând. Respira adânc și spune răspunsul corect!';
     } else if (gameMode.startsWith('stage-')) {
-      const stageLabel = activeStage?.label || `addition up to ${currentRangeLimit}`;
+      const stageLabel = activeStage?.label || `adunări până la +${currentRangeLimit}`;
       intro = isRomanian
         ? `Exersăm ${stageLabel.toLowerCase()}. Rămâi atent și menține acuratețea peste 90%.`
-        : `We are practicing ${stageLabel.toLowerCase()}. Stay focused and aim for 90% accuracy.`;
+        : `Exersăm ${stageLabel.toLowerCase()}. Rămâi atent și menține acuratețea peste 90%.`;
     } else if (gameMode.startsWith('focus-') && Number.isFinite(focusNumber)) {
       intro = isRomanian
         ? `Ne concentrăm pe adunări cu ${focusNumber}. Imaginează-ți ${focusNumber} obiecte și adaugă restul.`
-        : `We are focusing on sums with ${focusNumber}. Picture ${focusNumber} objects and add the rest.`;
+        : `Ne concentrăm pe adunări cu ${focusNumber}. Imaginează-ți ${focusNumber} obiecte și adaugă restul.`;
     } else {
       intro = isRomanian
         ? 'Hai să rezolvăm probleme de adunare! Eu te ghidez pas cu pas.'
-        : 'Let’s solve addition problems together! I will guide you step by step.';
+        : 'Hai să rezolvăm probleme de adunare! Eu te ghidez pas cu pas.';
     }
     speakText({ text: intro, type: 'custom', speakingRate: audioSettings.speakingRate * 0.95 }).catch((error) => {
       if (import.meta.env.DEV) {
@@ -3399,7 +3412,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       ? null
       : languageKey === 'ro'
         ? `Hai să numărăm împreună. Începem de la ${card.a} și mai adăugăm ${card.b} pași.`
-        : `Let’s count together. Start at ${card.a} and add ${card.b} more steps.`;
+        : `Hai să numărăm împreună. Începem de la ${card.a} și mai adăugăm ${card.b} pași.`;
     const hintText = hasAiHints ? aiHints.join(' ') : fallbackHint;
 
     let cancelled = false;
@@ -3478,7 +3491,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           const isRomanian = lang.startsWith('ro');
           const message = isRomanian
             ? `Bravo! Ai rezolvat ${solved} exerciții până acum. Hai să continuăm!`
-            : `Great work! You have already solved ${solved} problems. Let’s keep going!`;
+        : `Bravo! Ai rezolvat ${solved} exerciții până acum. Hai să continuăm!`;
           speakText({ text: message, type: 'praise' }).catch((error) => {
             if (import.meta.env.DEV) {
               console.warn('Unable to narrate milestone praise', error);
@@ -3503,7 +3516,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           const isRomanian = lang.startsWith('ro');
           const message = isRomanian
             ? `Streak de ${streak} răspunsuri corecte! Sunt foarte mândru de tine.`
-            : `Wow! ${streak} correct answers in a row. I am so proud of you!`;
+        : `Uau! ${streak} răspunsuri corecte la rând. Sunt foarte mândru de tine!`;
           speakText({ text: message, type: 'praise' }).catch((error) => {
             if (import.meta.env.DEV) {
               console.warn('Unable to narrate streak celebration', error);
@@ -3529,7 +3542,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       if (audioSettings.narrationEnabled) {
         const message = isRomanian
           ? 'Ai depășit checkpoint-ul! Felicitări pentru concentrare și răbdare.'
-          : 'You cleared the checkpoint! Fantastic focus and patience!';
+          : 'Ai depășit checkpoint-ul! Felicitări pentru concentrare și răbdare!';
         speakText({ text: message, type: 'praise' }).catch((error) => {
           if (import.meta.env.DEV) {
             console.warn('Unable to narrate checkpoint success', error);
@@ -3541,7 +3554,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       if (audioSettings.narrationEnabled) {
         const message = isRomanian
           ? 'Nu-i nimic, luăm o mică pauză și mai încercăm. Știu că vei reuși!'
-          : 'That is okay. Let’s take a short break and try again—I know you can do it!';
+          : 'Nu-i nimic, luăm o mică pauză și mai încercăm. Știu că vei reuși!';
         speakText({ text: message, type: 'encouragement' }).catch((error) => {
           if (import.meta.env.DEV) {
             console.warn('Unable to narrate checkpoint encouragement', error);
@@ -3935,12 +3948,12 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           const data = JSON.parse(event.target.result);
           if (data.version && data.studentInfo && data.statistics && data.masteryTracking) {
             setGameState(migrateGameState(data));
-            alert('Progress imported successfully!');
+            alert('Progresul a fost importat cu succes!');
           } else {
-            alert('Invalid game state format!');
+            alert('Formatul stării de joc este invalid!');
           }
         } catch (error) {
-          alert('Error importing progress!');
+          alert('A apărut o eroare la importul progresului!');
         }
       };
       reader.readAsText(file);
@@ -4161,20 +4174,20 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-4 flex items-center justify-center">
         <div className="text-center bg-white rounded-3xl shadow-xl p-10 max-w-md">
-          <div className="text-3xl font-bold text-gray-800 mb-2">All caught up! 🎉</div>
-            <p className="text-gray-600 mb-6">You&apos;ve cleared every checkpoint card. Choose the next adventure or replay this mode.</p>
+          <div className="text-3xl font-bold text-gray-800 mb-2">Totul este bifat! 🎉</div>
+            <p className="text-gray-600 mb-6">Ai terminat toate cardurile de checkpoint. Alege următoarea aventură sau repetă acest mod.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={resetToMenu}
               className="px-5 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
             >
-              Back to Mode Select
+              Înapoi la selectarea modurilor
             </button>
             <button
               onClick={generateCards}
               className="px-5 py-3 rounded-xl bg-white border-2 border-blue-300 text-blue-700 font-semibold hover:bg-blue-50 transition"
             >
-              Practice Again
+              Reia exercițiile
             </button>
           </div>
         </div>
@@ -4193,14 +4206,14 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         {showSetupReminder && (
           <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm font-medium">
-              {setupReminderMessage || 'Configurează cheia Gemini în AI Settings pentru a activa vocea și funcțiile personalizate.'}
+              {setupReminderMessage || 'Configurează cheia Gemini în setările AI pentru a activa vocea și funcțiile personalizate.'}
             </span>
             <button
               type="button"
               onClick={openSettings}
               className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
             >
-              Deschide AI Settings
+              Deschide setările AI
             </button>
           </div>
         )}
@@ -4214,10 +4227,10 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur rounded-xl shadow hover:shadow-lg transition"
           >
             <ArrowLeft size={18} />
-            <span>Learning Paths</span>
+            <span>Trasee de învățare</span>
           </button>
           <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-xl shadow text-sm text-gray-700 flex flex-col sm:items-end gap-1">
-            <span className="text-xs font-semibold uppercase tracking-widest text-indigo-500">{activeLearningPath.operationLabel || 'Operation'}</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-indigo-500">{activeLearningPath.operationLabel || 'Operație'}</span>
             <span className="text-base font-semibold text-gray-800">{activeLearningPath.title}</span>
             {activeLearningPath.recommendedAges && (
               <span className="text-xs text-gray-500">{activeLearningPath.recommendedAges}</span>
@@ -4232,7 +4245,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
         >
           <Hash size={18} />
-          <span>Menu</span>
+          <span>Meniu</span>
         </button>
 
         <div className="flex items-center gap-4">
@@ -4244,7 +4257,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
           >
             <BarChart3 size={18} className="text-blue-600" />
-            <span>Dashboard</span>
+            <span>Tablou de bord</span>
           </button>
 
           <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow">
@@ -4257,24 +4270,24 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       {/* Mode indicator */}
       <div className="mb-2 flex items-center gap-2">
         <div className="px-4 py-2 bg-white rounded-full shadow text-sm font-medium text-gray-700">
-          {gameMode === 'sequential' && `📋 Sequential Practice (up to +${currentRangeLimit})`}
-          {gameMode === 'random' && `🎲 Random Practice (up to +${currentRangeLimit})`}
-          {gameMode?.startsWith('stage-') && `🧱 Mastery Stage: ${activeStage?.shortLabel || activeStage?.label || `+${currentRangeLimit}`}`}
-          {gameMode?.startsWith('focus-') && `🎯 Practice with ${focusNumber}`}
-          {gameMode === 'ai-path' && '🤖 AI Path Session'}
+        {gameMode === 'sequential' && `📋 Exerciții secvențiale (până la +${currentRangeLimit})`}
+        {gameMode === 'random' && `🎲 Exerciții surpriză (până la +${currentRangeLimit})`}
+        {gameMode?.startsWith('stage-') && `🧱 Etapă de stăpânire: ${activeStage?.shortLabel || activeStage?.label || `+${currentRangeLimit}`}`}
+        {gameMode?.startsWith('focus-') && `🎯 Exersează cu ${focusNumber}`}
+        {gameMode === 'ai-path' && '🤖 Sesiune traseu AI'}
         </div>
         {gameMode !== 'ai-path' && activeStage && (
           <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-indigo-600">
-            Stage focus: {activeStage.label}
+            Etapă activă: {activeStage.label}
           </div>
         )}
         {gameMode !== 'ai-path' && (
           <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-gray-700">
-            Range: up to +{currentRangeLimit}
+            Interval: până la +{currentRangeLimit}
           </div>
         )}
         <div className="px-3 py-1 bg-white rounded-full shadow text-xs font-semibold text-gray-700">
-          Difficulty: <span className={{ easy: 'text-green-600', medium: 'text-orange-600', hard: 'text-red-600' }[gameState.adaptiveLearning.currentDifficulty] || 'text-gray-600'}>{gameState.adaptiveLearning.currentDifficulty}</span>
+          Dificultate: <span className={{ easy: 'text-green-600', medium: 'text-orange-600', hard: 'text-red-600' }[gameState.adaptiveLearning.currentDifficulty] || 'text-gray-600'}>{difficultyLabels[gameState.adaptiveLearning.currentDifficulty] || gameState.adaptiveLearning.currentDifficulty}</span>
         </div>
       </div>
 
@@ -4303,7 +4316,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 rounded-3xl z-10 animate-pulse">
             <div className="text-center">
               <div className="text-6xl mb-4">🎉</div>
-              <div className="text-3xl font-bold text-green-600">Awesome!</div>
+              <div className="text-3xl font-bold text-green-600">Super!</div>
             </div>
           </div>
         )}
@@ -4315,23 +4328,23 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         )}
 
         <h2 className="text-xl font-semibold text-gray-700 mb-6 flex items-center justify-between">
-          <span>Add the numbers:</span>
-          {card.review && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-1">REVIEW</span>}
+          <span>Adună numerele:</span>
+          {card.review && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-1">REVIZUIRE</span>}
         </h2>
 
         {card.aiPlanItem && (
           <div className="mb-4 text-sm text-indigo-600 font-medium flex items-center gap-2">
             <Brain size={16} className="text-indigo-500" />
-            Predicted success ~{Math.round((card.aiPlanItem.predictedSuccess ?? aiPersonalization.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint) * 100)}%
+            Succes estimat ~{Math.round((card.aiPlanItem.predictedSuccess ?? aiPersonalization.targetSuccess ?? TARGET_SUCCESS_BAND.midpoint) * 100)}%
           </div>
         )}
 
         {checkpointActive && (
           <div className="mb-4 p-4 bg-purple-50 border-2 border-purple-200 rounded-2xl text-center text-purple-800">
-            <div className="font-semibold text-sm">Checkpoint review in progress</div>
-            <div className="text-xs mt-1">Aim for at least 80% accuracy to continue. Accuracy: {checkpointAccuracy}%</div>
+            <div className="font-semibold text-sm">Revizuire de control în desfășurare</div>
+            <div className="text-xs mt-1">Țintește cel puțin 80% acuratețe pentru a continua. Acuratețe: {checkpointAccuracy}%</div>
             <div className="mt-2 text-xs text-purple-600">
-              {checkpointState.totalAttempts} attempts · {checkpointCleared}/{checkpointState.reviewCards.length} cards cleared
+              {checkpointState.totalAttempts} încercări · {checkpointCleared}/{checkpointState.reviewCards.length} carduri rezolvate
             </div>
           </div>
         )}
@@ -4396,13 +4409,13 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
                   ? 'border-red-500 bg-red-50 focus:ring-red-300'
                   : 'border-gray-400 bg-white focus:ring-blue-300'
               }`}
-              aria-label="Your answer"
+              aria-label="Răspunsul tău"
             />
             {feedback === 'correct' && (
-              <div className="mt-2 text-green-600 font-semibold flex items-center gap-1"><Check size={18}/> Correct!</div>
+              <div className="mt-2 text-green-600 font-semibold flex items-center gap-1"><Check size={18}/> Corect!</div>
             )}
             {feedback === 'incorrect' && (
-              <div className="mt-2 text-red-600 font-semibold flex items-center gap-1"><X size={18}/> Try again</div>
+              <div className="mt-2 text-red-600 font-semibold flex items-center gap-1"><X size={18}/> Mai încearcă</div>
             )}
           </div>
         </div>
@@ -4426,7 +4439,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             }`}
           >
             <Check size={18} />
-            Check
+            Verifică
           </button>
 
           <button
@@ -4441,7 +4454,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow bg-white border hover:bg-gray-50"
           >
             <RotateCcw size={18} />
-            Reset
+            Resetează
           </button>
 
           <button
@@ -4449,7 +4462,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             disabled={currentCard === 0}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${currentCard === 0 ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white border hover:bg-gray-50'}`}
           >
-            ‹ Prev
+            ‹ Înapoi
           </button>
 
           <button
@@ -4457,7 +4470,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
             disabled={currentCard >= cards.length - 1}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold shadow ${currentCard >= cards.length - 1 ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-white border hover:bg-gray-50'}`}
           >
-            Next ›
+            Înainte ›
           </button>
 
           <button
@@ -4483,14 +4496,14 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
               audioSettings.narrationEnabled ? 'bg-white border hover:bg-gray-50' : 'bg-gray-200 text-gray-500 cursor-not-allowed'
             }`}
           >
-            🔊 Hear it again
+            🔊 Ascultă din nou
           </button>
         </div>
       </div>
 
       {/* Footer stats */}
       <div className="text-sm text-gray-700 bg-white rounded-full px-4 py-2 shadow">
-        Card {currentCard + 1} / {cards.length}
+        Cartonașul {currentCard + 1} din {cards.length}
       </div>
     </div>
     </>

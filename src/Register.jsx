@@ -26,7 +26,7 @@ const Register = ({ onRegister, onImport }) => {
       const age = calculateAge(birthDate);
       onRegister({ name, age, gender });
     } else {
-      alert('Please fill in all fields.');
+      alert('Completează toate câmpurile.');
     }
   };
 
@@ -37,11 +37,11 @@ const Register = ({ onRegister, onImport }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 p-8 flex flex-col items-center justify-center">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8">
-        <h1 className="text-4xl font-bold text-gray-800 text-center mb-6">Register</h1>
+        <h1 className="text-4xl font-bold text-gray-800 text-center mb-6">Înregistrare</h1>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Child&apos;s Name
+              Numele copilului
             </label>
             <input
               type="text"
@@ -54,7 +54,7 @@ const Register = ({ onRegister, onImport }) => {
           </div>
           <div>
             <label htmlFor="birthDate" className="block text-sm font-medium text-gray-700">
-              Birth Date
+              Data nașterii
             </label>
             <input
               type="date"
@@ -66,7 +66,7 @@ const Register = ({ onRegister, onImport }) => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Gender</label>
+            <label className="block text-sm font-medium text-gray-700">Gen</label>
             <div className="mt-2 flex justify-around">
               <label className="inline-flex items-center">
                 <input
@@ -77,7 +77,7 @@ const Register = ({ onRegister, onImport }) => {
                   onChange={() => setGender('male')}
                   className="form-radio h-5 w-5 text-blue-600"
                 />
-                <span className="ml-2">Male</span>
+                <span className="ml-2">Băiat</span>
               </label>
               <label className="inline-flex items-center">
                 <input
@@ -88,7 +88,7 @@ const Register = ({ onRegister, onImport }) => {
                   onChange={() => setGender('female')}
                   className="form-radio h-5 w-5 text-pink-600"
                 />
-                <span className="ml-2">Female</span>
+                <span className="ml-2">Fată</span>
               </label>
             </div>
           </div>
@@ -96,7 +96,7 @@ const Register = ({ onRegister, onImport }) => {
             type="submit"
             className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            Start Learning
+            Începe învățarea
           </button>
         </form>
         <div className="mt-6">
@@ -105,7 +105,7 @@ const Register = ({ onRegister, onImport }) => {
             className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all border-2 border-purple-200"
           >
             <Upload className="text-purple-600" size={20} />
-            <span className="font-semibold">Import Progress</span>
+            <span className="font-semibold">Importă progresul</span>
           </button>
           <input
             ref={fileInputRef}

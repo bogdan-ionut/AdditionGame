@@ -1,31 +1,31 @@
-# Chirp CLI audio generation (macOS)
+# Generarea audio cu Chirp CLI (macOS)
 
-The Gemini pipeline in this commit predates the in-app Chirp integration, so you can fall back to the OpenAI REST API to synthesize narration clips straight from Terminal on macOS.
+Conducta Gemini din acest commit este anterioară integrării Chirp direct în aplicație, așa că poți apela API-ul REST OpenAI pentru a sintetiza clipuri de narațiune direct din Terminal pe macOS.
 
-## 1. Install prerequisites
+## 1. Instalează prerechizitele
 
-1. Install Homebrew (skip if already present):
+1. Instalează Homebrew (dacă nu este deja prezent):
    ```bash
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
-2. Ensure `curl` is available (bundled with macOS) and install `ffmpeg` for quick format conversions:
+2. Verifică faptul că `curl` este disponibil (vine cu macOS) și instalează `ffmpeg` pentru conversii rapide de format:
    ```bash
    brew install ffmpeg
    ```
 
-## 2. Configure your OpenAI key
+## 2. Configurează cheia OpenAI
 
-Add your API key to the shell session so the CLI call can authenticate:
+Adaugă cheia API în sesiunea shell pentru ca apelul CLI să se poată autentifica:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
 
-You can place this line in `~/.zshrc` if you want it loaded automatically for new shells.
+Poți pune această linie în `~/.zshrc` dacă vrei să se încarce automat pentru shell-urile noi.
 
-## 3. Request a Chirp (gpt-4o-mini-tts) clip
+## 3. Cere un clip Chirp (gpt-4o-mini-tts)
 
-Run the following command to synthesize an MP3 file with the "alloy" voice. Replace the `input` text with the narration you need.
+Rulează următoarea comandă pentru a sintetiza un fișier MP3 cu vocea „alloy”. Înlocuiește textul `input` cu narațiunea de care ai nevoie.
 
 ```bash
 curl -sS -o warmup.mp3 \
@@ -40,22 +40,22 @@ curl -sS -o warmup.mp3 \
   }'
 ```
 
-The `gpt-4o-mini-tts` model is the direct successor to the Chirp 3D voice and supports stereo output when you request `format: "wav"` with `sample_rate: 44100`.
+Modelul `gpt-4o-mini-tts` este succesorul direct al vocii Chirp 3D și permite ieșire stereo dacă soliciți `format: "wav"` cu `sample_rate: 44100`.
 
-## 4. Preview or post-process the file
+## 4. Previzualizează sau postprocesează fișierul
 
-- Play the result immediately:
+- Redă imediat rezultatul:
   ```bash
   afplay warmup.mp3
   ```
-- Convert to 44.1 kHz stereo WAV (optional):
+- Convertește la WAV stereo 44,1 kHz (opțional):
   ```bash
   ffmpeg -i warmup.mp3 -ar 44100 -ac 2 warmup.wav
   ```
 
-## 5. Batch generation helper (optional)
+## 5. Generator pentru loturi (opțional)
 
-For multiple prompts, create a simple shell script (e.g. `generate-chirp.sh`) and loop through the phrases you need:
+Pentru mai multe prompturi, creează un mic script shell (de exemplu `generate-chirp.sh`) și parcurge frazele necesare:
 
 ```bash
 #!/usr/bin/env bash
@@ -66,7 +66,7 @@ MODEL="gpt-4o-mini-tts"
 FORMAT="mp3"
 
 while IFS=, read -r slug prompt; do
-  echo "→ Generating ${slug}"
+  echo "→ Generăm ${slug}"
   curl -sS -o "${slug}.${FORMAT}" \
     -X POST https://api.openai.com/v1/audio/speech \
     -H "Authorization: Bearer ${OPENAI_API_KEY}" \
@@ -76,11 +76,11 @@ while IFS=, read -r slug prompt; do
 done < prompts.csv
 ```
 
-Then store your phrases in `prompts.csv` (comma-separated `filename,prompt`) and run:
+Apoi stochează frazele în `prompts.csv` (format `filename,prompt` separat prin virgulă) și rulează:
 
 ```bash
 chmod +x generate-chirp.sh
 ./generate-chirp.sh
 ```
 
-Each entry becomes its own audio file in the current directory.
+Fiecare intrare devine propriul fișier audio în directorul curent.

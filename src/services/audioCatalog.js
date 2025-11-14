@@ -22,7 +22,7 @@ const GEMINI_VOICES = [
   },
   {
     id: 'Juniper',
-    label: 'Juniper · English upbeat',
+    label: 'Juniper · Engleză energică',
     language: 'en-US',
     gender: 'neutral',
     tags: ['gemini'],
@@ -80,7 +80,7 @@ export async function fetchAudioSfx({ pack, name, category, mode } = {}) {
 
 export async function synthesizeSpeech(payload = {}) {
   if (!hasGeminiApiKey()) {
-    throw new Error('Configurează cheia Gemini în AI Settings pentru a genera voce.');
+    throw new Error('Configurează cheia Gemini în setările AI pentru a genera voce.');
   }
   const text = typeof payload.text === 'string' ? payload.text.trim() : '';
   if (!text) {

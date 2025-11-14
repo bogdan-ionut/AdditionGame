@@ -1,73 +1,71 @@
 # AdditionGame
 
-An addition game for my 3.5 year old boy.
+Un joc de adunare creat pentru copiii de vârstă preșcolară, acum tradus complet în limba română.
 
-## Local development
+## Dezvoltare locală
 
-This repository now uses [Vite](https://vitejs.dev/) for the React build. To run the app locally:
+Acest proiect folosește [Vite](https://vitejs.dev/) pentru configurarea aplicației React. Pentru a rula proiectul local:
 
-1. Install dependencies with `npm install`.
-2. Start the dev server with `npm run dev` and open the printed URL.
-3. Create a production bundle with `npm run build` (artifacts land in `dist/`).
-4. Preview the production build with `npm run preview` if needed.
+1. Instalează dependențele cu `npm install`.
+2. Pornește serverul de dezvoltare cu `npm run dev` și deschide adresa afișată în terminal.
+3. Creează un pachet de producție cu `npm run build` (fișierele rezultate ajung în `dist/`).
+4. Dacă ai nevoie să verifici varianta de producție, folosește `npm run preview`.
 
-### Environment configuration
+### Configurarea mediului
 
-Create a `.env.local` (or the appropriate Vite environment file) with your Gemini API key if you want narration and AI-driven
-stories to work:
+Creează un fișier `.env.local` (sau un alt fișier de mediu acceptat de Vite) și adaugă cheia ta Gemini pentru a activa narațiunea și funcțiile AI:
 
 ```
 VITE_GEMINI_API_KEY=AIza...
 ```
 
-The key is read at build time and also cached in `localStorage` when you enter it through **AI Settings**. If you skip this
-step, the app still runs but narration falls back to on-device voices or remains muted.
+Cheia este citită la build și salvată în `localStorage` atunci când o introduci în **setările AI**. Dacă sari peste acest pas, aplicația rulează în continuare, dar narațiunea folosește vocea dispozitivului sau rămâne dezactivată.
 
-## GitHub Pages deployment
+## Publicare pe GitHub Pages
 
-A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds the app and publishes the contents of `dist/` to the `gh-pages` branch on every push to `main`. Enable **Settings → Pages → Deploy from branch → gh-pages** to serve the latest build at `https://<username>.github.io/AdditionGame/`.
+Fluxul GitHub Actions (`.github/workflows/deploy.yml`) construiește aplicația și publică conținutul directorului `dist/` în branch-ul `gh-pages` la fiecare push în `main`. Activează **Settings → Pages → Deploy from branch → gh-pages** pentru a servi cea mai recentă versiune la `https://<username>.github.io/AdditionGame/`.
 
-## Data export folders
+## Foldere pentru exporturi
 
-Two folders are available for saving JSON exports or other assets:
+Poți salva date JSON sau alte resurse în două locuri:
 
-- `public/exports/` – bundled with the static site so files are publicly accessible.
-- `data/exports/` – version-controlled alongside the source but not exposed at runtime.
+- `public/exports/` – este inclus în site-ul static, astfel încât fișierele sunt accesibile public.
+- `data/exports/` – este versionat în depozit, dar nu este expus la rularea aplicației.
 
-## Chirp audio generation from Terminal
+## Generarea audio Chirp din terminal
 
-If you need to pre-generate narration without launching the app, follow the step-by-step guide in [`docs/chirp-cli.md`](docs/chirp-cli.md). It covers installing the prerequisites on macOS, exporting your `OPENAI_API_KEY`, and invoking the `gpt-4o-mini-tts` (Chirp) model via `curl` to save MP3 or WAV clips.
+Dacă vrei să generezi narațiunea fără a porni aplicația, urmează ghidul pas cu pas din [`docs/chirp-cli.md`](docs/chirp-cli.md). Vei găsi instrucțiuni pentru instalarea prerechizitelor pe macOS, exportarea variabilei `OPENAI_API_KEY` și folosirea modelului `gpt-4o-mini-tts` (Chirp) prin `curl` pentru a salva fișiere MP3 sau WAV.
 
-## Feature Implementation Status
+## Stadiul funcționalităților
 
-### Implemented
-- **Real-time dashboard metrics** covering today's minutes from `dailyTotals`, average time per problem, focus vs. waste, struggle zones, mastery by number, and 7-day growth rate vs. baseline. The parent dashboard pulls these metrics directly from saved session data.
-- **Dashboard accuracy** now calculated as total-correct divided by total-attempts, ensuring the headline metric matches in-session accuracy tracking.
-- **Coverage tracking** for the full (0..9)×(0..9) grid, marking a problem pair as covered once it has at least one correct answer.
-- **Mastery gates** for the "Adding with _n_" modes, which unlock only after the previous number reaches the mastered threshold.
-- **Adaptive difficulty** that shifts between easy/medium/hard based on streaks and recent timing data.
-- **Spaced review queue** with 10m → 1h → 1d intervals and a REVIEW badge on due cards.
-- **Lightweight checkpoints** every 10 problems that inject up to five low-accuracy review items.
-- **Checkpoint tests** that require an 80% accuracy pass gate before resuming the main deck, with automatic retries on a miss.
-- **Automatic hinting** after two incorrect attempts, including the interactive number-line helper.
-- **Struggle detector & auto-help** with difficulty downgrades, auto hints after repeat misses, a 30-second inactivity trigger, and guided counting animation support.
-- **WASTE detection** for too-fast/too-slow answers and for patterned inputs delivered in under three seconds.
-- **Progress portability** via JSON import/export plus automatic persistence to `localStorage`.
-- **State migration/versioning** through `migrateGameState` (current schema `1.2.0`).
-- **Countable SVG objects** and celebration overlays for each digit from 0–9.
-- **Fully individualized learning paths** that analyze mastery data, streaks, and per-number accuracy to unlock AI-curated focus targets even if the previous number is not yet mastered.
-- **Knowledge vs. age grade insights** that translate progress into grade-band language and highlight alignment gaps in the parent dashboard.
-- **Growth tracking** that pairs the 7-day growth multiplier with a comparative chart against a typical practice baseline.
+### Implementate
+- **Metrici în timp real pe tabloul de bord**: minutele de astăzi din `dailyTotals`, timpul mediu per problemă, zonele de focus vs. pierdere de timp, zonele de dificultate, stăpânirea pe număr și rata de creștere pe 7 zile comparată cu baza inițială. Tabloul de bord pentru părinți folosește direct datele salvate din sesiuni.
+- **Acuratețe pe tabloul de bord** calculată ca raportul dintre răspunsurile corecte și totalul încercărilor, astfel încât indicatorul principal să corespundă urmăririi din timpul jocului.
+- **Urmărirea acoperirii** pentru grila completă (0..9)×(0..9), marcând fiecare pereche ca acoperită după cel puțin un răspuns corect.
+- **Etape de stăpânire** pentru modurile „Adunări cu _n_”, deblocate doar după atingerea pragului la numărul anterior.
+- **Dificultate adaptivă** care trece între ușor/mediu/greu pe baza seriilor și a timpilor recenți.
+- **Cozi de recapitulare eșalonată** cu intervale 10m → 1h → 1d și o insignă REVIEW pe cardurile restante.
+- **Checkpoint-uri ușoare** la fiecare 10 probleme, care adaugă până la cinci exerciții suplimentare pentru recapitulare.
+- **Teste de checkpoint** ce cer o acuratețe de 80% înainte de a reveni la pachetul principal, cu reluare automată dacă este nevoie.
+- **Indicații automate** după două încercări greșite, inclusiv linia numerică interactivă.
+- **Detector de dificultăți și ajutor automat** cu reducerea nivelului, indicii suplimentare după greșeli repetate, declanșare la 30 de secunde de inactivitate și suport audio pentru numărat.
+- **Detectarea răspunsurilor nepotrivite (WASTE)** pentru răspunsuri prea rapide/lente sau tipare repetate introduse în mai puțin de trei secunde.
+- **Portabilitatea progresului** prin import/export JSON și salvare automată în `localStorage`.
+- **Migrarea stării** prin `migrateGameState` (schema curentă `1.2.0`).
+- **Obiecte SVG numărabile** și animații de celebrare pentru fiecare cifră 0–9.
+- **Trasee de învățare complet personalizate** care analizează stăpânirea, seriile și acuratețea pe număr pentru a recomanda ținte create de AI chiar dacă numărul anterior nu este încă stăpânit.
+- **Analize între nivelul de cunoștințe și vârsta școlară** care traduc progresul în limbaj specific claselor și evidențiază diferențele în tabloul de bord pentru părinți.
+- **Monitorizare a creșterii** care combină multiplicatorul pe 7 zile cu un grafic comparativ față de practica obișnuită.
 
-### Partially Implemented
-- _None at this time._
+### Parțial implementate
+- _Niciuna momentan._
 
-### Not Implemented
-- **Multi-modal supports** such as TTS audio, drag-and-drop number lines, or instructional videos.
-- **Progress visualizations** like Jenga towers, trophies, or printable mastery certificates.
-- **Adaptive breaks** (e.g., child-friendly Pomodoro timers).
-- **Chapter-style progress bars** that track segments independently of global coverage.
-- **Printable review reports** or UI exposure of `reviewNeeded` items.
-- **Initial assessment mode** for rapid difficulty calibration.
-- **Audio feedback** for positive/negative responses or narrated equations.
+### Neimplementate
+- **Suporturi multimodale** precum audio TTS suplimentar, linii numerice de tip drag-and-drop sau clipuri explicative.
+- **Vizualizări de progres** de tip turnuri Jenga, trofee sau certificate printabile.
+- **Pauze adaptive** (de exemplu, un Pomodoro prietenos pentru copii).
+- **Bare de progres pe capitole** care urmăresc segmente independente de acoperirea globală.
+- **Rapoarte de recapitulare printabile** sau expunerea în interfață a elementelor `reviewNeeded`.
+- **Mod de evaluare inițială** pentru calibrarea rapidă a dificultății.
+- **Feedback audio suplimentar** pentru răspunsuri corecte/greșite sau pentru ecuații narate.
 

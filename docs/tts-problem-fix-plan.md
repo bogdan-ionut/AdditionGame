@@ -1,11 +1,11 @@
-# Plan: keep Gemini TTS from answering the math problems
+# Plan: împiedicăm Gemini TTS să răspundă la problemele de matematică
 
-1. **Harden the request we send to Gemini**  
-   - Attach a reusable system instruction (described in `docs/research/gemini-tts-2.5-flash.md`) when we synthesize speech so the model is reminded to stay verbatim.  
-   - Send every problem as a `user` turn with explicit role metadata and keep the response modality pinned to audio.
-2. **Version the cached audio**  
-   - Introduce a cache “flavor” so newly synthesized clips do not reuse the older recordings that already contain answers.  
-   - Make sure both reads and writes encode the flavor in the cache key to automatically bust outdated clips.  
-3. **Update narration helpers**  
-   - Pass the stricter prompt flavor through the narration engine so problem prompts always opt into the verbatim system message.  
-   - Keep existing voice settings intact so only the prompt discipline changes.
+1. **Întărim cererea trimisă către Gemini**
+   - Atașăm o instrucțiune de sistem reutilizabilă (descrisă în `docs/research/gemini-tts-2.5-flash.md`) atunci când sintetizăm vorbire, astfel încât modelul să își amintească să rămână la textul promptului.
+   - Trimitem fiecare problemă ca un mesaj `user` cu metadate de rol explicite și blocăm modalitatea răspunsului la audio.
+2. **Versionăm clipurile din cache**
+   - Introducem o „aromă” de cache, astfel încât clipurile nou sintetizate să nu mai reutilizeze înregistrările vechi care conțin deja răspunsurile.
+   - Ne asigurăm că atât citirile cât și scrierile codifică aroma în cheia cache pentru a invalida automat clipurile depășite.
+3. **Actualizăm utilitarele de narațiune**
+   - Propagăm promptul mai strict prin motorul de narațiune, astfel încât problemele să folosească mereu mesajul de sistem verbatim.
+   - Păstrăm setările actuale de voce, astfel încât doar disciplina promptului să se schimbe.

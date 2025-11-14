@@ -17,7 +17,7 @@ export async function fetchRuntime(): Promise<RuntimeInfo> {
     ttsModel: hasKey ? 'gemini-2.5-flash-preview-tts' : null,
     note: hasKey
       ? 'Vocea este generată direct în browser folosind cheia ta Gemini.'
-      : 'Configurează cheia Gemini în AI Settings pentru a activa vocea.',
+      : 'Configurează cheia Gemini în setările AI pentru a activa vocea.',
   };
 }
 
@@ -29,7 +29,7 @@ export const fetchVoices = async () => [
   },
   {
     id: 'Juniper',
-    label: 'Juniper · English upbeat',
+    label: 'Juniper · Engleză energică',
     language: 'en-US',
   },
 ];
