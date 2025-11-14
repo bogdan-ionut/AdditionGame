@@ -62,42 +62,40 @@ const QuickPathCard = ({ path, isActive, onPreview, onLaunch }) => {
           handlePreview();
         }
       }}
-      className={`rounded-xl border bg-white px-4 py-5 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
+      className={`rounded-xl border bg-white px-4 py-4 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
         isActive ? 'border-slate-900 ring-2 ring-slate-200' : 'border-slate-200 hover:border-slate-300'
       }`}
     >
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusMeta.toneStyles}`}
-            >
-              <Sparkles size={14} />
-              {statusMeta.label}
-            </span>
-            {path.recommendedAges ? (
-              <span className="text-xs font-medium text-slate-500">{path.recommendedAges}</span>
-            ) : null}
-          </div>
-
-          <div className="space-y-1">
-            <h3 className="text-lg font-semibold text-slate-900">{path.title}</h3>
-            {path.description && <p className="text-sm text-slate-600">{path.description}</p>}
-          </div>
-
-          {keyPoints.length > 0 && (
-            <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-              {keyPoints.map((point) => (
-                <li key={point} className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                  <span>{point}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusMeta.toneStyles}`}
+          >
+            <Sparkles size={14} />
+            {statusMeta.label}
+          </span>
+          {path.recommendedAges ? (
+            <span className="text-xs font-medium text-slate-500">{path.recommendedAges}</span>
+          ) : null}
         </div>
 
-        <div className="flex flex-col items-start gap-2 md:items-end">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold text-slate-900">{path.title}</h3>
+          {path.description && <p className="text-sm text-slate-600">{path.description}</p>}
+        </div>
+
+        {isActive && keyPoints.length > 0 && (
+          <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+            {keyPoints.map((point) => (
+              <li key={point} className="flex items-start gap-2">
+                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={(event) => {
@@ -124,7 +122,7 @@ const QuickPathCard = ({ path, isActive, onPreview, onLaunch }) => {
             </button>
           ) : (
             statusMeta.message && (
-              <p className="max-w-[220px] text-left text-xs text-slate-500">{statusMeta.message}</p>
+              <p className="text-left text-xs text-slate-500">{statusMeta.message}</p>
             )
           )}
         </div>
@@ -297,7 +295,7 @@ const LearningPathDashboard = ({
             </div>
           </aside>
 
-          <div className="space-y-8">
+          <div className="space-y-10">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trasee de învățare</p>
@@ -308,58 +306,64 @@ const LearningPathDashboard = ({
               <span className="text-xs text-slate-500">Alege un card pentru a vedea detalii și pentru a porni modulul.</span>
             </div>
 
-            {filteredPaths.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
-                Lucrăm la conținut nou pentru această operație. Revino în curând!
-              </div>
-            ) : (
+            <div className="grid gap-8 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
               <div className="space-y-8">
-                {categorizedPaths.map((section) => (
-                  <div key={section.id} className="space-y-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{section.title}</h3>
-                      <p className="text-sm text-slate-600">{section.description}</p>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {section.paths.map((path) => (
-                        <div key={path.id} className="h-full">
-                          <QuickPathCard
-                            path={path}
-                            isActive={previewPath?.id === path.id}
-                            onPreview={(selectedPath) => setPreviewPathId(selectedPath.id)}
-                            onLaunch={(selectedPath) => onSelectPath?.(selectedPath)}
-                          />
-                        </div>
-                      ))}
-                    </div>
+                {filteredPaths.length === 0 ? (
+                  <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
+                    Lucrăm la conținut nou pentru această operație. Revino în curând!
                   </div>
-                ))}
+                ) : (
+                  categorizedPaths.map((section) => (
+                    <div key={section.id} className="space-y-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-900">{section.title}</h3>
+                        <p className="text-sm text-slate-600">{section.description}</p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {section.paths.map((path) => (
+                          <div key={path.id} className="h-full">
+                            <QuickPathCard
+                              path={path}
+                              isActive={previewPath?.id === path.id}
+                              onPreview={(selectedPath) => setPreviewPathId(selectedPath.id)}
+                              onLaunch={(selectedPath) => onSelectPath?.(selectedPath)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
+
+              {previewPath ? (
+                <section className="space-y-4 xl:sticky xl:top-24">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detalii traseu</p>
+                      <h3 className="text-2xl font-semibold text-slate-900">{previewPath.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewPathId(null)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                    >
+                      <X size={14} />
+                      Ascunde preview
+                    </button>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <LearningPathCard path={previewPath} onSelect={onSelectPath} />
+                  </div>
+                </section>
+              ) : (
+                <div className="hidden items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-100/60 p-6 text-center text-sm text-slate-500 xl:flex">
+                  Selectează un traseu pentru a vedea detaliile aici.
+                </div>
+              )}
+            </div>
           </div>
         </div>
-
-        {previewPath && (
-          <section className="mt-12 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detalii traseu</p>
-                <h3 className="text-2xl font-semibold text-slate-900">{previewPath.title}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewPathId(null)}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
-              >
-                <X size={14} />
-                Ascunde preview
-              </button>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <LearningPathCard path={previewPath} onSelect={onSelectPath} />
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );
