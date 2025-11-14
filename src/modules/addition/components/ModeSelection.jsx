@@ -152,19 +152,18 @@ const ModeSelection = ({
     color: ['red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'cyan', 'blue', 'purple'][i]
   }));
 
-  const handleImport = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const data = JSON.parse(event.target.result);
-          onImport(data);
-        } catch (error) {
-          showToast({ level: 'error', message: 'Format de fișier invalid!' });
-        }
-      };
-      reader.readAsText(file);
+  const handleImport = (event) => {
+    if (!event || !event.target || !event.target.files || event.target.files.length === 0) {
+      showToast({ level: 'error', message: 'Nu am putut citi fișierul selectat.' });
+      return;
+    }
+
+    onImport?.(event);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    } else if (event.target) {
+      event.target.value = '';
     }
   };
 
