@@ -149,6 +149,17 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   );
 
   const { studentInfo } = gameState;
+  const playerDisplayName = useMemo(
+    () => (
+      studentInfo?.preferredName
+        || studentInfo?.nickname
+        || studentInfo?.name
+        || ''
+    )
+      .toString()
+      .trim(),
+    [studentInfo?.preferredName, studentInfo?.nickname, studentInfo?.name],
+  );
   const aiPreviewItem = useMemo(() => {
     if (aiPersonalization.activeSession?.items && aiPersonalization.activeSession.items.length) {
       const pending = aiPersonalization.activeSession.items.find((item) => {
@@ -184,10 +195,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     const spotlightStage = newlyMastered[0];
     if (!spotlightStage) return;
     if (badgeSpotlight && badgeSpotlight.stageId === spotlightStage.id && !badgeSpotlight.progressOnly) return;
-    const playerDisplayName = (studentInfo?.preferredName || studentInfo?.nickname || studentInfo?.name || '')
-      .toString()
-      .trim();
-
     setShowBadgeCelebration(true);
     setBadgeSpotlight({
       stageId: spotlightStage.id,
@@ -210,7 +217,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         badgeEarned: true,
       },
     };
-  }, [badgeSpotlight, setGameState, stageProgress]);
+  }, [badgeSpotlight, playerDisplayName, setGameState, stageProgress]);
 
   useEffect(() => {
     if (!showBadgeCelebration) return undefined;
@@ -257,10 +264,6 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           : Number.isFinite(stage.requiredPerfectRuns)
             ? stage.requiredPerfectRuns
             : 0;
-        const playerDisplayName = (studentInfo?.preferredName || studentInfo?.nickname || studentInfo?.name || '')
-          .toString()
-          .trim();
-
         progressSpotlight = {
           stageId: stage.id,
           stageLabel: stage.label,
@@ -284,7 +287,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
       setShowBadgeCelebration(true);
       setBadgeSpotlight(progressSpotlight);
     }
-  }, [badgeSpotlight, stageProgress]);
+  }, [badgeSpotlight, playerDisplayName, stageProgress]);
 
   const defaultRangeLimit = useMemo(
     () => resolveMaxUnlockedAddend(stageProgress),
