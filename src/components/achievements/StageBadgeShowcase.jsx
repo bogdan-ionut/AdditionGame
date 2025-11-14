@@ -202,6 +202,22 @@ const buildRingProgressGradient = (palette, percent, trackColor, locked) => {
   return `conic-gradient(from -90deg, ${segments.join(', ')})`;
 };
 
+const rotateArray = (array, offset = 0) => {
+  if (!Array.isArray(array) || array.length === 0) return [];
+  const length = array.length;
+  const normalizedOffset = ((offset % length) + length) % length;
+  return Array.from({ length }, (_, idx) => array[(idx + normalizedOffset) % length]);
+};
+
+const buildTierRingGradient = (palette, percent, trackColor, locked, tierIndex, totalTiers = 3) => {
+  if (totalTiers <= 0) {
+    return buildRingProgressGradient(palette, percent, trackColor, locked);
+  }
+  const tierSpan = 100 / totalTiers;
+  const tierProgress = clampPercent(((percent - tierIndex * tierSpan) / tierSpan) * 100);
+  return buildRingProgressGradient(rotateArray(palette, tierIndex), tierProgress, trackColor, locked);
+};
+
 const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
   const normalizedStages = useMemo(() => {
     if (Array.isArray(stages) && stages.length > 0) {
@@ -423,14 +439,24 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                   : locked
                     ? 'bg-slate-200/40 text-slate-600 border-slate-200/70'
                     : 'bg-purple-500/15 text-purple-700 border-purple-200/70';
-                const StatusIcon = locked ? Lock : BadgeIcon;
                 const ringProgressPercent = clampPercent(stage.badgeProgressPercent ?? runPercent ?? 0);
-                const ringBackground = buildRingProgressGradient(
+                const totalBadgeTiers = 3;
+                const tierSpan = 100 / totalBadgeTiers;
+                const tierProgressValues = Array.from({ length: totalBadgeTiers }, (_, tierIndex) => clampPercent(
+                  ((ringProgressPercent - tierIndex * tierSpan) / tierSpan) * 100,
+                ));
+                const tierGradients = tierProgressValues.map((_, tierIndex) => buildTierRingGradient(
                   visual.ringPalette,
                   ringProgressPercent,
                   visual.ringTrackColor,
                   locked,
-                );
+                  tierIndex,
+                  totalBadgeTiers,
+                ));
+                const tierActiveStates = tierProgressValues.map((value) => value > 0);
+                const tierCompleteStates = tierProgressValues.map((value) => value >= 100);
+                const showFinalBurst = mastered || ringProgressPercent >= 99.5;
+                const IconComponent = locked ? Lock : BadgeIcon;
                 const sparkleOpacity = locked ? 0.2 : 0.35 + (ringProgressPercent / 100) * 0.45;
                 const innerGlowOpacity = locked ? 0.35 : 0.5 + (ringProgressPercent / 100) * 0.35;
                 const progressMedallionClass = locked
@@ -501,30 +527,116 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                               />
                             );
                           })}
-                          <div
-                            className={`relative z-10 flex h-full w-full items-center justify-center rounded-full border-[6px] ${visual.frameColor} shadow-[0_12px_30px_rgba(45,17,90,0.25)]`}
-                            style={{ backgroundImage: ringBackground }}
-                          >
-                            {visual.pattern && (
-                              <div
-                                className="absolute inset-[12%] rounded-full opacity-90"
-                                style={{ backgroundImage: visual.pattern, backgroundSize: '160% 160%' }}
+                          {showFinalBurst && (
+                            <>
+                              <span
+                                className="pointer-events-none absolute -left-7 top-1/2 h-16 w-12 -translate-y-1/2 rotate-[-12deg] opacity-80"
+                                style={{
+                                  background: 'linear-gradient(135deg, rgba(253,224,71,0.85), rgba(249,115,22,0.7))',
+                                  clipPath: 'polygon(10% 0%, 100% 25%, 80% 100%, 0% 80%)',
+                                  filter: 'drop-shadow(0 12px 18px rgba(249,115,22,0.35))',
+                                }}
+                                aria-hidden="true"
                               />
-                            )}
+                              <span
+                                className="pointer-events-none absolute -right-7 top-1/2 h-16 w-12 -translate-y-1/2 rotate-[12deg] opacity-80"
+                                style={{
+                                  background: 'linear-gradient(45deg, rgba(147,197,253,0.85), rgba(196,181,253,0.75))',
+                                  clipPath: 'polygon(0% 25%, 90% 0%, 100% 80%, 20% 100%)',
+                                  filter: 'drop-shadow(0 12px 18px rgba(147,197,253,0.35))',
+                                }}
+                                aria-hidden="true"
+                              />
+                            </>
+                          )}
+                          <div
+                            className={`relative z-10 flex h-full w-full items-center justify-center rounded-full border-[6px] ${visual.frameColor} shadow-[0_18px_35px_rgba(45,17,90,0.25)]`}
+                          >
+                            <div className="absolute inset-[4%] rounded-full bg-white/30 blur-md" aria-hidden="true" />
                             <div
-                              className={`absolute inset-[16%] rounded-full bg-gradient-to-br ${visual.innerGlowGradient}`}
+                              className="absolute inset-[8%] rounded-full border border-white/40 bg-white/10"
+                              style={{ boxShadow: locked ? '0 16px 28px rgba(148,163,184,0.25)' : '0 18px 34px rgba(168,85,247,0.28)' }}
+                              aria-hidden="true"
+                            />
+                            {[0, 1, 2].map((tierIndex) => {
+                              const insetMap = ['12%', '22%', '34%'];
+                              const glowStrength = locked
+                                ? ['0 8px 16px rgba(148,163,184,0.25)', '0 6px 12px rgba(148,163,184,0.22)', '0 4px 10px rgba(148,163,184,0.2)']
+                                : ['0 12px 22px rgba(249,115,22,0.25)', '0 10px 18px rgba(168,85,247,0.28)', '0 8px 14px rgba(59,130,246,0.22)'];
+                              const opacityMap = locked ? [0.55, 0.4, 0.32] : [0.98, 0.9, 0.82];
+                              const tierGradient = tierGradients[tierIndex];
+                              const tierActive = tierActiveStates[tierIndex];
+                              const tierComplete = tierCompleteStates[tierIndex];
+                              return (
+                                <div
+                                  key={`${stage.id}-tier-${tierIndex}`}
+                                  className="absolute rounded-full transition-all duration-500"
+                                  style={{
+                                    inset: insetMap[tierIndex],
+                                    backgroundImage: tierGradient,
+                                    opacity: opacityMap[tierIndex] * (locked && !tierActive ? 0.65 : 1),
+                                    boxShadow: glowStrength[tierIndex],
+                                    filter: tierComplete ? 'saturate(1.15)' : tierActive ? 'saturate(1)' : 'saturate(0.65)',
+                                  }}
+                                  aria-hidden="true"
+                                >
+                                  <div
+                                    className="absolute inset-[8%] rounded-full border border-white/20"
+                                    style={{ opacity: tierActive ? 0.4 : 0.18 }}
+                                  />
+                                  {tierComplete && (
+                                    <div
+                                      className="absolute inset-[20%] rounded-full"
+                                      style={{
+                                        background: 'radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%)',
+                                        opacity: 0.6,
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
+                            <div
+                              className={`absolute inset-[46%] rounded-[1.35rem] bg-gradient-to-br ${visual.innerGlowGradient}`}
                               style={{ opacity: innerGlowOpacity }}
                             />
-                            <div className="absolute inset-[10%] rounded-full border border-white/20" />
-                            <div className={`relative z-20 flex h-16 w-16 items-center justify-center rounded-full ${visual.iconBackdrop} backdrop-blur-md ${visual.iconRing}`}>
-                              <BadgeIcon className={`h-9 w-9 ${visual.iconColor} ${visual.iconShadow}`} strokeWidth={1.6} />
-                            </div>
-                            <div className={`pointer-events-none absolute inset-[28%] flex flex-col items-center justify-center rounded-full text-center drop-shadow ${progressMedallionClass}`}>
-                              <span className="text-xs font-bold uppercase tracking-wide">
-                                {completedRuns}
-                                {runTarget ? `/${runTarget}` : ''}
-                              </span>
-                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] opacity-80">Runde</span>
+                            <div
+                              className={`absolute inset-[42%] rounded-[1.5rem] bg-gradient-to-br ${visual.coreGradient} ${showFinalBurst ? 'shadow-[0_20px_40px_rgba(251,191,36,0.45)]' : 'shadow-[0_16px_28px_rgba(124,58,237,0.35)]'}`}
+                              style={{ opacity: locked ? 0.6 : 1 }}
+                            />
+                            {visual.pattern && (
+                              <div
+                                className="absolute inset-[14%] rounded-full opacity-80"
+                                style={{ backgroundImage: visual.pattern, backgroundSize: '170% 170%' }}
+                              />
+                            )}
+                            <div className="relative z-20 flex h-[55%] w-[55%] flex-col items-center justify-center gap-2 text-white">
+                              <div
+                                className={`relative flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br ${visual.coreGradient} ${visual.iconShadow} ${showFinalBurst ? 'animate-[pulse_3s_ease-in-out_infinite]' : ''}`}
+                                style={{ boxShadow: showFinalBurst ? '0 22px 38px rgba(251,191,36,0.45)' : undefined }}
+                              >
+                                <div className={`absolute inset-[18%] rounded-[1.25rem] ${visual.iconBackdrop} ${visual.iconRing}`} />
+                                <IconComponent className={`relative z-10 h-10 w-10 ${locked ? 'text-slate-400' : `${visual.iconColor} ${visual.iconShadow}`}`} />
+                                {showFinalBurst && (
+                                  <div
+                                    className="pointer-events-none absolute inset-0 rounded-[1.75rem] opacity-80"
+                                    style={{
+                                      background: 'radial-gradient(circle, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0) 60%)',
+                                    }}
+                                  />
+                                )}
+                              </div>
+                              <div
+                                className={`flex items-center gap-1 rounded-full ${progressMedallionClass} px-3 py-1 text-xs font-semibold shadow`}
+                              >
+                                <IconComponent className="h-4 w-4" />
+                                {ringProgressPercent}%
+                              </div>
+                              {runTarget > 0 && (
+                                <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-white/85">
+                                  {completedRuns}/{runTarget} runde
+                                </span>
+                              )}
                             </div>
                           </div>
                           {visual.ribbonGradient && (
@@ -542,7 +654,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                             <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Runde țintă {runTarget}</span>
                           )}
                           <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${statusTone}`}>
-                            <StatusIcon className="h-3.5 w-3.5" />
+                            <IconComponent className="h-3.5 w-3.5" />
                             {statusLabel}
                           </span>
                         </div>
