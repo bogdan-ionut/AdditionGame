@@ -171,6 +171,12 @@ const buildBadgeVisual = (badge = {}) => {
   };
 };
 
+const SPARKLE_POSITIONS = [
+  { top: '6%', left: '12%' },
+  { top: '18%', right: '12%' },
+  { bottom: '12%', left: '20%' },
+];
+
 const clampPercent = (value) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 
 const buildRingProgressGradient = (palette, percent, trackColor, locked) => {
@@ -194,6 +200,22 @@ const buildRingProgressGradient = (palette, percent, trackColor, locked) => {
   }
 
   return `conic-gradient(from -90deg, ${segments.join(', ')})`;
+};
+
+const rotateArray = (array, offset = 0) => {
+  if (!Array.isArray(array) || array.length === 0) return [];
+  const length = array.length;
+  const normalizedOffset = ((offset % length) + length) % length;
+  return Array.from({ length }, (_, idx) => array[(idx + normalizedOffset) % length]);
+};
+
+const buildTierRingGradient = (palette, percent, trackColor, locked, tierIndex, totalTiers = 3) => {
+  if (totalTiers <= 0) {
+    return buildRingProgressGradient(palette, percent, trackColor, locked);
+  }
+  const tierSpan = 100 / totalTiers;
+  const tierProgress = clampPercent(((percent - tierIndex * tierSpan) / tierSpan) * 100);
+  return buildRingProgressGradient(rotateArray(palette, tierIndex), tierProgress, trackColor, locked);
 };
 
 const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
@@ -339,20 +361,16 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         aria-hidden="true"
         onMouseDown={handleBackdropClick}
       />
-      <div className="relative z-10 w-full max-w-6xl overflow-hidden rounded-3xl border border-purple-100 bg-white shadow-2xl">
-        <div className="relative border-b border-purple-100 bg-white px-8 py-6">
-          <span
-            className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-500"
-            aria-hidden="true"
-          />
+      <div className="relative z-10 w-full max-w-6xl overflow-hidden rounded-3xl border-4 border-purple-200 bg-white shadow-2xl">
+        <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 px-8 py-6 text-white">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-slate-900">Galerie de insigne</h2>
-              <p className="text-sm text-slate-600">
+              <h2 className="text-3xl font-extrabold tracking-tight">Galerie de insigne</h2>
+              <p className="text-sm opacity-90">
                 Atinge 90% stăpânire și înregistrează runde cu acuratețe de peste {runThresholdPercent}% în fiecare etapă pentru a debloca următoarea aventură.
               </p>
             </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-purple-100 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700">
+            <div className="flex items-center gap-3 rounded-2xl bg-white/20 px-4 py-2 text-sm font-semibold">
               <CircleCheckBig className="h-5 w-5" />
               <span>{masteredCount}/{totalCount} insigne câștigate</span>
             </div>
@@ -360,7 +378,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
           <button
             type="button"
             onClick={handleRequestClose}
-            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-purple-100 bg-white text-purple-700 shadow-sm transition hover:bg-purple-50"
+            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-purple-700 shadow"
             aria-label="Închide insignele"
           >
             <X size={20} />
@@ -422,7 +440,25 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                     ? 'bg-slate-200/40 text-slate-600 border-slate-200/70'
                     : 'bg-purple-500/15 text-purple-700 border-purple-200/70';
                 const ringProgressPercent = clampPercent(stage.badgeProgressPercent ?? runPercent ?? 0);
+                const totalBadgeTiers = 3;
+                const tierSpan = 100 / totalBadgeTiers;
+                const tierProgressValues = Array.from({ length: totalBadgeTiers }, (_, tierIndex) => clampPercent(
+                  ((ringProgressPercent - tierIndex * tierSpan) / tierSpan) * 100,
+                ));
+                const tierGradients = tierProgressValues.map((_, tierIndex) => buildTierRingGradient(
+                  visual.ringPalette,
+                  ringProgressPercent,
+                  visual.ringTrackColor,
+                  locked,
+                  tierIndex,
+                  totalBadgeTiers,
+                ));
+                const tierActiveStates = tierProgressValues.map((value) => value > 0);
+                const tierCompleteStates = tierProgressValues.map((value) => value >= 100);
+                const showFinalBurst = mastered || ringProgressPercent >= 99.5;
                 const IconComponent = locked ? Lock : BadgeIcon;
+                const sparkleOpacity = locked ? 0.2 : 0.35 + (ringProgressPercent / 100) * 0.45;
+                const innerGlowOpacity = locked ? 0.35 : 0.5 + (ringProgressPercent / 100) * 0.35;
                 const progressMedallionClass = locked
                   ? 'bg-white/50 text-slate-600'
                   : mastered
@@ -463,139 +499,266 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                   });
                 }
 
-                const ringMask = 'radial-gradient(circle at center, transparent 63%, black 64%)';
-                const statusDescription = mastered
-                  ? 'Insigna este completă. Revino periodic pentru a păstra ritmul.'
-                  : locked
-                    ? 'Deblochează etapa anterioară pentru a porni în această aventură.'
-                    : `Ești la ${ringProgressPercent}% din drumul spre insignă. Continuă cu runde concentrate pentru a o aprinde complet.`;
-
                 return (
                   <div
                     key={stage.id}
-                    className="relative flex h-full flex-col gap-6 rounded-3xl border border-purple-100/80 bg-white/95 p-6 shadow-xl transition-transform duration-300 hover:-translate-y-1"
+                    className={`relative flex h-full flex-col overflow-hidden rounded-[2.5rem] border ${visual.cardBorder} bg-gradient-to-br ${visual.cardGradient} p-6 ${visual.shadow} transition-transform duration-300 hover:-translate-y-1`}
                   >
-                    <div className="grid gap-6 xl:grid-cols-[auto,1fr]">
-                      <div className="flex flex-col items-center gap-4">
-                        <div className="relative h-40 w-40">
-                          <div className="absolute inset-0 rounded-full border border-purple-100/70 bg-white shadow-inner" aria-hidden="true" />
+                    <div className="pointer-events-none absolute inset-0 bg-white/25 backdrop-blur-[2px]" aria-hidden="true" />
+                    <div
+                      className={`pointer-events-none absolute -left-16 right-[-16px] top-0 h-40 bg-gradient-to-br ${visual.beamGradient} opacity-60 blur-3xl`}
+                      aria-hidden="true"
+                    />
+                    <div className="relative z-10 flex h-full flex-col gap-6">
+                      <div className="flex flex-col items-center gap-5 text-center xl:flex-row xl:items-start xl:text-left xl:gap-6">
+                        <div className="relative flex h-44 w-44 shrink-0 items-center justify-center">
                           <div
-                            className="absolute inset-0 rounded-full"
-                            style={{
-                              backgroundImage: buildRingProgressGradient(
-                                visual.ringPalette,
-                                ringProgressPercent,
-                                visual.ringTrackColor,
-                                locked,
-                              ),
-                              mask: ringMask,
-                              WebkitMask: ringMask,
-                              opacity: locked ? 0.55 : 1,
-                            }}
+                            className={`pointer-events-none absolute inset-[-25%] rounded-full bg-gradient-to-br ${visual.haloGradient} opacity-80 blur-3xl`}
                             aria-hidden="true"
                           />
-                          <div className="absolute inset-[20%] rounded-full bg-white shadow-sm" />
-                          <div className="absolute inset-[27%] rounded-3xl bg-gradient-to-br from-white via-purple-50 to-white" aria-hidden="true" />
-                          <div className="absolute inset-[32%] flex items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-purple-500 via-fuchsia-500 to-indigo-500 shadow-lg">
-                            <IconComponent className={`h-10 w-10 ${locked ? 'text-slate-400' : visual.iconColor}`} />
+                          {visual.sparklePalette.map((color, sparkleIndex) => {
+                            const position = SPARKLE_POSITIONS[sparkleIndex % SPARKLE_POSITIONS.length];
+                            return (
+                              <span
+                                key={`${stage.id}-sparkle-${sparkleIndex}`}
+                                className="pointer-events-none absolute h-12 w-12 rounded-full blur-[18px]"
+                                style={{ background: color, ...position, opacity: sparkleOpacity }}
+                                aria-hidden="true"
+                              />
+                            );
+                          })}
+                          {showFinalBurst && (
+                            <>
+                              <span
+                                className="pointer-events-none absolute -left-7 top-1/2 h-16 w-12 -translate-y-1/2 rotate-[-12deg] opacity-80"
+                                style={{
+                                  background: 'linear-gradient(135deg, rgba(253,224,71,0.85), rgba(249,115,22,0.7))',
+                                  clipPath: 'polygon(10% 0%, 100% 25%, 80% 100%, 0% 80%)',
+                                  filter: 'drop-shadow(0 12px 18px rgba(249,115,22,0.35))',
+                                }}
+                                aria-hidden="true"
+                              />
+                              <span
+                                className="pointer-events-none absolute -right-7 top-1/2 h-16 w-12 -translate-y-1/2 rotate-[12deg] opacity-80"
+                                style={{
+                                  background: 'linear-gradient(45deg, rgba(147,197,253,0.85), rgba(196,181,253,0.75))',
+                                  clipPath: 'polygon(0% 25%, 90% 0%, 100% 80%, 20% 100%)',
+                                  filter: 'drop-shadow(0 12px 18px rgba(147,197,253,0.35))',
+                                }}
+                                aria-hidden="true"
+                              />
+                            </>
+                          )}
+                          <div
+                            className={`relative z-10 flex h-full w-full items-center justify-center rounded-full border-[6px] ${visual.frameColor} shadow-[0_18px_35px_rgba(45,17,90,0.25)]`}
+                          >
+                            <div className="absolute inset-[4%] rounded-full bg-white/30 blur-md" aria-hidden="true" />
+                            <div
+                              className="absolute inset-[8%] rounded-full border border-white/40 bg-white/10"
+                              style={{ boxShadow: locked ? '0 16px 28px rgba(148,163,184,0.25)' : '0 18px 34px rgba(168,85,247,0.28)' }}
+                              aria-hidden="true"
+                            />
+                            {[0, 1, 2].map((tierIndex) => {
+                              const insetMap = ['12%', '22%', '34%'];
+                              const glowStrength = locked
+                                ? ['0 8px 16px rgba(148,163,184,0.25)', '0 6px 12px rgba(148,163,184,0.22)', '0 4px 10px rgba(148,163,184,0.2)']
+                                : ['0 12px 22px rgba(249,115,22,0.25)', '0 10px 18px rgba(168,85,247,0.28)', '0 8px 14px rgba(59,130,246,0.22)'];
+                              const opacityMap = locked ? [0.55, 0.4, 0.32] : [0.98, 0.9, 0.82];
+                              const tierGradient = tierGradients[tierIndex];
+                              const tierActive = tierActiveStates[tierIndex];
+                              const tierComplete = tierCompleteStates[tierIndex];
+                              return (
+                                <div
+                                  key={`${stage.id}-tier-${tierIndex}`}
+                                  className="absolute rounded-full transition-all duration-500"
+                                  style={{
+                                    inset: insetMap[tierIndex],
+                                    backgroundImage: tierGradient,
+                                    opacity: opacityMap[tierIndex] * (locked && !tierActive ? 0.65 : 1),
+                                    boxShadow: glowStrength[tierIndex],
+                                    filter: tierComplete ? 'saturate(1.15)' : tierActive ? 'saturate(1)' : 'saturate(0.65)',
+                                  }}
+                                  aria-hidden="true"
+                                >
+                                  <div
+                                    className="absolute inset-[8%] rounded-full border border-white/20"
+                                    style={{ opacity: tierActive ? 0.4 : 0.18 }}
+                                  />
+                                  {tierComplete && (
+                                    <div
+                                      className="absolute inset-[20%] rounded-full"
+                                      style={{
+                                        background: 'radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%)',
+                                        opacity: 0.6,
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
+                            <div
+                              className={`absolute inset-[46%] rounded-[1.35rem] bg-gradient-to-br ${visual.innerGlowGradient}`}
+                              style={{ opacity: innerGlowOpacity }}
+                            />
+                            <div
+                              className={`absolute inset-[42%] rounded-[1.5rem] bg-gradient-to-br ${visual.coreGradient} ${showFinalBurst ? 'shadow-[0_20px_40px_rgba(251,191,36,0.45)]' : 'shadow-[0_16px_28px_rgba(124,58,237,0.35)]'}`}
+                              style={{ opacity: locked ? 0.6 : 1 }}
+                            />
+                            {visual.pattern && (
+                              <div
+                                className="absolute inset-[14%] rounded-full opacity-80"
+                                style={{ backgroundImage: visual.pattern, backgroundSize: '170% 170%' }}
+                              />
+                            )}
+                            <div className="relative z-20 flex h-[55%] w-[55%] flex-col items-center justify-center gap-2 text-white">
+                              <div
+                                className={`relative flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br ${visual.coreGradient} ${visual.iconShadow} ${showFinalBurst ? 'animate-[pulse_3s_ease-in-out_infinite]' : ''}`}
+                                style={{ boxShadow: showFinalBurst ? '0 22px 38px rgba(251,191,36,0.45)' : undefined }}
+                              >
+                                <div className={`absolute inset-[18%] rounded-[1.25rem] ${visual.iconBackdrop} ${visual.iconRing}`} />
+                                <IconComponent className={`relative z-10 h-10 w-10 ${locked ? 'text-slate-400' : `${visual.iconColor} ${visual.iconShadow}`}`} />
+                                {showFinalBurst && (
+                                  <div
+                                    className="pointer-events-none absolute inset-0 rounded-[1.75rem] opacity-80"
+                                    style={{
+                                      background: 'radial-gradient(circle, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0) 60%)',
+                                    }}
+                                  />
+                                )}
+                              </div>
+                              <div
+                                className={`flex items-center gap-1 rounded-full ${progressMedallionClass} px-3 py-1 text-xs font-semibold shadow`}
+                              >
+                                <IconComponent className="h-4 w-4" />
+                                {ringProgressPercent}%
+                              </div>
+                              {runTarget > 0 && (
+                                <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-white/85">
+                                  {completedRuns}/{runTarget} runde
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {visual.ribbonGradient && (
+                            <div className="pointer-events-none absolute -bottom-6 flex w-full justify-center" aria-hidden="true">
+                              <div className={`relative h-14 w-40 rounded-b-[2.5rem] bg-gradient-to-r ${visual.ribbonGradient} shadow-lg`}>
+                                <div className="absolute inset-x-8 bottom-1 h-2 rounded-t-full bg-white/40 blur-[2px]" />
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className={`flex items-center gap-2 rounded-full px-4 py-1 text-xs font-semibold ${progressMedallionClass}`}>
-                          <span>{ringProgressPercent}%</span>
-                          <span>{mastered ? 'finalizat' : locked ? 'blocat' : 'în progres'}</span>
-                        </div>
-                        <p className="text-center text-xs text-slate-600">{statusDescription}</p>
-                      </div>
-                      <div className="flex flex-col gap-6">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-purple-500">Etapa {stageIndex}</span>
-                            <h3 className={`mt-2 text-2xl font-semibold text-slate-900 ${accentTextClass}`}>{stage.label}</h3>
-                            <p className="mt-2 text-sm text-slate-600">{stage.badge?.description || stage.description}</p>
-                          </div>
-                          <span className={`inline-flex items-center rounded-full border px-4 py-2 text-xs font-semibold ${statusTone}`}>
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-[0.7rem] font-semibold uppercase tracking-wide text-purple-600 xl:justify-start">
+                          <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Etapa {stageIndex}</span>
+                          <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Termen maxim {stage.maxAddend}</span>
+                          {runTarget > 0 && (
+                            <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-purple-700">Runde țintă {runTarget}</span>
+                          )}
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${statusTone}`}>
+                            <IconComponent className="h-3.5 w-3.5" />
                             {statusLabel}
                           </span>
                         </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="rounded-2xl border border-purple-100/60 bg-purple-50/70 p-4">
-                            <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
-                              <span>Acuratețe pentru stăpânire</span>
-                              <span>{accuracyPercent}%</span>
-                            </div>
-                            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white/80">
-                              <div className={`h-full rounded-full bg-gradient-to-r ${visual.progressGradient}`} style={{ width: `${Math.min(100, accuracyPercent)}%` }} />
-                            </div>
-                            <p className="mt-3 text-xs text-purple-900/80">
-                              <span className="block">
-                                Stăpânirea cere {masteryPercentRequirement}% acuratețe pentru fiecare termen din această etapă.{' '}
-                                {stage.perAddendAccuracyMastered
-                                  ? 'Bravo! Fiecare termen atinge deja pragul de stăpânire.'
-                                  : 'Continuă să exersezi termenii mai fragili pentru a atinge pragul pe toată linia.'}
+                        <div className="space-y-2 xl:max-w-[14rem]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-purple-500">{stage.label}</p>
+                          <h3 className={`text-2xl font-black tracking-tight ${accentTextClass}`}>{stage.badge?.name}</h3>
+                          <p className="text-sm text-purple-900/75 leading-relaxed">{stage.badge?.description || stage.description}</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-white/40 bg-white/60 p-4 shadow-inner">
+                          <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
+                            <span>Acuratețe pentru stăpânire</span>
+                            <span>{accuracyPercent}%</span>
+                          </div>
+                          <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-white/40 shadow-inner">
+                            <div className={`h-full rounded-full bg-gradient-to-r ${visual.progressGradient}`} style={{ width: `${Math.min(100, accuracyPercent)}%` }} />
+                          </div>
+                          <p className="mt-3 text-xs text-purple-800/80">
+                            <span className="block">
+                              Stăpânirea cere {masteryPercentRequirement}% acuratețe pentru fiecare termen din această etapă.
+                              {' '}
+                              {stage.perAddendAccuracyMastered
+                                ? 'Bravo! Fiecare termen atinge deja pragul de stăpânire.'
+                                : 'Continuă să exersezi termenii mai fragili pentru a atinge pragul pe toată linia.'}
+                            </span>
+                            {lastAccuracy != null && (
+                              <span
+                                className={`block mt-1 ${lastAccuracyBelowThreshold ? 'text-amber-600/90' : 'text-emerald-600/90'}`}
+                              >
+                                Ultima rundă: {lastAccuracy}% {lastAccuracyBelowThreshold ? '(sub țintă)' : '(peste țintă)'}.
                               </span>
-                              {lastAccuracy != null && (
-                                <span className={`mt-2 block ${lastAccuracyBelowThreshold ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                  Ultima rundă: {lastAccuracy}% {lastAccuracyBelowThreshold ? '(sub țintă)' : '(peste țintă)'}.
-                                </span>
-                              )}
-                              {bestAccuracy != null && (
-                                <span className="mt-2 block text-purple-700">
-                                  Record personal: {bestAccuracy}%.
-                                </span>
-                              )}
-                              {focusSegments.length > 0 && (
-                                <span className="mt-2 block text-purple-700">
-                                  Următorul focus: {focusSegments.join(' · ')}.
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <div className="rounded-2xl border border-purple-100/60 bg-purple-50/70 p-4">
-                            <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
-                              <span>Runde cu acuratețe ≥{runThresholdPercent}%</span>
-                              <span>{completedRuns}{runTarget ? `/${runTarget}` : ''}</span>
-                            </div>
-                            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white/80">
-                              <div className={`h-full rounded-full bg-gradient-to-r ${visual.runProgressGradient}`} style={{ width: `${runPercent}%` }} />
-                            </div>
-                            {badges ? (
-                              <div className="mt-4 flex items-center gap-2">
-                                {badges.map((earned, idx) => (
-                                  <span
-                                    key={idx}
-                                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${earned ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-100 text-slate-500'}`}
-                                  >
-                                    {idx + 1}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="mt-3 text-xs text-purple-900/70">Finalizează runde precise pentru a aprinde această insignă.</p>
                             )}
+                            {bestAccuracy != null && (
+                              <span className="block text-purple-700/80 mt-1">
+                                Record personal: {bestAccuracy}%.
+                              </span>
+                            )}
+                            {focusSegments.length > 0 && (
+                              <span className="block text-purple-700/80 mt-1">
+                                Următorul focus: {focusSegments.join(' · ')}.
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-white/40 bg-white/60 p-4 shadow-inner">
+                          <div className="flex items-center justify-between text-xs font-semibold text-purple-900">
+                            <span>Runde cu acuratețe ≥{runThresholdPercent}%</span>
+                            <span>{completedRuns}{runTarget ? `/${runTarget}` : ''}</span>
                           </div>
+                          <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-white/40 shadow-inner">
+                            <div className={`h-full rounded-full bg-gradient-to-r ${visual.runProgressGradient}`} style={{ width: `${runPercent}%` }} />
+                          </div>
+                          {badges ? (
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                              {badges.map((earned, idx) => (
+                                <div
+                                  key={idx}
+                                  className="relative flex h-10 w-9 items-center justify-center text-white transition-transform duration-200 hover:-translate-y-0.5"
+                                  style={{
+                                    clipPath: 'polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)',
+                                    backgroundImage: earned ? visual.sparkleGradientEarned : visual.sparkleGradientLocked,
+                                    boxShadow: earned ? `0 14px 22px ${visual.sparkleShadow}` : '0 8px 14px rgba(148,163,184,0.25)',
+                                  }}
+                                >
+                                  <Sparkles className={`h-4 w-4 ${earned ? 'drop-shadow-[0_2px_6px_rgba(255,255,255,0.65)]' : 'text-purple-400'}`} />
+                                  {earned && (
+                                    <span
+                                      className="pointer-events-none absolute inset-0 opacity-60"
+                                      style={{
+                                        clipPath: 'polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)',
+                                        background: 'radial-gradient(circle at 50% 35%, rgba(255,255,255,0.8), rgba(255,255,255,0))',
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-xs text-purple-800/70">Finalizează runde precise pentru a aprinde această insignă.</p>
+                          )}
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {statCards.map((stat) => {
-                            const valueClass = stat.tone === 'emerald'
-                              ? 'text-emerald-600'
-                              : stat.tone === 'amber'
-                                ? 'text-amber-600'
-                                : stat.tone === 'slate'
-                                  ? 'text-slate-700'
-                                  : 'text-purple-700';
-                            return (
-                              <div key={stat.key} className="rounded-2xl border border-purple-100/60 bg-white/90 px-4 py-3 shadow-sm">
-                                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-purple-400">{stat.label}</div>
-                                <div className={`mt-1 text-lg font-bold ${valueClass}`}>{stat.value}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {statCards.map((stat) => {
+                          const valueClass = stat.tone === 'emerald'
+                            ? 'text-emerald-600'
+                            : stat.tone === 'amber'
+                              ? 'text-amber-600'
+                              : stat.tone === 'slate'
+                                ? 'text-slate-700'
+                                : 'text-purple-700';
+                          return (
+                            <div key={stat.key} className="rounded-2xl border border-white/40 bg-white/60 px-4 py-3 shadow-inner">
+                              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-purple-500">{stat.label}</div>
+                              <div className={`mt-1 text-lg font-bold ${valueClass}`}>{stat.value}</div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                     {locked && !mastered && (
-                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-3xl bg-white/85 backdrop-blur">
-                        <div className="flex items-center gap-3 rounded-full border border-purple-200 bg-white px-5 py-2 text-sm font-semibold text-purple-700 shadow-md">
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+                        <div className="flex items-center gap-3 rounded-full border border-purple-200/80 bg-white px-5 py-2 text-sm font-semibold text-purple-700 shadow-lg">
                           <Lock className="h-5 w-5" />
                           Câștigă insigna precedentă pentru a debloca
                         </div>
@@ -603,7 +766,6 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
                     )}
                   </div>
                 );
-
               })}
             </div>
           )}
