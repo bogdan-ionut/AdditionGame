@@ -230,13 +230,13 @@ export const computeAdditionStageProgress = (masteryTracking = {}, stageAchievem
       summary.blockerCount === 0 &&
       summary.unseenCount === 0 &&
       summary.masteredCount === addends.length;
-    const stageAccuracy = Number.isFinite(bestAccuracy)
-      ? bestAccuracy
-      : Number.isFinite(lastAccuracy)
-        ? lastAccuracy
+    const stageAccuracy = Number.isFinite(lastAccuracy)
+      ? lastAccuracy
+      : Number.isFinite(bestAccuracy)
+        ? bestAccuracy
         : avgPercent;
-    const stageAccuracyMastered = stageAccuracy >= masteryThreshold * 100;
-    const meetsAccuracyRequirement = perAddendMastered || stageAccuracyMastered;
+    const stageAccuracyMastered = Number.isFinite(stageAccuracy) && stageAccuracy >= masteryThreshold * 100;
+    const meetsAccuracyRequirement = perAddendMastered && stageAccuracyMastered;
     const stageMastered = meetsAccuracyRequirement && meetsHighAccuracyRequirement;
     const badgeEarnedAt = Number.isFinite(stageBadge.badgeEarnedAt) ? stageBadge.badgeEarnedAt : stageBadge.badgeEarnedAt || null;
 
@@ -260,7 +260,8 @@ export const computeAdditionStageProgress = (masteryTracking = {}, stageAchievem
       unlocked,
       prerequisitesMet,
       mastered: stageMastered,
-      accuracyMastered: meetsAccuracyRequirement,
+      accuracyMastered: stageAccuracyMastered,
+      accuracyRequirementsMet: meetsAccuracyRequirement,
       perAddendAccuracyMastered: perAddendMastered,
       stageAccuracy,
       stageAccuracyMastered,
