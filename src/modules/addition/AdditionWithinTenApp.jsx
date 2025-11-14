@@ -793,23 +793,61 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
     setGameState,
   ]);
 
+  const loadStoredGameState = useCallback((key) => {
+    if (!key || typeof window === 'undefined') {
+      return { state: null, error: null };
+    }
+
+    try {
+      const storage = window.localStorage;
+      const rawState = storage.getItem(key);
+
+      if (!rawState) {
+        return { state: null, error: null };
+      }
+
+      try {
+        return { state: migrateGameState(JSON.parse(rawState)), error: null };
+      } catch (parseError) {
+        console.error('Failed to parse stored addition game state', parseError);
+        try {
+          storage.removeItem(key);
+        } catch (removeError) {
+          console.error('Failed to remove corrupt addition game state', removeError);
+        }
+        return { state: null, error: parseError };
+      }
+    } catch (storageError) {
+      console.error('Failed to access localStorage for addition game state', storageError);
+      return { state: null, error: storageError };
+    }
+  }, []);
+
   const handleRegister = (userInfo) => {
     const userKey = `additionFlashcardsGameState_${userInfo.name}`;
-    const savedState = localStorage.getItem(userKey);
+    const { state: storedState, error } = loadStoredGameState(userKey);
 
-    if (savedState) {
-      setGameState(migrateGameState(JSON.parse(savedState)));
-    } else {
-      const newGameState = createDefaultGameState();
-      setGameState({
-        ...newGameState,
-        studentInfo: {
-          ...newGameState.studentInfo,
-          ...userInfo,
-          startDate: new Date().toISOString(),
-        },
+    if (storedState) {
+      setGameState(storedState);
+      return;
+    }
+
+    if (error) {
+      showToast({
+        level: 'warning',
+        message: 'Nu am putut accesa progresul salvat (mod privat sau date corupte). Am pornit un joc nou.',
       });
     }
+
+    const newGameState = createDefaultGameState();
+    setGameState({
+      ...newGameState,
+      studentInfo: {
+        ...newGameState.studentInfo,
+        ...userInfo,
+        startDate: new Date().toISOString(),
+      },
+    });
   };
 
   const handleLogout = () => {
@@ -1599,7 +1637,7 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
   };
 
   const importGameState = (e) => {
-    const file = e.target.files[0];
+    const file = e?.target?.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -1616,6 +1654,11 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
         }
       };
       reader.readAsText(file);
+      if (e?.target) {
+        e.target.value = '';
+      }
+    } else {
+      showToast({ level: 'error', message: 'Nu am putut citi fișierul selectat.' });
     }
   };
 
