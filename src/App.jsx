@@ -27,7 +27,7 @@ function App() {
         setRuntimeInfo(null);
         const message =
           (error && typeof error.message === 'string' && error.message) ||
-          'Unable to contact Math Galaxy runtime. Check AI Settings.';
+          'Nu putem contacta serviciul Math Galaxy. Verifică setările AI.';
         showToast({ level: 'error', message });
       });
     return () => {

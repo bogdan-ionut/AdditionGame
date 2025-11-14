@@ -211,9 +211,9 @@ const LearningPathDashboard = ({
     const sprite = runtimeInfo.sprite_model || runtimeInfo.spriteModel || null;
     const tts = runtimeInfo.tts_model || runtimeInfo.ttsModel || null;
     const badges = [
-      planning ? { key: 'planner', label: 'Planner', value: planning } : null,
-      sprite ? { key: 'sprites', label: 'Sprites', value: sprite } : null,
-      tts ? { key: 'tts', label: 'Voice', value: tts } : null,
+      planning ? { key: 'planner', label: 'Planificator', value: planning } : null,
+      sprite ? { key: 'sprites', label: 'Personaje', value: sprite } : null,
+      tts ? { key: 'tts', label: 'Voce', value: tts } : null,
     ].filter(Boolean);
     return badges;
   }, [runtimeInfo]);
@@ -253,13 +253,13 @@ const LearningPathDashboard = ({
 
         {!runtimeInfo?.ok && (
           <div className="mt-8 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
-            <span>{runtimeInfo?.note || 'Configurează cheia Gemini în AI Settings pentru a activa vocea și planificarea personalizată.'}</span>
+            <span>{runtimeInfo?.note || 'Configurează cheia Gemini în setările AI pentru a activa vocea și planificarea personalizată.'}</span>
             <button
               type="button"
               onClick={onOpenAiSettings}
               className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
             >
-              Deschide AI Settings
+              Deschide setările AI
             </button>
           </div>
         )}

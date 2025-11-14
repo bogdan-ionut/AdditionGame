@@ -91,7 +91,7 @@ export async function getAiRuntime(): Promise<AiRuntimeState> {
     aiAllowed,
     lastError: hasKey
       ? null
-      : 'Adaugă cheia Google Gemini în AI Settings pentru a activa vocea și planificarea personalizată.',
+      : 'Adaugă cheia Google Gemini în setările AI pentru a activa vocea și planificarea personalizată.',
     defaultTtsModel: 'gemini-2.5-flash-preview-tts',
     allowedTtsModels: ['gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
     runtimeLabel: hasKey ? 'Gemini (direct)' : 'Offline',

@@ -1,5 +1,5 @@
 export const OFFLINE_MESSAGE =
-  'Vocea AI nu este disponibilă. Adaugă cheia Gemini în AI Settings pentru a folosi narațiunea.';
+  'Vocea AI nu este disponibilă. Adaugă cheia Gemini în setările AI pentru a folosi narațiunea.';
 
 export const UI_TEXT = {
   offline: OFFLINE_MESSAGE,
@@ -17,9 +17,9 @@ export const PRAISE_LINES_RO: readonly string[] = [
 ];
 
 export const PRAISE_LINES_EN: readonly string[] = [
-  'Great job, you did it!',
-  'Excellent work! I love how focused you were.',
-  'Fantastic! Keep shining!',
+  'Bravo, ai reușit!',
+  'Lucru excelent! Mi-a plăcut cât de concentrat ai fost.',
+  'Fantastic! Continuă să strălucești!',
 ];
 
 export const ENCOURAGE_LINES_RO: readonly string[] = [
@@ -30,9 +30,9 @@ export const ENCOURAGE_LINES_RO: readonly string[] = [
 ];
 
 export const ENCOURAGE_LINES_EN: readonly string[] = [
-  "That's okay, try again! I know you can do it!",
-  'Take a breath and give it another go. I believe in you!',
-  'So close! Together we will get it right.',
+  'E în regulă, încearcă din nou! Știu că poți reuși!',
+  'Inspiră adânc și mai încearcă o dată. Am încredere în tine!',
+  'Ai fost foarte aproape! Împreună vom găsi răspunsul corect.',
 ];
 
 export const MINI_LESSONS_RO: Record<string, string> = {
@@ -45,9 +45,9 @@ export const MINI_LESSONS_RO: Record<string, string> = {
 };
 
 export const MINI_LESSONS_EN: Record<string, string> = {
-  'count-on': 'Let’s count on together. Start at the first number and add the steps one by one.',
-  'make-10': 'Think of 10 as a friendly helper. Break the second number to make 10, then add the rest.',
-  commutativity: 'Switching the order does not change the sum. Swap the numbers to make it easier.',
+  'count-on': 'Hai să numărăm împreună. Începe cu primul număr și adaugă pașii pe rând.',
+  'make-10': 'Gândește-te la 10 ca la un ajutor prietenos. Descompune al doilea număr ca să ajungi la 10 și apoi adaugă restul.',
+  commutativity: 'Schimbarea ordinii nu modifică suma. Inversează numerele ca să calculezi mai ușor.',
 };
 
 export const FEEDBACK_MESSAGES = {
@@ -75,7 +75,7 @@ export const buildProblemPrompt = (a: number, b: number, language: string | null
   if (languageKey === 'ro') {
     return `Cât face ${a} + ${b}?`;
   }
-  return `What is ${a} + ${b}?`;
+  return `Cât face ${a} + ${b}?`;
 };
 
 export const buildCountingPrompt = (
@@ -88,7 +88,7 @@ export const buildCountingPrompt = (
   if (languageKey === 'ro') {
     return `Hai să numărăm împreună: ${start}, ${sequence}.`;
   }
-  return `Let’s count together: ${start}, ${sequence}.`;
+  return `Hai să numărăm împreună: ${start}, ${sequence}.`;
 };
 
 export const getAdditionPrompts = (language: string | null | undefined, max = 9): string[] => {

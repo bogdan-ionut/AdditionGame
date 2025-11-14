@@ -1,17 +1,17 @@
-# Gemini 2.5 Flash Preview TTS – request notes (2025-03-xx)
+# Gemini 2.5 Flash Preview TTS – note de cerere (2025-03-xx)
 
-## Required request structure
-- The SDK accepts a `systemInstruction` that can hold guiding content for the model, allowing us to constrain how audio is produced.【F:node_modules/@google/genai/dist/genai.d.ts†L1263-L1284】
-- Requests are composed from `Content` entries; each `Content` has `parts` and an optional `role` (set to `user` for our prompts).【F:node_modules/@google/genai/dist/genai.d.ts†L1164-L1171】
+## Structura necesară a cererii
+- SDK-ul acceptă un `systemInstruction` care poate conține indicații pentru model, permițându-ne să controlăm modul în care este produs audio-ul.【F:node_modules/@google/genai/dist/genai.d.ts†L1263-L1284】
+- Cererile sunt compuse din elemente `Content`; fiecare `Content` are `parts` și un `role` opțional (setat la `user` pentru prompturile noastre).【F:node_modules/@google/genai/dist/genai.d.ts†L1164-L1171】
 
-## Audio-specific configuration
-- `generationConfig` exposes `responseMimeType`, `responseModalities`, and `speechConfig`, which we use to force an audio response and control voice parameters.【F:node_modules/@google/genai/dist/genai.d.ts†L3455-L3485】
-- `SpeechConfig` lets us declare the language code and a `voiceConfig`, while `PrebuiltVoiceConfig` contains the `voiceName` for Google’s preset narrators.【F:node_modules/@google/genai/dist/genai.d.ts†L7111-L7118】【F:node_modules/@google/genai/dist/genai.d.ts†L6339-L6343】
+## Configurare specifică audio
+- `generationConfig` expune `responseMimeType`, `responseModalities` și `speechConfig`, pe care le folosim pentru a forța un răspuns audio și pentru a controla parametrii vocii.【F:node_modules/@google/genai/dist/genai.d.ts†L3455-L3485】
+- `SpeechConfig` ne permite să declarăm codul de limbă și un `voiceConfig`, iar `PrebuiltVoiceConfig` conține `voiceName` pentru vocile presetate de la Google.【F:node_modules/@google/genai/dist/genai.d.ts†L7111-L7118】【F:node_modules/@google/genai/dist/genai.d.ts†L6339-L6343】
 
-## Model selection
-- The project already targets the dedicated preview voice model `gemini-2.5-flash-preview-tts`, which should remain our default until Google promotes a newer version.【F:src/api/tts.ts†L19-L55】
+## Alegerea modelului
+- Proiectul țintește deja modelul de voce preview dedicat `gemini-2.5-flash-preview-tts`, care ar trebui să rămână implicitul nostru până când Google promovează o versiune nouă.【F:src/api/tts.ts†L19-L55】
 
-## Best practices for our app
-- Supply a strict system instruction that states the voice must repeat the user prompt verbatim and never invent answers. This steers the generative model away from “helpful” completions when narrating math questions.
-- Send each problem as a single `user` turn with the exact punctuation we want the child to hear; avoid providing the answer in the text itself.
-- Keep the MIME type stable (`audio/mpeg`) so cached clips remain compatible across browsers, and set speech parameters (voice, rate, pitch, sample rate) through `speechConfig` rather than embedding them into the text prompt.
+## Bune practici pentru aplicație
+- Furnizează o instrucțiune de sistem strictă care menționează că vocea trebuie să repete promptul utilizatorului verbatim și să nu inventeze răspunsuri. Astfel ținem modelul generativ departe de completările „ajutătoare” atunci când narațiunea redă întrebări de matematică.
+- Trimite fiecare problemă ca un singur mesaj `user` cu exact punctuația pe care vrem să o audă copilul; evită să incluzi răspunsul în textul însuși.
+- Păstrează MIME type-ul stabil (`audio/mpeg`) astfel încât clipurile din cache să rămână compatibile între browsere și setează parametrii de vorbire (voce, viteză, tonalitate, rată de eșantionare) prin `speechConfig`, nu direct în textul promptului.

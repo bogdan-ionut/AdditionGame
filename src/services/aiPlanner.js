@@ -23,7 +23,7 @@ export async function testGeminiKey() {
     serverHasKey: hasKey,
     message: hasKey
       ? 'Cheia Gemini este disponibilă local.'
-      : 'Cheia Gemini lipsește. Adaug-o în AI Settings.',
+      : 'Cheia Gemini lipsește. Adaug-o în setările AI.',
   };
 }
 

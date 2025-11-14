@@ -650,7 +650,7 @@ export async function maybeGenerateOnDeviceThemePacks(interests = [], options = 
     debug.attempted = true;
     session = await ai.assistant.create({ model: debug.model });
     const prompt =
-      'Generate JSON {"packs": [ {"key": string, "label": string, "matchers": string[], "icons": string[], "swatches": [{"bg": string, "border": string, "text": string, "shadow": string}]} ] } for kid counting app. Interests: ' +
+      'Generează JSON {"packs": [ {"key": string, "label": string, "matchers": string[], "icons": string[], "swatches": [{"bg": string, "border": string, "text": string, "shadow": string}]} ] } pentru aplicația de numărat pentru copii. Interese: ' +
       JSON.stringify(interests.slice(0, 6));
     const result = await session.prompt(prompt);
     const text = await readTextFromAiResult(result);

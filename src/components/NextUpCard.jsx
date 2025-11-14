@@ -26,10 +26,10 @@ export default function NextUpCard({
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
           <Sparkles className="text-indigo-500" size={18} />
-          AI-Driven Next Step
+          Pasul următor recomandat de AI
         </h3>
         <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">
-          Target ≈{targetSuccess}%
+          Țintă ≈{targetSuccess}%
         </span>
       </div>
 
@@ -47,12 +47,12 @@ export default function NextUpCard({
               {display}
             </div>
             <div className="text-sm text-gray-600 text-center">
-              Predicted success ≈{predicted}% · Plan source: {planSource || 'local planner'}
+              Succes estimat ≈{predicted}% · Sursă plan: {planSource || 'planificator local'}
             </div>
             {item.hints?.length > 0 && (
               <div className="bg-white/70 border border-indigo-100 rounded-2xl p-3 text-xs text-gray-600 space-y-1">
                 {item.hints.slice(0, 2).map((hint, index) => (
-                  <p key={index}><span className="font-semibold text-indigo-600">Hint {index + 1}:</span> {hint}</p>
+                  <p key={index}><span className="font-semibold text-indigo-600">Indiciu {index + 1}:</span> {hint}</p>
                 ))}
               </div>
             )}
@@ -61,8 +61,8 @@ export default function NextUpCard({
           <div className="text-sm text-gray-600 space-y-2">
             <p>
               {configured
-                ? 'Complete a few more practice rounds to teach the AI engine what feels “just right.”'
-                : 'AI features are turned off. Paste your Gemini key and save model choices in AI Settings to unlock cloud-personalized planning. Until then, we will use the built-in planner.'}
+                ? 'Finalizează încă câteva runde de exercițiu pentru a învăța motorul AI ce înseamnă dificultatea „potrivită”.'
+                : 'Funcțiile AI sunt oprite. Adaugă cheia ta Gemini și salvează modelele preferate în setările AI pentru a debloca planificarea personalizată din cloud. Până atunci folosim planificatorul integrat.'}
             </p>
           </div>
         )}
@@ -76,13 +76,13 @@ export default function NextUpCard({
             !showPlan || loading ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
           }`}
         >
-          <PlayCircle size={18} /> Start AI Path
+          <PlayCircle size={18} /> Pornește traseul AI
         </button>
         <button
           onClick={onRefreshPlan}
           className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold bg-white border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
         >
-          <RefreshCw size={16} /> Refresh Plan
+          <RefreshCw size={16} /> Reîmprospătează planul
         </button>
       </div>
     </div>

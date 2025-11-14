@@ -1,80 +1,80 @@
-# Audio cache service
+# Serviciul de cache audio
 
-The audio narration pipeline now keeps Gemini TTS clips in the browser so that repeated prompts can be replayed instantly without calling the API again.
+Conducta de narațiune vocală păstrează acum clipurile Gemini TTS în browser, astfel încât solicitările repetate să poată fi redate instant fără să mai chemăm din nou API-ul.
 
-## Storage model
+## Modelul de stocare
 
-- Clips are stored in IndexedDB (`addition-game-audio-cache/clips`) and keyed by:
-  - Normalised prompt text (lowercase, collapsed whitespace)
-  - Voice, language, model, speaking rate, pitch and narration type (`problem`, `hint`, etc.)
-- A small summary (entry count + total bytes) is mirrored in `localStorage` under `addition-game.audio.cache.summary.v1` so that the UI can show the current footprint without opening IndexedDB.
-- The cache is capped at ~200 entries / 25 MB. Least-recently-used clips are pruned when limits are exceeded.
-- Whenever the summary changes we dispatch `window` event `addition-game.audio.cache.updated` so other modules can react (e.g. to refresh UI badges).
+- Clipurile sunt salvate în IndexedDB (`addition-game-audio-cache/clips`) și sunt indexate după:
+  - Textul promptului normalizat (litere mici, spații comprimate)
+  - Voce, limbă, model, viteză de vorbire, tonalitate și tipul narațiunii (`problem`, `hint` etc.)
+- Un rezumat compact (număr de intrări + total octeți) este oglindit în `localStorage` sub cheia `addition-game.audio.cache.summary.v1`, ca UI-ul să poată afișa dimensiunea fără să deschidă IndexedDB.
+- Cache-ul este limitat la ~200 de intrări / 25 MB. Clipurile cele mai vechi sunt eliminate atunci când se depășesc limitele.
+- De fiecare dată când rezumatul se schimbă, declanșăm pe `window` evenimentul `addition-game.audio.cache.updated`, astfel încât alte module să poată reacționa (de exemplu să reîmprospăteze insigna din UI).
 
 ## API
 
-The cache helper lives in `src/lib/audio/cache.ts` and exposes:
+Utilitarul pentru cache se află în `src/lib/audio/cache.ts` și expune:
 
-| Function | Description |
+| Funcție | Descriere |
 | --- | --- |
-| `getCachedAudioClip(descriptor)` | Returns a cached `Blob` for the given prompt settings or `null` if missing. |
-| `storeAudioClip(descriptor, blob)` | Saves a generated clip (async, non-blocking). |
-| `clearAudioCache()` / `deleteAudioClip()` | Removes everything or a single entry. |
-| `getAudioCacheSummary()` | Lightweight `{ entryCount, totalBytes }` snapshot for UIs. |
-| `formatCacheSize(bytes)` | Helper for rendering file-size strings. |
-| `CACHE_EVENT_NAME` / `CACHE_SUMMARY_STORAGE_KEY` | Reusable identifiers for listeners. |
+| `getCachedAudioClip(descriptor)` | Returnează un `Blob` din cache pentru promptul respectiv sau `null` dacă nu există. |
+| `storeAudioClip(descriptor, blob)` | Salvează un clip generat (asincron, fără să blocheze firul principal). |
+| `clearAudioCache()` / `deleteAudioClip()` | Șterge toate intrările sau doar una singură. |
+| `getAudioCacheSummary()` | Un snapshot rapid `{ entryCount, totalBytes }` pentru interfețe. |
+| `formatCacheSize(bytes)` | Utilitar pentru formatarea dimensiunilor. |
+| `CACHE_EVENT_NAME` / `CACHE_SUMMARY_STORAGE_KEY` | Identificatori reutilizabili pentru ascultători. |
 
-All helpers are no-ops when IndexedDB is unavailable, so you can call them from shared code without additional guards.
+Toate funcțiile devin no-op atunci când IndexedDB nu este disponibil, așa că pot fi folosite din cod partajat fără protecții suplimentare.
 
-## Manual narration precompute
+## Precalcularea manuală a narațiunii
 
-`precomputeNarrationClips` (`src/lib/audio/warmup.ts`) exposes a user-triggered queue for generating batches of Gemini clips. The helper accepts the desired categories (praise, encouragement, mini-lessons, addition problems, counting prompts) and synthesises them on demand while yielding to `requestIdleCallback` between tasks.
+`precomputeNarrationClips` (`src/lib/audio/warmup.ts`) oferă o coadă pe care utilizatorul o pornește manual pentru a genera pachete de clipuri Gemini. Utilitarul primește categoriile dorite (laude, încurajări, mini-lecții, exerciții de adunare, prompturi de numărat) și le sintetizează la cerere, făcând pauze cu `requestIdleCallback` între sarcini.
 
-Nothing is generated automatically at runtime. Instead, the parent/admin UI (`ParentAISettings`) offers a "Generare manuală" panel where adults can choose which packs to precompute and start/stop the batch explicitly. Each call still checks the cache first, so existing clips are reused and only missing prompts hit the API.
+Nu se generează nimic automat la rulare. În schimb, interfața pentru părinți/admin (`ParentAISettings`) include un panou „Generare manuală” în care adulții pot alege pachetele de pregătit și pot porni/opri manual seria. La fiecare pas verificăm mai întâi cache-ul, deci clipurile existente sunt refolosite, iar API-ul este apelat doar pentru prompturi lipsă.
 
-## Developer notes
+## Note pentru dezvoltatori
 
-- Prefer routing all synthesis through `synthesize()` so cache lookups remain consistent.
-- If you add new narration types, pass a stable `type`/`kind` so cached clips are isolated correctly.
-- Use the `ParentAISettings` cache controls to verify behaviour and to clear storage during development.
+- Trimite toate sintezele prin `synthesize()` ca să păstrăm consecventă logica de cache.
+- Dacă adaugi noi tipuri de narațiune, setează un `type`/`kind` stabil pentru a izola corect clipurile în cache.
+- Folosește controalele pentru cache din `ParentAISettings` ca să verifici comportamentul și să golești stocarea în timpul dezvoltării.
 
-## Precomputing Google Cloud packs locally
+## Precalcularea locală a pachetelor Google Cloud
 
-You can generate Romanian addition clips offline and import them in bulk into the browser cache. The helper scripts in `scripts/` produce a ready-to-upload ZIP archive that matches the cache manifest format (`manifest.json` + `clips/<cache-key>.mp3`).
+Poți genera offline clipuri românești de adunare și să le imporți în bloc în cache-ul din browser. Scripturile ajutătoare din `scripts/` produc o arhivă ZIP gata de încărcat, compatibilă cu manifestul de cache (`manifest.json` + `clips/<cache-key>.mp3`).
 
-### 1. Prepare the environment
+### 1. Pregătește mediul
 
-On macOS install the required command-line tools:
+Pe macOS instalează uneltele de linie de comandă necesare:
 
 ```bash
 brew install google-cloud-sdk jq
 ```
 
-Authenticate once with application-default credentials so the script can request short-lived tokens:
+Autentifică-te o dată cu credențiale implicite pentru aplicație, astfel încât scriptul să poată cere tokenuri temporare:
 
 ```bash
 gcloud auth application-default login
 ```
 
-Make sure `gcloud`, `jq`, `curl`, `base64`, `zip` and `node` (v18+) are available in `$PATH`.
+Asigură-te că `gcloud`, `jq`, `curl`, `base64`, `zip` și `node` (v18+) sunt disponibile în `$PATH`.
 
-### 2. Generate the audio clips and manifest
+### 2. Generează clipurile audio și manifestul
 
-From the project root run:
+Din rădăcina proiectului rulează:
 
 ```bash
 ./scripts/generate-gcloud-addition-pack.sh
 ```
 
-The script synthesises the `0–9` addition table with the Google Cloud voice `ro-RO-Chirp3-HD-Kore`, saves human-readable MP3s under `audio/ro-RO/chirp3-hd-kore/raw/` and then builds a cache-ready pack under `audio/ro-RO/chirp3-hd-kore/pack/`. The final ZIP (`gcloud-ro-addition-pack.zip`) contains:
+Scriptul sintetizează tabla adunării `0–9` cu vocea Google Cloud `ro-RO-Chirp3-HD-Kore`, salvează MP3-uri ușor de ascultat în `audio/ro-RO/chirp3-hd-kore/raw/` și apoi construiește un pachet pregătit pentru cache în `audio/ro-RO/chirp3-hd-kore/pack/`. Arhiva finală (`gcloud-ro-addition-pack.zip`) conține:
 
-- `manifest.json` (version 1, marked with `model: "gcloud-tts"` and `voice: "ro-RO-Chirp3-HD-Kore"`)
-- `clips/<cache-key>.mp3` for each problem
+- `manifest.json` (versiunea 1, cu `model: "gcloud-tts"` și `voice: "ro-RO-Chirp3-HD-Kore"`)
+- `clips/<cache-key>.mp3` pentru fiecare exercițiu
 
-The script is idempotent: reruns skip existing MP3s. Use `--no-download` to rebuild the manifest/ZIP from previously downloaded audio files. You can also adjust the operand range (for example `--min 0 --max 12`) or the destination directory (`-o path/to/output`).
+Scriptul este idempotent: rulările repetate sar peste MP3-urile deja existente. Folosește `--no-download` pentru a reconstrui manifestul/ZIP-ul din fișierele audio descărcate anterior. Poți ajusta intervalul operanzilor (de exemplu `--min 0 --max 12`) sau directorul de destinație (`-o calea/spre/output`).
 
-### 3. Import the pack in the app
+### 3. Importă pachetul în aplicație
 
-In the Parent/Admin UI open the "Generare manuală" panel, choose `Importă pachet audio` and select `gcloud-ro-addition-pack.zip`. The import routine validates the manifest and stores each clip in IndexedDB under the cache key that matches the runtime descriptor (text `Cât face X plus Y?`, language `ro-RO`, voice `ro-RO-Chirp3-HD-Kore`, model `gcloud-tts`, rate `1`, pitch `1`, format `audio/mpeg`, sample-rate `24000`).
+În interfața pentru părinți/admin deschide panoul „Generare manuală”, alege `Importă pachet audio` și selectează `gcloud-ro-addition-pack.zip`. Rutina de import validează manifestul și stochează fiecare clip în IndexedDB sub cheia care corespunde descrierii din aplicație (text `Cât face X plus Y?`, limbă `ro-RO`, voce `ro-RO-Chirp3-HD-Kore`, model `gcloud-tts`, viteză `1`, tonalitate `1`, format `audio/mpeg`, rată de eșantionare `24000`).
 
-The clips are tagged with the provider metadata, so they stay separate from Gemini-generated content.
+Clipurile sunt marcate cu metadatele furnizorului, astfel încât să rămână separate de conținutul generat cu Gemini.

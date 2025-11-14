@@ -97,7 +97,7 @@ type CountingPromptOptions = {
   mode?: CountingPromptMode;
 };
 
-const OFFLINE_MESSAGE = 'Vocea AI nu este disponibilă. Adaugă cheia Gemini în AI Settings pentru a folosi narațiunea.';
+const OFFLINE_MESSAGE = 'Vocea AI nu este disponibilă. Adaugă cheia Gemini în setările AI pentru a folosi narațiunea.';
 
 const DEFAULT_SFX_CATEGORY_MAPPING: Record<string, string[]> = {
   success: ['success', 'celebration', 'correct', 'victory'],

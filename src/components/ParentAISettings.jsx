@@ -38,8 +38,8 @@ import { showToast } from '../lib/ui/toast';
 
 const LANGUAGE_OPTIONS = [
   { value: 'ro-RO', label: 'Română (ro-RO)' },
-  { value: 'en-US', label: 'English (en-US)' },
-  { value: 'es-ES', label: 'Español (es-ES)' },
+  { value: 'en-US', label: 'Engleză (en-US)' },
+  { value: 'es-ES', label: 'Spaniolă (es-ES)' },
 ];
 
 const FORMAT_OPTIONS = [
@@ -1262,14 +1262,14 @@ export default function ParentAISettings({ onClose }) {
           type="button"
           onClick={onClose}
           className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
-          aria-label="Închide AI Settings"
+          aria-label="Închide setările AI"
         >
           <X size={18} />
         </button>
         <div className="space-y-8 px-6 pb-8 pt-10 sm:px-10 overflow-y-auto">
           <header className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
-              <SparklesIcon /> AI Settings
+              <SparklesIcon /> Setări AI
             </div>
             <h2 className="text-2xl font-semibold text-slate-900">Configurează vocea Gemini</h2>
             <p className="text-sm text-slate-600">
@@ -1283,7 +1283,7 @@ export default function ParentAISettings({ onClose }) {
               <KeyRound className="mt-1 text-indigo-500" size={20} />
               <div className="flex-1 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-slate-900">Google Gemini API key</h3>
+                  <h3 className="text-base font-semibold text-slate-900">Cheie API Google Gemini</h3>
                   {hasKey ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                       <CheckCircle2 size={14} /> Salvată
