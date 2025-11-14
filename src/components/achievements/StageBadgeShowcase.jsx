@@ -437,7 +437,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
               <p className="mt-2 text-sm">Revino mai târziu pentru noi realizări.</p>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 xl:auto-rows-fr">
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4 xl:auto-rows-fr">
               {orderedStages.map((stage, index) => {
                 const runTarget = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 0;
                 const completedRuns = runTarget > 0

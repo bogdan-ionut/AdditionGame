@@ -320,15 +320,16 @@ const LearningPathDashboard = ({
                       <h3 className="text-lg font-semibold text-slate-900">{section.title}</h3>
                       <p className="text-sm text-slate-600">{section.description}</p>
                     </div>
-                    <div className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       {section.paths.map((path) => (
-                        <QuickPathCard
-                          key={path.id}
-                          path={path}
-                          isActive={previewPath?.id === path.id}
-                          onPreview={(selectedPath) => setPreviewPathId(selectedPath.id)}
-                          onLaunch={(selectedPath) => onSelectPath?.(selectedPath)}
-                        />
+                        <div key={path.id} className="h-full">
+                          <QuickPathCard
+                            path={path}
+                            isActive={previewPath?.id === path.id}
+                            onPreview={(selectedPath) => setPreviewPathId(selectedPath.id)}
+                            onLaunch={(selectedPath) => onSelectPath?.(selectedPath)}
+                          />
+                        </div>
                       ))}
                     </div>
                   </div>
