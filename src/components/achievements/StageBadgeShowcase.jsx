@@ -22,6 +22,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#f43f5e',
       glowColor: '#fb7185',
       icon: 'Sparkles',
+      shapeId: 'starburst', // Unique shape ID
     },
   },
   {
@@ -39,6 +40,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#6366f1',
       glowColor: '#818cf8',
       icon: 'Rocket',
+      shapeId: 'hexagon', // Unique shape ID
     },
   },
   {
@@ -56,6 +58,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#10b981',
       glowColor: '#34d399',
       icon: 'Award',
+      shapeId: 'shield', // Unique shape ID
     },
   },
   {
@@ -73,6 +76,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#a855f7',
       glowColor: '#c084fc',
       icon: 'Crown',
+      shapeId: 'diamond', // Unique shape ID
     },
   },
 ];
@@ -109,7 +113,7 @@ const getTier = (currentRuns, requiredRuns) => {
   return 0;
 };
 
-const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) => {
+const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85, username = 'Eroul' }) => {
   const [debugMode, setDebugMode] = useState(false);
   const [debugOverride, setDebugOverride] = useState(null);
 
@@ -136,9 +140,14 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
         if (debugOverride === 3) {
           currentRuns = requiredRuns;
         } else if (debugOverride === 2) {
-          currentRuns = Math.ceil(requiredRuns * 0.67);
+          // FIX: Ensure it's strictly less than requiredRuns but >= 66%
+          currentRuns = Math.floor(requiredRuns * 0.66);
+          // Safety check: if requiredRuns is small (e.g. 3), floor(3*0.66) = 1 which is Tier 1.
+          // So we force it to be 2/3 if possible, or just required - 1
+          if (requiredRuns === 3) currentRuns = 2;
         } else if (debugOverride === 1) {
-          currentRuns = Math.ceil(requiredRuns * 0.34);
+          currentRuns = Math.ceil(requiredRuns * 0.33);
+          if (requiredRuns === 3) currentRuns = 1;
         } else {
           currentRuns = 0;
         }
@@ -295,7 +304,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
 
           <div className="grid gap-12 md:grid-cols-2 xl:grid-cols-4 relative z-10 pb-12">
             {orderedStages.map((stage) => (
-              <EpicBadgeCard key={stage.id} stage={stage} runThresholdPercent={runThresholdPercent} />
+              <EpicBadgeCard key={stage.id} stage={stage} runThresholdPercent={runThresholdPercent} username={username} />
             ))}
           </div>
         </div>
@@ -317,7 +326,7 @@ const TrophyIcon = ({ className }) => (
   </svg>
 );
 
-const EpicBadgeCard = ({ stage, runThresholdPercent }) => {
+const EpicBadgeCard = ({ stage, runThresholdPercent, username }) => {
   const { tier, badge, highAccuracyRuns, requiredHighAccuracyRuns, unlocked } = stage;
   const BadgeIcon = pickIcon(badge?.icon);
 
@@ -383,6 +392,8 @@ const EpicBadgeCard = ({ stage, runThresholdPercent }) => {
             colors={badge}
             progress={highAccuracyRuns}
             total={requiredHighAccuracyRuns}
+            shapeId={badge.shapeId}
+            username={username}
           />
         </div>
 
@@ -443,7 +454,7 @@ const EpicBadgeCard = ({ stage, runThresholdPercent }) => {
  * The Core Visual Component
  * Renders the 3D-looking layered medallion with metallic textures
  */
-const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
+const Medallion = ({ tier, icon: Icon, colors, progress, total, shapeId, username }) => {
   const isMastered = tier === 3;
 
   // Metallic Gradients
@@ -466,6 +477,34 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
     baseShadow = `shadow-[0_0_50px_-10px_${colors.glowColor},inset_0_0_20px_rgba(255,255,255,0.3)]`;
   }
 
+  // Shape Paths
+  const getShapePath = (t, sId) => {
+    if (t < 3) {
+      // Common/Rare shapes are simpler
+      if (t === 2) {
+        // Rare: Gear/Shield
+        return "M50 2 L65 10 L85 10 L90 30 L98 50 L90 70 L85 90 L65 90 L50 98 L35 90 L15 90 L10 70 L2 50 L10 30 L15 10 L35 10 Z";
+      }
+      // Common: Circle
+      return null; // Use <circle>
+    }
+
+    // Legendary Shapes
+    switch (sId) {
+      case 'hexagon':
+        return "M50 0 L95 25 L95 75 L50 100 L5 75 L5 25 Z";
+      case 'shield':
+        return "M50 0 C50 0 90 10 90 40 C90 70 50 100 50 100 C50 100 10 70 10 40 C10 10 50 0 50 0 Z";
+      case 'diamond':
+        return "M50 0 L90 50 L50 100 L10 50 Z";
+      case 'starburst':
+      default:
+        return "M50 0 L62 25 L90 25 L75 50 L90 75 L62 75 L50 100 L38 75 L10 75 L25 50 L10 25 L38 25 Z";
+    }
+  };
+
+  const shapePath = getShapePath(tier, shapeId);
+
   return (
     <div className="relative w-full h-full flex items-center justify-center select-none">
 
@@ -478,7 +517,6 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
       )}
 
       {/* --- LAYER 1: BASE SHAPE --- */}
-      {/* Using SVG for complex shapes instead of just rounded-full */}
       <div className={`absolute inset-0 transition-all duration-700 drop-shadow-xl`}>
         <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
           <defs>
@@ -497,26 +535,15 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
             </filter>
           </defs>
 
-          {/* Shape Logic */}
-          {tier === 3 ? (
-            // Sunburst / Star Shape for Legendary
+          {shapePath ? (
             <path
-              d="M50 0 L62 25 L90 25 L75 50 L90 75 L62 75 L50 100 L38 75 L10 75 L25 50 L10 25 L38 25 Z"
+              d={shapePath}
               fill={`url(#grad-${tier})`}
               stroke="rgba(255,255,255,0.2)"
               strokeWidth="1"
               filter="url(#inner-shadow)"
             />
-          ) : tier === 2 ? (
-            // Gear / Shield Shape for Rare
-            <path
-              d="M50 2 L65 10 L85 10 L90 30 L98 50 L90 70 L85 90 L65 90 L50 98 L35 90 L15 90 L10 70 L2 50 L10 30 L15 10 L35 10 Z"
-              fill={`url(#grad-${tier})`}
-              stroke="rgba(255,255,255,0.1)"
-              strokeWidth="1"
-            />
           ) : (
-            // Simple Circle for Common/Locked
             <circle cx="50" cy="50" r="48" fill={`url(#grad-${tier})`} />
           )}
         </svg>
@@ -564,9 +591,7 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
         {/* Gem Facets (Overlay) */}
         {tier >= 3 && (
           <>
-            {/* Top Facet */}
             <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent clip-path-polygon-[0_0,100%_0,50%_100%]" />
-            {/* Bottom Facet */}
             <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/20 to-transparent clip-path-polygon-[50%_0,100%_100%,0_100%]" />
 
             <div className="absolute -inset-full bg-gradient-to-r from-transparent via-white/60 to-transparent rotate-45 animate-[shine_4s_infinite_ease-in-out]" />
@@ -583,6 +608,21 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
           />
         </div>
       </div>
+
+      {/* --- LAYER 4: USERNAME ENGRAVING --- */}
+      {tier >= 2 && (
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center opacity-80">
+          <svg viewBox="0 0 100 20" className="w-24 h-6 overflow-visible">
+            <path id="curve-bottom" d="M 10, 10 Q 50, 25 90, 10" fill="transparent" />
+            <text width="100">
+              <textPath xlinkHref="#curve-bottom" startOffset="50%" textAnchor="middle" className="text-[8px] font-bold uppercase fill-slate-300 drop-shadow-md tracking-widest">
+                {username}
+              </textPath>
+            </text>
+          </svg>
+        </div>
+      )}
+
     </div>
   );
 };
