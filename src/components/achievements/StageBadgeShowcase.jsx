@@ -3,7 +3,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  useRef,
 } from 'react';
 import { X, Sparkles, Rocket, Crown, Award, Lock, Gem, Star, Shield, Zap, Flame, Sword } from 'lucide-react';
 
@@ -19,7 +18,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       name: 'Inițiat Aurora',
       description: 'Aprinde inelul nebuloasei cu aventuri curajoase de +3.',
       themeColor: 'rose',
-      mainGradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)', // Soft pink/gold
+      mainGradient: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)',
       gemColor: '#f43f5e',
       glowColor: '#fb7185',
       icon: 'Sparkles',
@@ -36,7 +35,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       name: 'Navigatorul Nebuloasei',
       description: 'Trasează căi strălucitoare prin fiecare combinație de +5.',
       themeColor: 'indigo',
-      mainGradient: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', // Mystical purple
+      mainGradient: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
       gemColor: '#6366f1',
       glowColor: '#818cf8',
       icon: 'Rocket',
@@ -53,7 +52,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       name: 'Cartograful Constelațiilor',
       description: 'Desenează hărți strălucitoare pentru fiecare combinație de +7.',
       themeColor: 'emerald',
-      mainGradient: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', // Cyan/Teal
+      mainGradient: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
       gemColor: '#10b981',
       glowColor: '#34d399',
       icon: 'Award',
@@ -70,7 +69,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       name: 'Laureatul Celest',
       description: 'Încoronează fiecare faptă până la 10 cu automatism strălucitor.',
       themeColor: 'violet',
-      mainGradient: 'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)', // Gold/Purple Royal
+      mainGradient: 'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
       gemColor: '#a855f7',
       glowColor: '#c084fc',
       icon: 'Crown',
@@ -100,13 +99,6 @@ const pickIcon = (iconName) => {
 
 // --- Visual Helpers ---
 
-/**
- * Determines the visual tier (0, 1, 2, 3) based on progress.
- * 0 = Locked / No progress
- * 1 = 1/3 runs (Bronze/Common)
- * 2 = 2/3 runs (Silver/Rare)
- * 3 = 3/3 runs (Gold/Legendary)
- */
 const getTier = (currentRuns, requiredRuns) => {
   if (!requiredRuns || requiredRuns <= 0) return 3;
   if (currentRuns >= requiredRuns) return 3;
@@ -301,7 +293,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85 }) 
             </div>
           )}
 
-          <div className="grid gap-10 md:grid-cols-2 xl:grid-cols-4 relative z-10">
+          <div className="grid gap-12 md:grid-cols-2 xl:grid-cols-4 relative z-10 pb-12">
             {orderedStages.map((stage) => (
               <EpicBadgeCard key={stage.id} stage={stage} runThresholdPercent={runThresholdPercent} />
             ))}
@@ -337,25 +329,25 @@ const EpicBadgeCard = ({ stage, runThresholdPercent }) => {
   let bgGradient = 'bg-[#131825]';
   let glowEffect = '';
   let tierName = 'Nedescoperit';
-  let tierColor = 'text-slate-600';
+  let tierColor = 'bg-slate-800 text-slate-500 border-slate-700';
 
   if (isLocked) {
     borderColor = 'border-slate-800';
     bgGradient = 'bg-[#0F121A]';
   } else if (tier === 1) {
     tierName = 'Novice';
-    tierColor = 'text-orange-700'; // Bronze
+    tierColor = 'bg-orange-900/50 text-orange-200 border-orange-700/50'; // Bronze
     borderColor = 'border-orange-900/30';
     bgGradient = 'bg-gradient-to-b from-[#1a1510] to-[#131825]';
   } else if (tier === 2) {
     tierName = 'Expert';
-    tierColor = 'text-slate-300'; // Silver
+    tierColor = 'bg-slate-700/50 text-slate-200 border-slate-500/50'; // Silver
     borderColor = 'border-slate-600/30';
     bgGradient = 'bg-gradient-to-b from-[#1a202c] to-[#131825]';
     glowEffect = 'shadow-[0_0_30px_-10px_rgba(148,163,184,0.1)]';
   } else if (tier === 3) {
     tierName = 'Legendar';
-    tierColor = 'text-yellow-400'; // Gold
+    tierColor = 'bg-yellow-900/50 text-yellow-200 border-yellow-600/50'; // Gold
     borderColor = 'border-yellow-500/30';
     bgGradient = 'bg-gradient-to-b from-[#2a2010] to-[#131825]';
     glowEffect = `shadow-[0_0_60px_-15px_${badge.glowColor || '#a855f7'}]`;
@@ -384,7 +376,7 @@ const EpicBadgeCard = ({ stage, runThresholdPercent }) => {
       <div className="relative z-10 flex flex-col h-full p-8 items-center text-center">
 
         {/* --- THE MEDALLION --- */}
-        <div className="relative w-56 h-56 mb-6 perspective-1000">
+        <div className="relative w-64 h-64 mb-8 perspective-1000 -mt-4">
           <Medallion
             tier={tier}
             icon={BadgeIcon}
@@ -394,14 +386,21 @@ const EpicBadgeCard = ({ stage, runThresholdPercent }) => {
           />
         </div>
 
-        {/* Text Content */}
-        <div className="space-y-2 mb-6 w-full">
-          <div className="flex items-center justify-center mb-3">
-            <span className={`text-[0.6rem] font-black uppercase tracking-[0.3em] py-1 px-4 rounded-full border border-white/5 bg-black/20 ${tierColor} shadow-sm`}>
+        {/* Ribbon for Rank */}
+        <div className="relative -mt-12 mb-4 w-full flex justify-center">
+          <div className={`relative py-1.5 px-8 rounded-sm shadow-lg border-y border-white/10 ${tierColor} transform skew-x-[-10deg]`}>
+            <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-black/20" />
+            <span className="relative block transform skew-x-[10deg] text-[0.7rem] font-black uppercase tracking-[0.25em] drop-shadow-md">
               {tierName}
             </span>
+            {/* Ribbon Ends */}
+            <div className={`absolute top-1.5 -left-2 w-4 h-full ${tierColor} transform skew-y-[30deg] -z-10 brightness-75`} />
+            <div className={`absolute top-1.5 -right-2 w-4 h-full ${tierColor} transform skew-y-[-30deg] -z-10 brightness-75`} />
           </div>
+        </div>
 
+        {/* Text Content */}
+        <div className="space-y-2 mb-6 w-full">
           <h3 className={`text-2xl font-black tracking-tight leading-tight ${isMastered ? 'text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-300' : 'text-slate-300'}`}>
             {badge?.name}
           </h3>
@@ -451,24 +450,19 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
   const BRONZE_GRADIENT = 'linear-gradient(135deg, #78350f 0%, #b45309 50%, #78350f 100%)';
   const SILVER_GRADIENT = 'linear-gradient(135deg, #475569 0%, #94a3b8 50%, #475569 100%)';
   const GOLD_GRADIENT = 'linear-gradient(135deg, #b45309 0%, #fcd34d 50%, #b45309 100%)';
-  const COSMIC_GRADIENT = colors.mainGradient;
 
   // Base Plate Style
   let baseBackground = '#1e293b';
-  let baseBorder = 'border-slate-800';
   let baseShadow = 'shadow-none';
 
   if (tier === 1) {
     baseBackground = BRONZE_GRADIENT;
-    baseBorder = 'border-orange-900';
     baseShadow = 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]';
   } else if (tier === 2) {
     baseBackground = SILVER_GRADIENT;
-    baseBorder = 'border-slate-500';
     baseShadow = 'shadow-[inset_0_2px_4px_rgba(0,0,0,0.3),0_4px_10px_rgba(0,0,0,0.5)]';
   } else if (tier === 3) {
     baseBackground = GOLD_GRADIENT;
-    baseBorder = 'border-yellow-600';
     baseShadow = `shadow-[0_0_50px_-10px_${colors.glowColor},inset_0_0_20px_rgba(255,255,255,0.3)]`;
   }
 
@@ -483,28 +477,73 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
         />
       )}
 
-      {/* --- LAYER 1: BASE PLATE --- */}
-      <div
-        className={`absolute inset-0 rounded-full transition-all duration-700 ${baseShadow}`}
-        style={{ background: baseBackground }}
-      >
-        {/* Texture Overlay */}
-        <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+      {/* --- LAYER 1: BASE SHAPE --- */}
+      {/* Using SVG for complex shapes instead of just rounded-full */}
+      <div className={`absolute inset-0 transition-all duration-700 drop-shadow-xl`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
+          <defs>
+            <linearGradient id={`grad-${tier}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={tier === 3 ? '#b45309' : tier === 2 ? '#475569' : tier === 1 ? '#78350f' : '#1e293b'} />
+              <stop offset="50%" stopColor={tier === 3 ? '#fcd34d' : tier === 2 ? '#94a3b8' : tier === 1 ? '#b45309' : '#334155'} />
+              <stop offset="100%" stopColor={tier === 3 ? '#b45309' : tier === 2 ? '#475569' : tier === 1 ? '#78350f' : '#1e293b'} />
+            </linearGradient>
+            <filter id="inner-shadow">
+              <feOffset dx="0" dy="1" />
+              <feGaussianBlur stdDeviation="1" result="offset-blur" />
+              <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse" />
+              <feFlood floodColor="black" floodOpacity="0.5" result="color" />
+              <feComposite operator="in" in="color" in2="inverse" result="shadow" />
+              <feComposite operator="over" in="shadow" in2="SourceGraphic" />
+            </filter>
+          </defs>
+
+          {/* Shape Logic */}
+          {tier === 3 ? (
+            // Sunburst / Star Shape for Legendary
+            <path
+              d="M50 0 L62 25 L90 25 L75 50 L90 75 L62 75 L50 100 L38 75 L10 75 L25 50 L10 25 L38 25 Z"
+              fill={`url(#grad-${tier})`}
+              stroke="rgba(255,255,255,0.2)"
+              strokeWidth="1"
+              filter="url(#inner-shadow)"
+            />
+          ) : tier === 2 ? (
+            // Gear / Shield Shape for Rare
+            <path
+              d="M50 2 L65 10 L85 10 L90 30 L98 50 L90 70 L85 90 L65 90 L50 98 L35 90 L15 90 L10 70 L2 50 L10 30 L15 10 L35 10 Z"
+              fill={`url(#grad-${tier})`}
+              stroke="rgba(255,255,255,0.1)"
+              strokeWidth="1"
+            />
+          ) : (
+            // Simple Circle for Common/Locked
+            <circle cx="50" cy="50" r="48" fill={`url(#grad-${tier})`} />
+          )}
+        </svg>
       </div>
 
-      {/* --- LAYER 2: ORNAMENTAL RINGS --- */}
-      {/* Ring 1 (Outer) - Bronze+ */}
-      <div className={`absolute inset-1 rounded-full border-[6px] transition-all duration-700 ${tier >= 1 ? 'border-black/20' : 'border-slate-800'}`} />
+      {/* --- LAYER 2: ORNAMENTAL RINGS & RUNES --- */}
 
-      {/* Ring 2 (Middle) - Silver+ */}
-      <div
-        className={`absolute inset-4 rounded-full border-[2px] border-dashed transition-all duration-700 ${tier >= 2 ? 'opacity-100 animate-spin-slow' : 'opacity-10'}`}
-        style={{ borderColor: tier >= 2 ? 'rgba(255,255,255,0.3)' : '#334155' }}
-      />
+      {/* Runic Ring (Silver+) */}
+      <div className={`absolute inset-6 rounded-full border border-dashed transition-all duration-700 ${tier >= 2 ? 'opacity-100' : 'opacity-0'}`}
+        style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+        {tier >= 2 && (
+          <div className="absolute inset-0 animate-spin-slow">
+            <svg viewBox="0 0 100 100" className="w-full h-full opacity-30">
+              <path id="curve" d="M 50, 50 m -35, 0 a 35,35 0 1,1 70,0 a 35,35 0 1,1 -70,0" fill="transparent" />
+              <text width="500">
+                <textPath xlinkHref="#curve" className="text-[8px] uppercase font-mono fill-white tracking-[0.5em]">
+                  • MĂIESTRIE • PRECIZIE • LEGENDĂ •
+                </textPath>
+              </text>
+            </svg>
+          </div>
+        )}
+      </div>
 
-      {/* Ring 3 (Inner) - Gold+ */}
+      {/* Inner Gold Ring (Gold+) */}
       <div
-        className={`absolute inset-8 rounded-full border-[4px] transition-all duration-700 ${tier >= 3 ? 'opacity-100 animate-spin-reverse-slow' : 'opacity-0'}`}
+        className={`absolute inset-10 rounded-full border-[3px] transition-all duration-700 ${tier >= 3 ? 'opacity-100 animate-spin-reverse-slow' : 'opacity-0'}`}
         style={{
           borderColor: tier >= 3 ? colors.gemColor : 'transparent',
           boxShadow: tier >= 3 ? `0 0 15px ${colors.glowColor}` : 'none'
@@ -513,7 +552,7 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
 
       {/* --- LAYER 3: THE CORE (GEM) --- */}
       <div
-        className="absolute inset-10 rounded-full flex items-center justify-center overflow-hidden transition-all duration-1000 shadow-inner"
+        className="absolute inset-12 rounded-full flex items-center justify-center overflow-hidden transition-all duration-1000 shadow-inner"
         style={{
           background: tier >= 3 ? colors.mainGradient : '#0f172a',
           boxShadow: tier >= 3
@@ -522,9 +561,14 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
           border: tier >= 3 ? '2px solid rgba(255,255,255,0.4)' : '2px solid #1e293b'
         }}
       >
-        {/* Gem Shine Effect */}
+        {/* Gem Facets (Overlay) */}
         {tier >= 3 && (
           <>
+            {/* Top Facet */}
+            <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/30 to-transparent clip-path-polygon-[0_0,100%_0,50%_100%]" />
+            {/* Bottom Facet */}
+            <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/20 to-transparent clip-path-polygon-[50%_0,100%_100%,0_100%]" />
+
             <div className="absolute -inset-full bg-gradient-to-r from-transparent via-white/60 to-transparent rotate-45 animate-[shine_4s_infinite_ease-in-out]" />
             <div className="absolute top-2 right-4 w-6 h-3 bg-white/60 rounded-full blur-[2px] transform rotate-45" />
           </>
@@ -533,7 +577,7 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
         {/* Icon */}
         <div className={`relative z-10 transition-all duration-700 ${tier >= 3 ? 'scale-125 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]' : 'scale-90 opacity-30 grayscale'}`}>
           <Icon
-            size={56}
+            size={48}
             className={tier >= 3 ? 'text-white' : 'text-slate-500'}
             strokeWidth={tier >= 3 ? 2.5 : 1.5}
           />
@@ -544,8 +588,6 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total }) => {
 };
 
 const ParticleSystem = ({ color }) => {
-  // Generate static particles to avoid re-renders causing jumps
-  // In a real app, we might use a canvas or a library, but CSS is fine for < 20 particles
   const particles = useMemo(() => {
     return [...Array(8)].map((_, i) => ({
       id: i,
