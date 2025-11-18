@@ -22,7 +22,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#f43f5e',
       glowColor: '#fb7185',
       icon: 'Sparkles',
-      shapeId: 'starburst', // Unique shape ID
+      shapeId: 'starburst',
     },
   },
   {
@@ -40,7 +40,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#6366f1',
       glowColor: '#818cf8',
       icon: 'Rocket',
-      shapeId: 'hexagon', // Unique shape ID
+      shapeId: 'hexagon',
     },
   },
   {
@@ -58,7 +58,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#10b981',
       glowColor: '#34d399',
       icon: 'Award',
-      shapeId: 'shield', // Unique shape ID
+      shapeId: 'shield',
     },
   },
   {
@@ -76,7 +76,7 @@ const FALLBACK_STAGE_BLUEPRINT = [
       gemColor: '#a855f7',
       glowColor: '#c084fc',
       icon: 'Crown',
-      shapeId: 'diamond', // Unique shape ID
+      shapeId: 'diamond',
     },
   },
 ];
@@ -130,6 +130,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85, us
 
   const normalizedStages = useMemo(() => {
     const sourceStages = (Array.isArray(stages) && stages.length > 0) ? stages : FALLBACK_STAGE_BLUEPRINT;
+    const SHAPES = ['starburst', 'hexagon', 'shield', 'diamond'];
 
     return sourceStages.map((stage, index) => {
       let requiredRuns = stage.requiredHighAccuracyRuns ?? stage.requiredPerfectRuns ?? 3;
@@ -140,10 +141,7 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85, us
         if (debugOverride === 3) {
           currentRuns = requiredRuns;
         } else if (debugOverride === 2) {
-          // FIX: Ensure it's strictly less than requiredRuns but >= 66%
           currentRuns = Math.floor(requiredRuns * 0.66);
-          // Safety check: if requiredRuns is small (e.g. 3), floor(3*0.66) = 1 which is Tier 1.
-          // So we force it to be 2/3 if possible, or just required - 1
           if (requiredRuns === 3) currentRuns = 2;
         } else if (debugOverride === 1) {
           currentRuns = Math.ceil(requiredRuns * 0.33);
@@ -155,6 +153,9 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85, us
 
       const tier = getTier(currentRuns, requiredRuns);
 
+      // FIX: Inject shapeId if missing, using modulo to cycle through shapes
+      const shapeId = stage.badge?.shapeId || SHAPES[index % SHAPES.length];
+
       return {
         ...stage,
         requiredHighAccuracyRuns: requiredRuns,
@@ -162,6 +163,10 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85, us
         tier,
         unlocked: debugOverride !== null ? true : (stage.unlocked ?? index === 0),
         mastered: tier === 3,
+        badge: {
+          ...stage.badge,
+          shapeId
+        }
       };
     });
   }, [stages, debugOverride]);
@@ -226,6 +231,11 @@ const StageBadgeShowcase = ({ stages = [], onClose, runThresholdPercent = 85, us
       role="dialog"
       aria-modal="true"
     >
+      {/* Import Epic Font */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap');
+      `}</style>
+
       <div
         className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl transition-opacity duration-500"
         aria-hidden="true"
@@ -533,6 +543,11 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total, shapeId, usernam
               <feComposite operator="in" in="color" in2="inverse" result="shadow" />
               <feComposite operator="over" in="shadow" in2="SourceGraphic" />
             </filter>
+            {/* Text Glow Filter */}
+            <filter id="glow-text" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="1.5" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
           </defs>
 
           {shapePath ? (
@@ -611,11 +626,28 @@ const Medallion = ({ tier, icon: Icon, colors, progress, total, shapeId, usernam
 
       {/* --- LAYER 4: USERNAME ENGRAVING --- */}
       {tier >= 2 && (
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center opacity-80">
-          <svg viewBox="0 0 100 20" className="w-24 h-6 overflow-visible">
-            <path id="curve-bottom" d="M 10, 10 Q 50, 25 90, 10" fill="transparent" />
-            <text width="100">
-              <textPath xlinkHref="#curve-bottom" startOffset="50%" textAnchor="middle" className="text-[8px] font-bold uppercase fill-slate-300 drop-shadow-md tracking-widest">
+        <div className="absolute bottom-2 left-0 right-0 flex justify-center z-20">
+          <svg viewBox="0 0 120 30" className="w-32 h-10 overflow-visible">
+            <defs>
+              <filter id="text-glow">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur" />
+                <feColorMatrix in="blur" type="matrix" values="0 0 0 0 1  0 0 0 0 0.9  0 0 0 0 0.5  0 0 0 1 0" result="coloredBlur" />
+                <feMerge>
+                  <feMergeNode in="coloredBlur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <path id="curve-bottom" d="M 10, 12 Q 60, 30 110, 12" fill="transparent" />
+            <text width="120">
+              <textPath
+                xlinkHref="#curve-bottom"
+                startOffset="50%"
+                textAnchor="middle"
+                style={{ fontFamily: "'Cinzel', serif" }}
+                className="text-[11px] font-black uppercase fill-amber-100 tracking-widest"
+                filter="url(#text-glow)"
+              >
                 {username}
               </textPath>
             </text>
