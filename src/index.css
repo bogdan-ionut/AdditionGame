@@ -2,17 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Epic Font */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Outfit:wght@300;400;600;800&display=swap');
+
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #0B0F19; /* Deep Cosmic Blue */
+  color: #e2e8f0;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Cinzel', serif;
 }
 
 #root {
   min-height: 100vh;
+  background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0B0F19 60%);
 }
 
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a; 
+}
+::-webkit-scrollbar-thumb {
+  background: #334155; 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569; 
+}
+
+/* Animations */
 @keyframes confetti-burst {
   0% {
     transform: translate3d(0, -100vh, 0) rotate(0deg);
@@ -32,4 +57,18 @@ body {
   animation-timing-function: linear;
   animation-fill-mode: both;
   will-change: transform, opacity;
+}
+
+/* Utilities */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.text-gradient-gold {
+  background: linear-gradient(to bottom, #fcd34d, #b45309);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
