@@ -350,171 +350,158 @@ export default function AdditionWithinTenApp({ learningPath, onExit, onOpenAiSet
           resetToMenu();
         }
       }, 1200);
-    }
-  };
+      if (!gameMode) {
+        return (
+          <ModeSelection
+            learningPath={activeLearningPath}
+            onExit={handleExit}
+            onSelectMode={handleModeSelect}
+            gameState={gameState}
+            onShowDashboard={() => setShowDashboard(true)}
+            // ... pass other props
+            aiRuntime={aiRuntime}
+            stageProgress={stageProgress}
+            aiBadgeActive={aiBadgeActive}
+          />
+        );
+      }
 
-  // ... (Other handlers)
+      const card = cards[currentCard];
 
-  if (!studentInfo || !studentInfo.name || !studentInfo.gender) {
-    return <Register onRegister={() => { }} onImport={() => { }} />;
-  }
+      if (!card) return null;
 
-  if (showDashboard) {
-    return <ParentDashboard gameState={gameState} aiRuntime={aiRuntime} onClose={() => setShowDashboard(false)} />;
-  }
+      return (
+        <div className="min-h-screen bg-[#0B0F19] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+          {/* Background Effects */}
+          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-indigo-900/20 blur-[120px] rounded-full pointer-events-none" />
 
-  if (!gameMode) {
-    return (
-      <ModeSelection
-        learningPath={activeLearningPath}
-        onExit={handleExit}
-        onSelectMode={handleModeSelect}
-        gameState={gameState}
-        onShowDashboard={() => setShowDashboard(true)}
-        // ... pass other props
-        aiRuntime={aiRuntime}
-        stageProgress={stageProgress}
-        aiBadgeActive={aiBadgeActive}
-      />
-    );
-  }
+          {/* Header */}
+          <div className="w-full max-w-4xl mb-8 flex justify-between items-center relative z-10">
+            <button
+              onClick={resetToMenu}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white transition-all"
+            >
+              <ArrowLeft size={18} />
+              <span className="font-cinzel font-bold text-sm">Înapoi</span>
+            </button>
 
-  const card = cards[currentCard];
-
-  if (!card) return null;
-
-  return (
-    <div className="min-h-screen bg-[#0B0F19] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay" />
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-indigo-900/20 blur-[120px] rounded-full pointer-events-none" />
-
-      {/* Header */}
-      <div className="w-full max-w-4xl mb-8 flex justify-between items-center relative z-10">
-        <button
-          onClick={resetToMenu}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white transition-all"
-        >
-          <ArrowLeft size={18} />
-          <span className="font-cinzel font-bold text-sm">Înapoi</span>
-        </button>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/60 border border-white/10 backdrop-blur-md">
-            <Trophy className="text-amber-400" size={18} />
-            <span className="text-white font-bold font-mono">{gameState.statistics?.totalCorrect || 0}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ARENA CONTAINER */}
-      <div className="relative w-full max-w-3xl">
-
-        {/* Magical Circle / Tablet */}
-        <div className="relative bg-slate-900/80 backdrop-blur-xl border-2 border-indigo-500/30 rounded-[3rem] p-8 md:p-12 shadow-[0_0_50px_-10px_rgba(79,70,229,0.3)] overflow-hidden">
-
-          {/* Inner Glow */}
-          <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-purple-500/5 pointer-events-none" />
-
-          {/* Progress Bar */}
-          <div className="absolute top-0 left-0 w-full h-2 bg-slate-800">
-            <div
-              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
-              style={{ width: `${((currentCard) / cards.length) * 100}%` }}
-            />
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/60 border border-white/10 backdrop-blur-md">
+                <Trophy className="text-amber-400" size={18} />
+                <span className="text-white font-bold font-mono">{gameState.statistics?.totalCorrect || 0}</span>
+              </div>
+            </div>
           </div>
 
-          {/* Content */}
-          <div className="relative z-10 flex flex-col items-center gap-8">
+          {/* ARENA CONTAINER */}
+          <div className="relative w-full max-w-3xl">
 
-            {/* Equation Display */}
-            <div className="flex items-center justify-center gap-4 md:gap-12">
-              <div className="flex flex-col items-center gap-4">
-                <span className="text-6xl md:text-8xl font-black text-white font-mono drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
-                  {card.a}
-                </span>
-                <div className="p-4 rounded-2xl bg-slate-800/50 border border-white/5">
-                  <CountableObjects digit={card.a} type={card.a} theme={null} />
-                </div>
-              </div>
+            {/* Magical Circle / Tablet */}
+            <div className="relative bg-slate-900/80 backdrop-blur-xl border-2 border-indigo-500/30 rounded-[3rem] p-8 md:p-12 shadow-[0_0_50px_-10px_rgba(79,70,229,0.3)] overflow-hidden">
 
-              <PlusSign />
+              {/* Inner Glow */}
+              <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-purple-500/5 pointer-events-none" />
 
-              <div className="flex flex-col items-center gap-4">
-                <span className="text-6xl md:text-8xl font-black text-white font-mono drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
-                  {card.b}
-                </span>
-                <div className="p-4 rounded-2xl bg-slate-800/50 border border-white/5">
-                  <CountableObjects digit={card.b} type={card.b} theme={null} />
-                </div>
-              </div>
-
-              <EqualsSign />
-
-              {/* Input Area */}
-              <div className="relative">
-                <input
-                  ref={inputRef}
-                  type="number"
-                  value={userAnswer}
-                  onChange={(e) => {
-                    setUserAnswer(e.target.value);
-                    setFeedback(null);
-                  }}
-                  onKeyDown={(e) => e.key === 'Enter' && checkAnswer()}
-                  className={`w-32 h-32 md:w-40 md:h-40 rounded-3xl bg-slate-950 border-4 text-center text-6xl md:text-7xl font-bold text-white outline-none transition-all duration-300 ${feedback === 'correct'
-                      ? 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.5)] scale-110'
-                      : feedback === 'incorrect'
-                        ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] animate-shake'
-                        : 'border-indigo-500/50 focus:border-indigo-400 focus:shadow-[0_0_20px_rgba(99,102,241,0.4)]'
-                    }`}
-                  placeholder="?"
+              {/* Progress Bar */}
+              <div className="absolute top-0 left-0 w-full h-2 bg-slate-800">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
+                  style={{ width: `${((currentCard) / cards.length) * 100}%` }}
                 />
-                {feedback === 'correct' && (
-                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <span className="text-emerald-400 font-bold font-cinzel text-xl animate-bounce">
-                      Magistral!
+              </div>
+
+              {/* Content */}
+              <div className="relative z-10 flex flex-col items-center gap-8">
+
+                {/* Equation Display */}
+                <div className="flex items-center justify-center gap-4 md:gap-12">
+                  <div className="flex flex-col items-center gap-4">
+                    <span className="text-6xl md:text-8xl font-black text-white font-mono drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
+                      {card.a}
                     </span>
+                    <div className="p-4 rounded-2xl bg-slate-800/50 border border-white/5">
+                      <CountableObjects digit={card.a} type={card.a} theme={null} />
+                    </div>
                   </div>
-                )}
+
+                  <PlusSign />
+
+                  <div className="flex flex-col items-center gap-4">
+                    <span className="text-6xl md:text-8xl font-black text-white font-mono drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
+                      {card.b}
+                    </span>
+                    <div className="p-4 rounded-2xl bg-slate-800/50 border border-white/5">
+                      <CountableObjects digit={card.b} type={card.b} theme={null} />
+                    </div>
+                  </div>
+
+                  <EqualsSign />
+
+                  {/* Input Area */}
+                  <div className="relative">
+                    <input
+                      ref={inputRef}
+                      type="number"
+                      value={userAnswer}
+                      onChange={(e) => {
+                        setUserAnswer(e.target.value);
+                        setFeedback(null);
+                      }}
+                      onKeyDown={(e) => e.key === 'Enter' && checkAnswer()}
+                      className={`w-32 h-32 md:w-40 md:h-40 rounded-3xl bg-slate-950 border-4 text-center text-6xl md:text-7xl font-bold text-white outline-none transition-all duration-300 ${feedback === 'correct'
+                        ? 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.5)] scale-110'
+                        : feedback === 'incorrect'
+                          ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)] animate-shake'
+                          : 'border-indigo-500/50 focus:border-indigo-400 focus:shadow-[0_0_20px_rgba(99,102,241,0.4)]'
+                        }`}
+                      placeholder="?"
+                    />
+                    {feedback === 'correct' && (
+                      <div className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                        <span className="text-emerald-400 font-bold font-cinzel text-xl animate-bounce">
+                          Magistral!
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className="flex gap-4 mt-8">
+                  <button
+                    onClick={checkAnswer}
+                    disabled={!userAnswer}
+                    className={`px-8 py-4 rounded-2xl font-bold text-lg uppercase tracking-widest transition-all transform hover:scale-105 active:scale-95 ${!userAnswer
+                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-orange-900/40'
+                      }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Zap size={20} fill="currentColor" />
+                      Lansează Vraja
+                    </span>
+                  </button>
+                </div>
+
               </div>
             </div>
-
-            {/* Controls */}
-            <div className="flex gap-4 mt-8">
-              <button
-                onClick={checkAnswer}
-                disabled={!userAnswer}
-                className={`px-8 py-4 rounded-2xl font-bold text-lg uppercase tracking-widest transition-all transform hover:scale-105 active:scale-95 ${!userAnswer
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-orange-900/40'
-                  }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Zap size={20} fill="currentColor" />
-                  Lansează Vraja
-                </span>
-              </button>
-            </div>
-
           </div>
+
+          {/* Footer */}
+          <div className="mt-8 text-slate-500 font-cinzel text-sm">
+            Provocarea {currentCard + 1} din {cards.length}
+          </div>
+
         </div>
-      </div>
+      );
+    }
 
-      {/* Footer */}
-      <div className="mt-8 text-slate-500 font-cinzel text-sm">
-        Provocarea {currentCard + 1} din {cards.length}
-      </div>
+    // Simple visual components
+    const PlusSign = () => (
+      <div className="text-4xl md:text-6xl text-indigo-400 font-black drop-shadow-lg">+</div>
+    );
 
-    </div>
-  );
-}
-
-// Simple visual components
-const PlusSign = () => (
-  <div className="text-4xl md:text-6xl text-indigo-400 font-black drop-shadow-lg">+</div>
-);
-
-const EqualsSign = () => (
-  <div className="text-4xl md:text-6xl text-indigo-400 font-black drop-shadow-lg">=</div>
-);
+    const EqualsSign = () => (
+      <div className="text-4xl md:text-6xl text-indigo-400 font-black drop-shadow-lg">=</div>
+    );
