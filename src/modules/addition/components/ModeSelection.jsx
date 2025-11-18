@@ -21,7 +21,7 @@ import {
   Star,
   Brain,
   Scroll,
-  Map,
+  Map as MapIcon,
   Crown,
   Gem,
   Sword
@@ -446,7 +446,7 @@ const ModeSelection = ({
         {additionStages.length > 0 && (
           <div className="space-y-6">
             <div className="flex items-center gap-3">
-              <Map className="text-indigo-400" size={24} />
+              <MapIcon className="text-indigo-400" size={24} />
               <h2 className="text-2xl font-bold text-white font-cinzel">Harta Lumii (Etape)</h2>
             </div>
 
@@ -461,10 +461,10 @@ const ModeSelection = ({
                   <div
                     key={stage.id}
                     className={`relative group rounded-2xl border-2 p-6 transition-all duration-300 ${stage.mastered
-                        ? 'bg-slate-900/80 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.1)]'
-                        : stage.unlocked
-                          ? 'bg-slate-800/80 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.15)]'
-                          : 'bg-slate-950/50 border-white/5 opacity-70 grayscale'
+                      ? 'bg-slate-900/80 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.1)]'
+                      : stage.unlocked
+                        ? 'bg-slate-800/80 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.15)]'
+                        : 'bg-slate-950/50 border-white/5 opacity-70 grayscale'
                       }`}
                   >
                     {/* Header */}
@@ -516,10 +516,10 @@ const ModeSelection = ({
                       }}
                       disabled={isLocked}
                       className={`w-full py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all ${isLocked
-                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                          : stage.mastered
-                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/50 hover:bg-amber-500/20'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-900/20'
+                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                        : stage.mastered
+                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/50 hover:bg-amber-500/20'
+                          : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-900/20'
                         }`}
                     >
                       {isLocked ? 'Sigilat' : stage.mastered ? 'Antrenează-te' : 'Începe Misiunea'}
