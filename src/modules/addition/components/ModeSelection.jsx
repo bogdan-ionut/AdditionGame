@@ -130,7 +130,9 @@ const ModeSelection = ({
     const map = new Map();
     additionStages.forEach((stage) => {
       stage.addends.forEach((addend) => {
-        map.set(addend, stage);
+        if (!map.has(addend)) {
+          map.set(addend, stage);
+        }
       });
     });
     return map;
